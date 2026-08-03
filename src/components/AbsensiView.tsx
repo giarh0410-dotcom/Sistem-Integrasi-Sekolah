@@ -1,0 +1,1121 @@
+import React, { useState, useEffect } from 'react';
+import { CameraScanner } from './CameraScanner';
+import { 
+  CalendarCheck, 
+  Clock, 
+  MapPin, 
+  UserCheck, 
+  CheckCircle2, 
+  XCircle, 
+  AlertCircle, 
+  Check, 
+  BookOpen, 
+  Plus, 
+  Save, 
+  FileSpreadsheet,
+  Send,
+  QrCode,
+  ScanLine,
+  Volume2,
+  CheckCheck
+} from 'lucide-react';
+import { 
+  Siswa, 
+  Guru, 
+  Staf,
+  AbsensiSiswaHarian, 
+  AbsensiSiswaKelas, 
+  AbsensiGuru, 
+  StatusAbsensi,
+  Role,
+  RombelKelas,
+  MataPelajaranItem
+} from '../types/school';
+import { exportAllToGoogleSheets } from '../lib/googleDriveSync';
+
+interface AbsensiViewProps {
+  siswaList: Siswa[];
+  guruList: Guru[];
+  absensiHarian: AbsensiSiswaHarian[];
+  setAbsensiHarian: React.Dispatch<React.SetStateAction<AbsensiSiswaHarian[]>>;
+  absensiKelasList: AbsensiSiswaKelas[];
+  setAbsensiKelasList: React.Dispatch<React.SetStateAction<AbsensiSiswaKelas[]>>;
+  absensiGuruList: AbsensiGuru[];
+  setAbsensiGuruList: React.Dispatch<React.SetStateAction<AbsensiGuru[]>>;
+  currentRole?: Role;
+  userGoogleToken?: string;
+  rombelList?: RombelKelas[];
+  mapelList?: MataPelajaranItem[];
+  stafList?: Staf[];
+}
+
+type SubTabAbsensi = 'scan_barcode' | 'harian_siswa' | 'kelas_mapel' | 'absensi_guru';
+
+export const AbsensiView: React.FC<AbsensiViewProps> = ({
+  siswaList,
+  guruList,
+  absensiHarian,
+  setAbsensiHarian,
+  absensiKelasList,
+  setAbsensiKelasList,
+  absensiGuruList,
+  setAbsensiGuruList,
+  currentRole = 'admin',
+  userGoogleToken = 'demo_workspace_token_active',
+  rombelList = [],
+  mapelList = [],
+  stafList = []
+}) => {
+  const [subTab, setSubTab] = useState<SubTabAbsensi>(currentRole === 'guru' ? 'kelas_mapel' : 'scan_barcode');
+
+  useEffect(() => {
+    if (currentRole === 'guru') {
+      if (subTab === 'harian_siswa' || subTab === 'absensi_guru') {
+        setSubTab('kelas_mapel');
+      }
+      setScanTargetType('siswa');
+    }
+  }, [currentRole, subTab]);
+
+  // --- Subtab Barcode Scanner State ---
+  const [barcodeInput, setBarcodeInput] = useState('');
+  const [scanTargetType, setScanTargetType] = useState<'siswa' | 'guru'>('siswa');
+  const [lastScannedResult, setLastScannedResult] = useState<{
+    nama: string;
+    role: string;
+    kode: string;
+    waktu: string;
+    detail: string;
+  } | null>(null);
+  const [scanHistory, setScanHistory] = useState<Array<{
+    nama: string;
+    role: string;
+    kode: string;
+    waktu: string;
+  }>>([]);
+
+  // Synthesize Web Audio Beep Sound
+  const playBeepSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1046.5, audioCtx.currentTime); // C6 note
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.15);
+    } catch {
+      // Ignore audio autoplay restrictions
+    }
+  };
+
+  const handleExecuteScan = (codeToScan: string) => {
+    const code = codeToScan.trim();
+    if (!code) return;
+
+    playBeepSound();
+    const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const today = new Date().toISOString().split('T')[0];
+
+    if (scanTargetType === 'siswa') {
+      // Find student by barcode or NISN or NIS
+      const foundSiswa = siswaList.find(s => 
+        (s.kodeBarcode && s.kodeBarcode.toLowerCase() === code.toLowerCase()) ||
+        s.nisn === code ||
+        s.nis === code ||
+        s.nama.toLowerCase().includes(code.toLowerCase())
+      );
+
+      if (foundSiswa) {
+        setAbsensiHarian(prev => {
+          const filtered = prev.filter(a => !(a.siswaId === foundSiswa.id && a.tanggal === today));
+          return [
+            {
+              id: `abh-${foundSiswa.id}-${today}`,
+              siswaId: foundSiswa.id,
+              tanggal: today,
+              status: 'Hadir',
+              jamScan: timeNow,
+              metodeScan: 'Barcode / QR'
+            },
+            ...filtered
+          ];
+        });
+
+        const res = {
+          nama: foundSiswa.nama,
+          role: `Siswa Kelas ${foundSiswa.kelas}`,
+          kode: foundSiswa.kodeBarcode || `SIS-${foundSiswa.nisn}`,
+          waktu: timeNow,
+          detail: `NISN: ${foundSiswa.nisn} | Wali: ${foundSiswa.namaWali}`
+        };
+        setLastScannedResult(res);
+        setScanHistory(prev => [res, ...prev]);
+      } else {
+        alert(`Barcode / ID "${code}" tidak ditemukan pada Database Siswa!`);
+      }
+    } else {
+      // Find guru by barcode or NIP
+      const foundGuru = guruList.find(g => 
+        (g.kodeBarcode && g.kodeBarcode.toLowerCase() === code.toLowerCase()) ||
+        g.nip === code ||
+        g.nama.toLowerCase().includes(code.toLowerCase())
+      );
+
+      if (foundGuru) {
+        setAbsensiGuruList(prev => {
+          const existingIndex = prev.findIndex(g => g.guruId === foundGuru.id && g.tanggal === today);
+          if (existingIndex >= 0) {
+            const updated = [...prev];
+            updated[existingIndex].jamMasuk = timeNow;
+            updated[existingIndex].status = 'Hadir';
+            updated[existingIndex].metodeIn = 'Barcode / QR';
+            return updated;
+          } else {
+            return [
+              {
+                id: `abg-${Date.now()}`,
+                guruId: foundGuru.id,
+                guruNama: foundGuru.nama,
+                tanggal: today,
+                jamMasuk: timeNow,
+                status: 'Hadir',
+                statusIzin: 'Disetujui',
+                lokasiIn: 'Mesin Scan Barcode Utama',
+                metodeIn: 'Barcode / QR'
+              },
+              ...prev
+            ];
+          }
+        });
+
+        const res = {
+          nama: foundGuru.nama,
+          role: `Guru ${foundGuru.mataPelajaran}`,
+          kode: foundGuru.kodeBarcode || `GUR-${foundGuru.nip}`,
+          waktu: timeNow,
+          detail: `NIP: ${foundGuru.nip} | Status: ${foundGuru.status}`
+        };
+        setLastScannedResult(res);
+        setScanHistory(prev => [res, ...prev]);
+      } else {
+        alert(`Barcode / NIP "${code}" tidak ditemukan pada Database Guru!`);
+      }
+    }
+
+    setBarcodeInput('');
+  };
+
+  // --- Subtab 1: Absensi Siswa Harian State ---
+  const [selectedKelas, setSelectedKelas] = useState('X-IPA-1');
+  const [selectedTanggal, setSelectedTanggal] = useState('2026-07-31');
+  
+  // Local state for batch editing daily attendance
+  const [localHarianState, setLocalHarianState] = useState<Record<string, StatusAbsensi>>(() => {
+    const map: Record<string, StatusAbsensi> = {};
+    siswaList.forEach(s => {
+      const existing = absensiHarian.find(a => a.siswaId === s.id && a.tanggal === '2026-07-31');
+      map[s.id] = existing ? existing.status : 'Hadir';
+    });
+    return map;
+  });
+
+  const [savedSuccess, setSavedSuccess] = useState(false);
+
+  const handleSaveHarian = () => {
+    const newRecords: AbsensiSiswaHarian[] = [];
+    Object.entries(localHarianState).forEach(([siswaId, status]) => {
+      newRecords.push({
+        id: `abh-${siswaId}-${selectedTanggal}`,
+        siswaId,
+        tanggal: selectedTanggal,
+        status: status as StatusAbsensi
+      });
+    });
+
+    // Replace or update
+    setAbsensiHarian(prev => {
+      const filtered = prev.filter(a => a.tanggal !== selectedTanggal);
+      return [...filtered, ...newRecords];
+    });
+
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 3000);
+  };
+
+  // --- Subtab 2: Absensi Kelas Per Mapel State ---
+  const [mapelKelas, setMapelKelas] = useState('X-IPA-1');
+  const [mapelNama, setMapelNama] = useState('Fisika & Informatika');
+  const [mapelGuru, setMapelGuru] = useState('Siti Rahmawati, S.Si., M.Sc.');
+  const [mapelJam, setMapelJam] = useState('1 - 2 (07:00 - 08:30)');
+  const [mapelMateri, setMapelMateri] = useState('Eksperimen Praktikum Vektor & Simulasi Komputer');
+  
+  const [localMapelState, setLocalMapelState] = useState<Record<string, StatusAbsensi>>({});
+  const [savingToDrive, setSavingToDrive] = useState(false);
+  const [spreadsheetUrl, setSpreadsheetUrl] = useState<string | null>(null);
+
+  // Dynamic selection lists
+  const subjectsOptions = Array.from(new Set([
+    ...mapelList.map(m => m.namaMapel),
+    'Fisika & Informatika',
+    'Matematika Tingkat Lanjut',
+    'Bahasa Indonesia',
+    'Bahasa Inggris',
+    'Pendidikan Pancasila',
+    'IPA Terpadu',
+    'IPS Terpadu',
+    'Seni & Musik',
+    'PJOK'
+  ]));
+
+  const teachersOptions = Array.from(new Set([
+    ...guruList.map(g => g.nama),
+    'Siti Rahmawati, S.Si., M.Sc.',
+    'Drs. Hendra Kusuma, M.Pd.',
+    'Budi Santoso, S.Pd.',
+    'Rina Wijaya, M.Pd.',
+    'Achmad Fauzi, S.Kom.'
+  ]));
+
+  const hoursOptions = [
+    '1 - 2 (07:00 - 08:30)',
+    '3 - 4 (08:30 - 10:00)',
+    '5 - 6 (10:15 - 11:45)',
+    '7 - 8 (12:30 - 14:00)',
+    '9 - 10 (14:00 - 15:30)'
+  ];
+
+  // Auto fill teacher based on selected subject from mapelList
+  useEffect(() => {
+    if (mapelList && mapelList.length > 0) {
+      const matchingMapel = mapelList.find(m => m.namaMapel === mapelNama);
+      if (matchingMapel) {
+        setMapelGuru(matchingMapel.guruPengampuNama);
+      }
+    }
+  }, [mapelNama, mapelList]);
+
+  // Reset local mapel state when class changes to clear previous selections
+  useEffect(() => {
+    setLocalMapelState({});
+  }, [mapelKelas]);
+
+  const handleSaveAbsensiMapel = async () => {
+    // Fill in default 'Hadir' status for all students in the class who don't have a status yet
+    const finalKehadiranMap: Record<string, StatusAbsensi> = {};
+    const classSiswaMapelList = siswaList.filter(s => s.kelas === mapelKelas);
+    classSiswaMapelList.forEach(s => {
+      finalKehadiranMap[s.id] = localMapelState[s.id] || 'Hadir';
+    });
+
+    const newEntry: AbsensiSiswaKelas = {
+      id: `abk-${Date.now()}`,
+      kelas: mapelKelas,
+      mataPelajaran: mapelNama,
+      guruNama: mapelGuru,
+      tanggal: selectedTanggal,
+      jamKe: mapelJam,
+      materi: mapelMateri,
+      kehadiranMap: finalKehadiranMap,
+      catatan: 'Absensi jurnal mengajar berhasil disimpan.'
+    };
+    
+    setAbsensiKelasList(prev => [newEntry, ...prev]);
+
+    setSavingToDrive(true);
+    try {
+      const res = await exportAllToGoogleSheets(userGoogleToken, {
+        siswaList,
+        guruList,
+        stafList,
+        rombelList,
+        mapelList,
+        absensiHarian,
+        absensiKelasList: [newEntry, ...absensiKelasList]
+      });
+
+      if (res.success) {
+        alert(`Jurnal & Absensi Kelas Berhasil Disimpan!\n\n${res.message}`);
+        if (res.url) {
+          setSpreadsheetUrl(res.url);
+        }
+      } else {
+        alert(`Jurnal & Absensi Kelas disimpan secara lokal, namun gagal sync ke Google Sheets: ${res.message}`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Jurnal & Absensi Kelas berhasil disimpan secara lokal.');
+    } finally {
+      setSavingToDrive(false);
+    }
+  };
+
+  // --- Subtab 3: Absensi Guru Clock In / Clock Out & Izin ---
+  const [guruClockStatus, setGuruClockStatus] = useState<string | null>(null);
+  const [showFormIzin, setShowFormIzin] = useState(false);
+  const [formIzinGuruId, setFormIzinGuruId] = useState('gur-01');
+  const [formIzinKet, setFormIzinKet] = useState('');
+
+  const handleClockIn = (guruId: string) => {
+    const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const today = new Date().toISOString().split('T')[0];
+
+    setAbsensiGuruList(prev => {
+      const existingIndex = prev.findIndex(g => g.guruId === guruId && g.tanggal === today);
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        updated[existingIndex].jamMasuk = timeNow;
+        updated[existingIndex].status = 'Hadir';
+        return updated;
+      } else {
+        const guru = guruList.find(g => g.id === guruId);
+        return [
+          {
+            id: `abg-${Date.now()}`,
+            guruId,
+            guruNama: guru?.nama || 'Guru',
+            tanggal: today,
+            jamMasuk: timeNow,
+            status: 'Hadir',
+            statusIzin: 'Disetujui',
+            lokasiIn: 'Gedung Utama Sekolah'
+          },
+          ...prev
+        ];
+      }
+    });
+
+    setGuruClockStatus(`Clock-IN Berhasil pada jam ${timeNow}!`);
+    setTimeout(() => setGuruClockStatus(null), 4000);
+  };
+
+  const handleClockOut = (guruId: string) => {
+    const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const today = new Date().toISOString().split('T')[0];
+
+    setAbsensiGuruList(prev => {
+      const existingIndex = prev.findIndex(g => g.guruId === guruId && g.tanggal === today);
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        updated[existingIndex].jamKeluar = timeNow;
+        return updated;
+      }
+      return prev;
+    });
+
+    setGuruClockStatus(`Clock-OUT Berhasil pada jam ${timeNow}!`);
+    setTimeout(() => setGuruClockStatus(null), 4000);
+  };
+
+  const handlePengajuanIzin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const guru = guruList.find(g => g.id === formIzinGuruId);
+    const today = new Date().toISOString().split('T')[0];
+
+    const newIzin: AbsensiGuru = {
+      id: `abg-iz-${Date.now()}`,
+      guruId: formIzinGuruId,
+      guruNama: guru?.nama || 'Guru',
+      tanggal: today,
+      status: 'Izin',
+      keteranganIzin: formIzinKet,
+      statusIzin: 'Pending'
+    };
+
+    setAbsensiGuruList(prev => [newIzin, ...prev]);
+    setShowFormIzin(false);
+    setFormIzinKet('');
+    alert('Pengajuan izin berhasil dikirim. Menunggu persetujuan Kepala Sekolah.');
+  };
+
+  const handleApproveIzin = (id: string, newStatus: 'Disetujui' | 'Ditolak') => {
+    setAbsensiGuruList(prev => prev.map(a => a.id === id ? { ...a, statusIzin: newStatus } : a));
+  };
+
+  // Filtered Siswa by Class for Attendance
+  const classSiswaList = siswaList.filter(s => s.kelas === selectedKelas);
+
+  return (
+    <div className="space-y-6">
+      
+      {/* Top Navigation */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#121212] p-5 rounded-xl border border-slate-800 shadow-sm">
+        <div>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <CalendarCheck className="w-5 h-5 text-blue-400" /> Presensi & Absensi Terpadu
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">
+            Pencatatan absensi harian siswa, kehadiran kelas per mata pelajaran, dan presensi guru.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1 bg-[#181818] p-1 rounded-xl border border-slate-800">
+          <button
+            onClick={() => setSubTab('scan_barcode')}
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              subTab === 'scan_barcode' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <QrCode className="w-4 h-4" /> Scan Barcode / QR
+          </button>
+          
+          {currentRole !== 'guru' && (
+            <button
+              onClick={() => setSubTab('harian_siswa')}
+              className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                subTab === 'harian_siswa' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Absensi Harian Siswa
+            </button>
+          )}
+
+          <button
+            onClick={() => setSubTab('kelas_mapel')}
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+              subTab === 'kelas_mapel' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Absensi Kelas Per Mapel
+          </button>
+
+          {currentRole !== 'guru' && (
+            <button
+              onClick={() => setSubTab('absensi_guru')}
+              className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                subTab === 'absensi_guru' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Presensi Guru
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* SUBTAB 0: SCAN BARCODE / QR ABSENSI */}
+      {subTab === 'scan_barcode' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Left Column: Barcode Scanner Interface */}
+          <div className="lg:col-span-2 bg-[#121212] rounded-2xl p-6 border border-slate-800 shadow-xl space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="font-bold text-white text-base flex items-center gap-2">
+                  <ScanLine className="w-5 h-5 text-blue-400" /> Scanner Barcode & QR Code Presensi
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Arahkan barcode / QR dari Kartu ID Siswa atau Guru ke kamera scanner
+                </p>
+              </div>
+
+              {currentRole !== 'guru' ? (
+                <div className="flex items-center gap-1 bg-[#181818] p-1 rounded-lg border border-slate-800">
+                  <button
+                    onClick={() => setScanTargetType('siswa')}
+                    className={`px-3 py-1 rounded text-xs font-bold ${
+                      scanTargetType === 'siswa' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Siswa
+                  </button>
+                  <button
+                    onClick={() => setScanTargetType('guru')}
+                    className={`px-3 py-1 rounded text-xs font-bold ${
+                      scanTargetType === 'guru' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Guru
+                  </button>
+                </div>
+              ) : (
+                <div className="px-3 py-1 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-bold">
+                  Mode Scan: Siswa
+                </div>
+              )}
+            </div>
+
+            {/* Live Camera Barcode & QR Scanner */}
+            <CameraScanner 
+              scanTargetType={scanTargetType} 
+              onScanSuccess={(code) => handleExecuteScan(code)} 
+            />
+
+            {/* Manual / Scanner Input Field */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-300 block">
+                Input Manual / Tempelkan Laser Barcode Scanner di Sini:
+              </label>
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  handleExecuteScan(barcodeInput);
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  type="text"
+                  placeholder={scanTargetType === 'siswa' ? 'Contoh: SIS-0081234561 atau NISN' : 'Contoh: GUR-198501152010011002 atau NIP'}
+                  value={barcodeInput}
+                  onChange={e => setBarcodeInput(e.target.value)}
+                  autoFocus
+                  className="flex-1 bg-[#181818] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                />
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5"
+                >
+                  <ScanLine className="w-4 h-4" /> Process Scan
+                </button>
+              </form>
+            </div>
+
+            {/* Quick Demo Pickers */}
+            <div className="pt-2 border-t border-slate-800">
+              <p className="text-[11px] font-bold text-slate-400 mb-2">Pilih Sampel Kartu ID untuk Tes Simulasi Scan Quick Barcode:</p>
+              <div className="flex flex-wrap gap-2">
+                {scanTargetType === 'siswa' ? (
+                  siswaList.slice(0, 4).map(s => (
+                    <button
+                      key={s.id}
+                      onClick={() => handleExecuteScan(s.kodeBarcode || `SIS-${s.nisn}`)}
+                      className="px-3 py-1.5 bg-[#181818] hover:bg-slate-800 border border-slate-800 hover:border-blue-500/40 rounded-lg text-left transition-all group"
+                    >
+                      <div className="text-[11px] font-bold text-white group-hover:text-blue-400">{s.nama}</div>
+                      <div className="text-[9px] font-mono text-slate-500">{s.kodeBarcode || `SIS-${s.nisn}`}</div>
+                    </button>
+                  ))
+                ) : (
+                  guruList.map(g => (
+                    <button
+                      key={g.id}
+                      onClick={() => handleExecuteScan(g.kodeBarcode || `GUR-${g.nip}`)}
+                      className="px-3 py-1.5 bg-[#181818] hover:bg-slate-800 border border-slate-800 hover:border-purple-500/40 rounded-lg text-left transition-all group"
+                    >
+                      <div className="text-[11px] font-bold text-white group-hover:text-purple-400">{g.nama}</div>
+                      <div className="text-[9px] font-mono text-slate-500">{g.kodeBarcode || `GUR-${g.nip}`}</div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+          </div>
+
+          {/* Right Column: Scan Result Card & Log */}
+          <div className="space-y-4">
+            
+            {/* Last Scanned Box */}
+            <div className="bg-[#121212] rounded-2xl p-5 border border-slate-800 shadow-xl space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <CheckCheck className="w-4 h-4 text-emerald-400" /> Hasil Scan Terakhir
+              </h4>
+
+              {lastScannedResult ? (
+                <div className="p-4 bg-emerald-950/40 border border-emerald-500/40 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 font-bold text-[10px] rounded border border-emerald-500/30">
+                      BERHASIL PRESENSI
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">{lastScannedResult.waktu}</span>
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-white">{lastScannedResult.nama}</h3>
+                    <p className="text-xs font-semibold text-blue-400">{lastScannedResult.role}</p>
+                    <p className="text-[10px] font-mono text-slate-400 mt-1">{lastScannedResult.detail}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 bg-[#181818] rounded-xl text-center text-slate-500 text-xs border border-slate-800">
+                  Belum ada data barcode yang di-scan.
+                </div>
+              )}
+            </div>
+
+            {/* Scan History Log */}
+            <div className="bg-[#121212] rounded-2xl p-5 border border-slate-800 shadow-xl space-y-3 max-h-80 overflow-y-auto">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Log Riwayat Scan Hari Ini</h4>
+              <div className="space-y-2">
+                {scanHistory.length === 0 ? (
+                  <p className="text-xs text-slate-500 text-center py-4">Belum ada riwayat scan.</p>
+                ) : (
+                  scanHistory.map((item, idx) => (
+                    <div key={idx} className="p-2.5 bg-[#181818] rounded-lg border border-slate-800/80 flex items-center justify-between text-xs">
+                      <div>
+                        <div className="font-bold text-white">{item.nama}</div>
+                        <div className="text-[10px] text-slate-400">{item.role}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-mono text-emerald-400 font-bold text-[11px]">{item.waktu}</div>
+                        <div className="text-[9px] text-slate-500 font-mono">{item.kode}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* SUBTAB 1: ABSENSI HARIAN SISWA */}
+      {subTab === 'harian_siswa' && (
+        <div className="space-y-4">
+          
+          {/* Controls Bar */}
+          <div className="bg-[#121212] p-4 rounded-xl border border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Pilih Kelas</label>
+                <select
+                  value={selectedKelas}
+                  onChange={e => setSelectedKelas(e.target.value)}
+                  className="bg-[#181818] border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-200 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="X-IPA-1">X-IPA-1</option>
+                  <option value="XI-IPA-2">XI-IPA-2</option>
+                  <option value="XI-IPS-1">XI-IPS-1</option>
+                  <option value="XII-IPA-1">XII-IPA-1</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Tanggal</label>
+                <input
+                  type="date"
+                  value={selectedTanggal}
+                  onChange={e => setSelectedTanggal(e.target.value)}
+                  className="bg-[#181818] border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-200 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleSaveHarian}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-xs transition-all flex items-center gap-2 shadow-sm"
+            >
+              <Save className="w-4 h-4" /> Simpan Absensi Harian
+            </button>
+          </div>
+
+          {savedSuccess && (
+            <div className="p-3 bg-emerald-950/80 text-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2 border border-emerald-800">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              Absensi harian siswa kelas {selectedKelas} tanggal {selectedTanggal} berhasil disimpan!
+            </div>
+          )}
+
+          {/* Table Attendance Grid */}
+          <div className="bg-[#121212] rounded-xl border border-slate-800 shadow-sm overflow-hidden">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-[#181818] border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                <tr>
+                  <th className="px-4 py-3">No</th>
+                  <th className="px-4 py-3">NISN / NIS</th>
+                  <th className="px-4 py-3">Nama Siswa</th>
+                  <th className="px-4 py-3 text-center">Status Kehadiran</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {classSiswaList.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                      Tidak ada siswa di kelas ini.
+                    </td>
+                  </tr>
+                ) : (
+                  classSiswaList.map((s, idx) => {
+                    const currentStatus = localHarianState[s.id] || 'Hadir';
+                    return (
+                      <tr key={s.id} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="px-4 py-3 font-semibold text-slate-500">{idx + 1}</td>
+                        <td className="px-4 py-3 font-mono text-slate-400">{s.nisn}</td>
+                        <td className="px-4 py-3 font-bold text-white">{s.nama}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {(['Hadir', 'Sakit', 'Izin', 'Alpha'] as StatusAbsensi[]).map(st => (
+                              <button
+                                key={st}
+                                onClick={() => setLocalHarianState(prev => ({ ...prev, [s.id]: st }))}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                                  currentStatus === st
+                                    ? st === 'Hadir' ? 'bg-green-500/20 text-green-400 border border-green-500/30 shadow-sm'
+                                      : st === 'Sakit' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 shadow-sm'
+                                      : st === 'Izin' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 shadow-sm'
+                                      : 'bg-red-500/20 text-red-400 border border-red-500/30 shadow-sm'
+                                    : 'bg-[#181818] text-slate-400 hover:bg-slate-800 border border-slate-800'
+                                }`}
+                              >
+                                {st}
+                              </button>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      )}
+
+      {/* SUBTAB 2: ABSENSI KELAS PER MAPEL */}
+      {subTab === 'kelas_mapel' && (
+        <div className="space-y-6">
+          
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 border-b pb-3">
+              <BookOpen className="w-5 h-5 text-emerald-600" /> Form Jurnal & Kehadiran Per Mata Pelajaran
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div>
+                <label className="text-[11px] font-bold text-slate-700">Kelas</label>
+                <select 
+                  value={mapelKelas} 
+                  onChange={e => setMapelKelas(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  {Array.from(new Set([
+                    ...rombelList.map(r => r.namaRombel),
+                    'X-IPA-1', 'XI-IPA-2', 'XI-IPS-1', 'XII-IPA-1'
+                  ])).map(k => (
+                    <option key={k} value={k}>{k}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-700">Mata Pelajaran</label>
+                <select 
+                  value={mapelNama} 
+                  onChange={e => setMapelNama(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  {subjectsOptions.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-700">Guru Pengajar</label>
+                <select 
+                  value={mapelGuru} 
+                  onChange={e => setMapelGuru(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  {teachersOptions.map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-700">Jam Ke- / Waktu</label>
+                <select 
+                  value={mapelJam} 
+                  onChange={e => setMapelJam(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  {hoursOptions.map(h => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-700">Materi Pembelajaran / Ringkasan Jurnal Kelas</label>
+              <textarea 
+                rows={2} 
+                value={mapelMateri} 
+                onChange={e => setMapelMateri(e.target.value)}
+                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+              />
+            </div>
+
+            {/* Checklist Attendance in Mapel */}
+            <div className="pt-2">
+              {/* Filter students list matching mapelKelas */}
+              {(() => {
+                const classSiswaMapelList = siswaList.filter(s => s.kelas === mapelKelas);
+                return (
+                  <>
+                    <h4 className="font-bold text-xs uppercase text-slate-500 mb-2">
+                      Checklist Kehadiran Siswa di Jam Mapel Ini ({classSiswaMapelList.length} Siswa):
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto p-2 border rounded-xl bg-slate-50">
+                      {classSiswaMapelList.length === 0 ? (
+                        <p className="text-xs text-slate-500 text-center py-4 col-span-2">
+                          Tidak ada data siswa untuk kelas {mapelKelas}. Silakan tambahkan siswa di kelas ini melalui Menu Database.
+                        </p>
+                      ) : (
+                        classSiswaMapelList.map(s => {
+                          const status = localMapelState[s.id] || 'Hadir';
+                          return (
+                            <div key={s.id} className="p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-800">{s.nama}</span>
+                              <div className="flex items-center gap-1">
+                                {(['Hadir', 'Sakit', 'Izin', 'Alpha'] as StatusAbsensi[]).map(st => (
+                                  <button
+                                    key={st}
+                                    type="button"
+                                    onClick={() => setLocalMapelState(prev => ({ ...prev, [s.id]: st }))}
+                                    className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${
+                                      status === st 
+                                        ? st === 'Hadir' ? 'bg-emerald-500 text-slate-950 font-extrabold'
+                                          : st === 'Sakit' ? 'bg-amber-500 text-slate-950 font-extrabold'
+                                          : st === 'Izin' ? 'bg-blue-500 text-white font-extrabold'
+                                          : 'bg-rose-500 text-white font-extrabold'
+                                        : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                    }`}
+                                  >
+                                    {st}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-between pt-3 gap-3 border-t">
+              <div>
+                {spreadsheetUrl && (
+                  <a 
+                    href={spreadsheetUrl} 
+                    target="_blank" 
+                    referrerPolicy="no-referrer"
+                    rel="noopener noreferrer" 
+                    className="text-xs text-emerald-600 hover:text-emerald-500 font-bold flex items-center gap-1.5 border-b border-emerald-500/30 transition-all"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Buka Database Spreadsheet Anda di Google Drive
+                  </a>
+                )}
+              </div>
+              <button
+                onClick={handleSaveAbsensiMapel}
+                disabled={savingToDrive}
+                className={`px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-2 shadow-md ${
+                  savingToDrive ? 'opacity-70 cursor-not-allowed' : ''
+                }`}
+              >
+                {savingToDrive ? (
+                  <>
+                    <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-950 border-t-transparent animate-spin"></span>
+                    Menyimpan & Menyinkronkan ke Drive...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" /> Simpan Jurnal & Sync Spreadsheet
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* History Jurnal Kelas */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-3">
+            <h3 className="font-bold text-slate-900 text-sm">Riwayat Jurnal Kelas & Absensi Mapel</h3>
+            <div className="space-y-2">
+              {absensiKelasList.map(item => (
+                <div key={item.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2">
+                  <div>
+                    <div className="font-bold text-slate-900">{item.mataPelajaran} ({item.kelas}) - {item.jamKe}</div>
+                    <div className="text-slate-500 mt-0.5">Guru: {item.guruNama} | Materi: {item.materi}</div>
+                  </div>
+                  <span className="px-2.5 py-1 bg-blue-100 text-blue-800 font-bold rounded-full text-[10px] self-start sm:self-center">
+                    {item.tanggal}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* SUBTAB 3: ABSENSI GURU CLOCK IN/OUT & IZIN */}
+      {subTab === 'absensi_guru' && (
+        <div className="space-y-6">
+          
+          {guruClockStatus && (
+            <div className="p-4 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-sm">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              {guruClockStatus}
+            </div>
+          )}
+
+          {/* Clock In / Out Banner */}
+          <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 text-white border border-slate-800 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+              <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider block mb-1">
+                Real-Time Presensi Kehadiran Guru
+              </span>
+              <h3 className="text-xl font-bold">Clock-IN & Clock-OUT Guru</h3>
+              <p className="text-xs text-slate-300 mt-1">
+                Catat jam kedatangan dan jam pulang harian guru dengan geotagging lokasi sekolah.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleClockIn('gur-01')}
+                className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/20"
+              >
+                <Clock className="w-4 h-4" /> Clock-IN (Masuk)
+              </button>
+              <button
+                onClick={() => handleClockOut('gur-01')}
+                className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-2 border border-slate-600"
+              >
+                <Clock className="w-4 h-4 text-emerald-400" /> Clock-OUT (Pulang)
+              </button>
+              <button
+                onClick={() => setShowFormIzin(true)}
+                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-2"
+              >
+                <Send className="w-4 h-4" /> Pengajuan Izin / Cuti
+              </button>
+            </div>
+          </div>
+
+          {/* Form Modal Izin Guru */}
+          {showFormIzin && (
+            <div className="bg-white p-6 rounded-2xl border border-amber-200 shadow-md space-y-3">
+              <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2 text-amber-700">
+                <Send className="w-4 h-4" /> Form Pengajuan Izin / Cuti / Dinas Outer Guru
+              </h4>
+              <form onSubmit={handlePengajuanIzin} className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700">Pilih Nama Guru</label>
+                  <select
+                    value={formIzinGuruId}
+                    onChange={e => setFormIzinGuruId(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    {guruList.map(g => (
+                      <option key={g.id} value={g.id}>{g.nama} ({g.mataPelajaran})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700">Alasan & Keterangan Izin</label>
+                  <textarea
+                    required
+                    rows={2}
+                    value={formIzinKet}
+                    onChange={e => setFormIzinKet(e.target.value)}
+                    placeholder="Contoh: Mengikuti Pelatihan Kurikulum Merdeka atau Sakit..."
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowFormIzin(false)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 rounded-lg text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400"
+                  >
+                    Kirim Izin
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Daftar Kehadiran Guru Hari Ini */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Rekap Kehadiran Guru (Hari Ini)</h3>
+              <span className="text-xs text-slate-500 font-semibold">Total: {absensiGuruList.length} Record</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-600">
+                <thead className="bg-slate-100 text-slate-700 font-semibold uppercase tracking-wider text-[11px]">
+                  <tr>
+                    <th className="px-4 py-3">Nama Guru</th>
+                    <th className="px-4 py-3">Tanggal</th>
+                    <th className="px-4 py-3">Jam Masuk</th>
+                    <th className="px-4 py-3">Jam Keluar</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Keterangan / Lokasi</th>
+                    <th className="px-4 py-3 text-right">Persetujuan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {absensiGuruList.map(a => (
+                    <tr key={a.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="px-4 py-3 font-bold text-slate-900">{a.guruNama}</td>
+                      <td className="px-4 py-3 font-mono">{a.tanggal}</td>
+                      <td className="px-4 py-3 font-mono font-semibold text-emerald-700">{a.jamMasuk || '-'}</td>
+                      <td className="px-4 py-3 font-mono font-semibold text-blue-700">{a.jamKeluar || '-'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${
+                          a.status === 'Hadir' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {a.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 max-w-xs truncate">
+                        {a.keteranganIzin || a.lokasiIn || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {a.statusIzin === 'Pending' ? (
+                          <div className="flex justify-end gap-1">
+                            <button
+                              onClick={() => handleApproveIzin(a.id, 'Disetujui')}
+                              className="px-2 py-1 bg-emerald-500 text-slate-950 font-bold rounded text-[10px]"
+                            >
+                              Setujui
+                            </button>
+                            <button
+                              onClick={() => handleApproveIzin(a.id, 'Ditolak')}
+                              className="px-2 py-1 bg-rose-500 text-white font-bold rounded text-[10px]"
+                            >
+                              Tolak
+                            </button>
+                          </div>
+                        ) : (
+                          <span className={`font-bold text-[10px] px-2 py-0.5 rounded ${
+                            a.statusIzin === 'Disetujui' ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
+                          }`}>
+                            {a.statusIzin}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+    </div>
+  );
+};

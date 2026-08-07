@@ -199,6 +199,13 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
   const [selectedSiswaDetail, setSelectedSiswaDetail] = useState<Siswa | null>(null);
   const [detailTab, setDetailTab] = useState<'biodata' | 'akademik' | 'wali'>('biodata');
 
+  // Delete Confirmation State
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState<{
+    id: string;
+    nama: string;
+    targetType: 'siswa' | 'guru' | 'staf' | 'rombel' | 'mapel';
+  } | null>(null);
+
   // Digital ID Card Modal State
   const [cardModalData, setCardModalData] = useState<{
     type: 'siswa' | 'guru' | 'staf';
@@ -740,15 +747,48 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
     setIsModalOpen(false);
   };
 
-  // Delete Handler
-  const handleDelete = (id: string) => {
-    if (confirm('Apakah Anda yakin ingin menghapus data ini?')) {
-      if (subTab === 'siswa') setSiswaList(prev => prev.filter(s => s.id !== id));
-      if (subTab === 'guru') setGuruList(prev => prev.filter(g => g.id !== id));
-      if (subTab === 'staf') setStafList(prev => prev.filter(st => st.id !== id));
-      if (subTab === 'rombel') setActiveRombelList(prev => prev.filter(r => r.id !== id));
-      if (subTab === 'mapel') setActiveRombelList(prev => prev.filter(m => m.id !== id));
+  // Delete Handlers
+  const handleDelete = (id: string, name?: string, type?: 'siswa' | 'guru' | 'staf' | 'rombel' | 'mapel') => {
+    const currentType = type || (subTab as 'siswa' | 'guru' | 'staf' | 'rombel' | 'mapel');
+    let itemName = name || '';
+
+    if (!itemName) {
+      if (currentType === 'siswa') itemName = siswaList.find(s => s.id === id)?.nama || 'Siswa';
+      else if (currentType === 'guru') itemName = guruList.find(g => g.id === id)?.nama || 'Guru';
+      else if (currentType === 'staf') itemName = stafList.find(st => st.id === id)?.nama || 'Staf';
+      else if (currentType === 'rombel') itemName = activeRombelList.find(r => r.id === id)?.namaRombel || 'Rombel';
+      else if (currentType === 'mapel') itemName = activeMapelList.find(m => m.id === id)?.namaMapel || 'Mata Pelajaran';
     }
+
+    setDeleteConfirmItem({ id, nama: itemName, targetType: currentType });
+  };
+
+  const executeDelete = () => {
+    if (!deleteConfirmItem) return;
+
+    const { id, targetType } = deleteConfirmItem;
+
+    if (targetType === 'siswa') {
+      setSiswaList(prev => prev.filter(s => s.id !== id));
+    } else if (targetType === 'guru') {
+      setGuruList(prev => prev.filter(g => g.id !== id));
+    } else if (targetType === 'staf') {
+      setStafList(prev => prev.filter(st => st.id !== id));
+    } else if (targetType === 'rombel') {
+      const deletedRombel = activeRombelList.find(r => r.id === id);
+      setActiveRombelList(prev => prev.filter(r => r.id !== id));
+      if (deletedRombel) {
+        setSiswaList(prev => prev.map(s => 
+          s.kelas.toLowerCase() === deletedRombel.namaRombel.toLowerCase() 
+            ? { ...s, kelas: 'Belum Ada Kelas' } 
+            : s
+        ));
+      }
+    } else if (targetType === 'mapel') {
+      setActiveMapelList(prev => prev.filter(m => m.id !== id));
+    }
+
+    setDeleteConfirmItem(null);
   };
 
   return (
@@ -1322,7 +1362,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                             <Edit className="w-4 h-4" />
                           </button>
                           <button 
-                            onClick={() => handleDelete(s.id)}
+                            onClick={() => handleDelete(s.id, s.nama, 'siswa')}
                             title="Hapus Data Siswa"
                             className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
                           >
@@ -1436,7 +1476,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         <Edit className="w-4 h-4" />
                       </button>
                       <button 
-                        onClick={() => handleDelete(g.id)}
+                        onClick={() => handleDelete(g.id, g.nama, 'guru')}
+                        title="Hapus Data Guru"
                         className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1536,7 +1577,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         <Edit className="w-4 h-4" />
                       </button>
                       <button 
-                        onClick={() => handleDelete(st.id)}
+                        onClick={() => handleDelete(st.id, st.nama, 'staf')}
+                        title="Hapus Data Staf"
                         className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1739,7 +1781,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                           </button>
 
                           <button
-                            onClick={() => handleDelete(rombel.id)}
+                            onClick={() => handleDelete(rombel.id, rombel.namaRombel, 'rombel')}
                             title="Hapus Rombel"
                             className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
                           >
@@ -1947,7 +1989,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                       </button>
 
                       <button
-                        onClick={() => handleDelete(mapel.id)}
+                        onClick={() => handleDelete(mapel.id, mapel.namaMapel, 'mapel')}
                         title="Hapus Mata Pelajaran"
                         className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
                       >
@@ -3293,9 +3335,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                             <td className="px-4 py-2.5 text-right">
                               <button
                                 onClick={() => {
-                                  if (confirm(`Keluarkan ${s.nama} dari kelas ${activeRombelDetail.namaRombel}?`)) {
-                                    setSiswaList(prev => prev.map(item => item.id === s.id ? { ...item, kelas: 'Belum Ada Kelas' } : item));
-                                  }
+                                  setSiswaList(prev => prev.map(item => item.id === s.id ? { ...item, kelas: 'Belum Ada Kelas' } : item));
                                 }}
                                 className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-[10px] font-bold transition-all"
                               >
@@ -3910,6 +3950,46 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteConfirmItem && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-white">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-white">Konfirmasi Hapus Data</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Tindakan ini tidak dapat dibatalkan.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-[#181818] p-3.5 rounded-xl border border-slate-800/80 text-xs text-slate-300 leading-relaxed">
+              Apakah Anda yakin ingin menghapus {deleteConfirmItem.targetType === 'rombel' ? 'Rombel / Kelas' : deleteConfirmItem.targetType === 'mapel' ? 'Mata Pelajaran' : deleteConfirmItem.targetType.toUpperCase()} <span className="font-bold text-rose-400 text-sm">{deleteConfirmItem.nama}</span> dari database?
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/60">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmItem(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeDelete}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-rose-600/20 flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" /> Ya, Hapus Sekarang
+              </button>
+            </div>
           </div>
         </div>
       )}

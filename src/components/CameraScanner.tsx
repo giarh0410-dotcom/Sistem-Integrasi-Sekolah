@@ -153,9 +153,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             fps: 15,
             qrbox: (viewfinderWidth, viewfinderHeight) => {
               const minDimension = Math.min(viewfinderWidth, viewfinderHeight);
+              const w = Math.max(50, Math.floor(minDimension * 0.8));
+              const h = Math.max(50, Math.floor(minDimension * 0.55));
               return {
-                width: Math.floor(minDimension * 0.8),
-                height: Math.floor(minDimension * 0.55) // Wide box for standard 1D barcodes
+                width: w,
+                height: h
               };
             },
             aspectRatio: 1.777778

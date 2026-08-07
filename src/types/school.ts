@@ -15,6 +15,19 @@ export interface RombelKelas {
 
 export type Role = 'admin' | 'guru' | 'siswa' | 'staf';
 export type SubTab = 'siswa' | 'guru' | 'staf' | 'rombel' | 'mapel';
+export type CbtSubTab = 'bank_soal' | 'jadwal_kartu' | 'ai_generator' | 'simulasi_ujian';
+export type KeuanganSubTab = 'pembayaran' | 'pengaturan_biaya' | 'rekap';
+
+export interface TarifBiaya {
+  id: string;
+  namaBiaya: string;
+  tipe: TipeKeuangan;
+  tingkatKelas: string;
+  nominal: number;
+  periode: 'Bulanan' | 'Sekali Bayar (Uang Masuk / UKT)' | 'Per Semester';
+  keterangan?: string;
+  status: 'Aktif' | 'Nonaktif';
+}
 
 export interface Siswa {
   id: string;

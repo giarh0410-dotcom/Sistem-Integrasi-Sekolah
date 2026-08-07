@@ -229,8 +229,17 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server Sistem Informasi Sekolah berjalan di http://localhost:${PORT}`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.log(`Port ${PORT} already in use, cleaning up...`);
+      process.exit(0);
+    } else {
+      console.error('Server error:', err);
+    }
   });
 }
 

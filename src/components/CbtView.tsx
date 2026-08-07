@@ -35,7 +35,8 @@ import {
   JawabanSiswa,
   JadwalUjianItem,
   Siswa,
-  Role
+  Role,
+  CbtSubTab
 } from '../types/school';
 
 interface CbtViewProps {
@@ -46,9 +47,9 @@ interface CbtViewProps {
   siswaList: Siswa[];
   currentRole?: Role;
   userEmail?: string;
+  subTab?: CbtSubTab;
+  setSubTab?: (subTab: CbtSubTab) => void;
 }
-
-type SubTabCbt = 'bank_soal' | 'jadwal_kartu' | 'ai_generator' | 'simulasi_ujian';
 
 export const CbtView: React.FC<CbtViewProps> = ({
   bankSoalList,
@@ -57,9 +58,13 @@ export const CbtView: React.FC<CbtViewProps> = ({
   setUjianList,
   siswaList,
   currentRole = 'admin',
-  userEmail = ''
+  userEmail = '',
+  subTab: externalSubTab,
+  setSubTab: externalSetSubTab
 }) => {
-  const [subTab, setSubTab] = useState<SubTabCbt>('bank_soal');
+  const [internalSubTab, setInternalSubTab] = useState<CbtSubTab>('bank_soal');
+  const subTab = externalSubTab !== undefined ? externalSubTab : internalSubTab;
+  const setSubTab = externalSetSubTab || setInternalSubTab;
 
   useEffect(() => {
     if (currentRole === 'guru' && subTab === 'jadwal_kartu') {
@@ -412,45 +417,13 @@ export const CbtView: React.FC<CbtViewProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1 bg-[#181818] p-1 rounded-xl border border-slate-800">
-          <button
-            onClick={() => setSubTab('bank_soal')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              subTab === 'bank_soal' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Bank Soal ({bankSoalList.length})
-          </button>
-          {currentRole !== 'guru' && (
-            <button
-              onClick={() => setSubTab('jadwal_kartu')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
-                subTab === 'jadwal_kartu' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" /> Jadwal & Kartu Ujian
-            </button>
-          )}
-          <button
-            onClick={() => setSubTab('ai_generator')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
-              subTab === 'ai_generator' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-blue-300" /> AI Generator
-          </button>
-          <button
-            onClick={() => {
-              setSubTab('simulasi_ujian');
-              setExamFinished(false);
-              setCheatCount(0);
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
-              subTab === 'simulasi_ujian' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Play className="w-3.5 h-3.5" /> Simulasi CBT Anti-Cheat
-          </button>
+        <div className="flex items-center gap-2">
+          <span className="text-xs px-3 py-1.5 rounded-lg font-bold bg-slate-800/80 text-blue-400 border border-slate-700/60">
+            {subTab === 'bank_soal' && `Bank Soal (${bankSoalList.length})`}
+            {subTab === 'jadwal_kartu' && 'Jadwal & Kartu Ujian'}
+            {subTab === 'ai_generator' && 'AI Generator Soal'}
+            {subTab === 'simulasi_ujian' && 'Simulasi CBT Anti-Cheat'}
+          </span>
         </div>
       </div>
 

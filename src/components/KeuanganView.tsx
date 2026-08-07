@@ -1,25 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Wallet, 
   FileSpreadsheet, 
-  Plus, 
   Search, 
   Filter, 
+  Send, 
+  Settings, 
+  CheckCheck, 
+  Printer, 
+  Calendar, 
+  User, 
+  Receipt, 
+  CreditCard, 
   CheckCircle2, 
   Clock, 
-  CreditCard, 
   Download, 
   ExternalLink,
-  Sparkles,
+  ChevronRight,
+  DollarSign,
   AlertCircle,
-  MessageSquare,
-  Send,
-  Settings,
-  CheckCheck
+  FileText,
+  Sliders,
+  Plus,
+  Edit3,
+  Trash2,
+  Zap,
+  Tag,
+  GraduationCap,
+  Sparkles,
+  Layers
 } from 'lucide-react';
-import { TagihanKeuangan, TransaksiKeuangan, TipeKeuangan } from '../types/school';
+import { TagihanKeuangan, TransaksiKeuangan, Siswa, KeuanganSubTab, TarifBiaya, TipeKeuangan } from '../types/school';
 import { sendFonnteMessage } from '../lib/fonnte';
-import { INITIAL_FONNTE_CONFIG } from '../data/mockData';
+import { INITIAL_FONNTE_CONFIG, INITIAL_TARIF_BIAYA } from '../data/mockData';
 
 interface KeuanganViewProps {
   tagihanList: TagihanKeuangan[];
@@ -27,6 +40,11 @@ interface KeuanganViewProps {
   transaksiList: TransaksiKeuangan[];
   setTransaksiList: React.Dispatch<React.SetStateAction<TransaksiKeuangan[]>>;
   userGoogleToken: string;
+  siswaList?: Siswa[];
+  subTab?: KeuanganSubTab;
+  setSubTab?: (subTab: KeuanganSubTab) => void;
+  tarifBiayaList?: TarifBiaya[];
+  setTarifBiayaList?: React.Dispatch<React.SetStateAction<TarifBiaya[]>>;
 }
 
 export const KeuanganView: React.FC<KeuanganViewProps> = ({
@@ -34,101 +52,1216 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   setTagihanList,
   transaksiList,
   setTransaksiList,
-  userGoogleToken
+  userGoogleToken,
+  siswaList = [],
+  subTab,
+  setSubTab,
+  tarifBiayaList: propTarifBiayaList,
+  setTarifBiayaList: propSetTarifBiayaList
 }) => {
-  const [filterTipe, setFilterTipe] = useState<string>('Semua');
-  const [search, setSearch] = useState('');
+  // Navigation Subtab State
+  const [localActiveTab, setLocalActiveTab] = useState<KeuanganSubTab>('pembayaran');
+  const activeTab = subTab || localActiveTab;
 
-  // Fonnte WhatsApp Config State
+  const handleTabChange = (tab: KeuanganSubTab) => {
+    if (setSubTab) {
+      setSubTab(tab);
+    }
+    setLocalActiveTab(tab);
+  };
+
+  // Internal Fee Rate State (fallback if not provided via props)
+  const [internalTarifList, setInternalTarifList] = useState<TarifBiaya[]>(INITIAL_TARIF_BIAYA);
+  const tarifList = propTarifBiayaList || internalTarifList;
+  const setTarifList = propSetTarifBiayaList || setInternalTarifList;
+
+  // Filter Data Pembayaran Siswa State
+  const [tahunAjaran, setTahunAjaran] = useState<string>('2024/2025');
+  const [semester, setSemester] = useState<string>('Ganjil');
+  const [searchKey, setSearchKey] = useState<string>(siswaList[0]?.nis || '');
+  const [appliedSearch, setAppliedSearch] = useState<string>(siswaList[0]?.nis || '');
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+
+  // Search Suggestions memo
+  const searchSuggestions = useMemo(() => {
+    if (!searchKey.trim() || searchKey.trim().length < 1) return [];
+    const q = searchKey.trim().toLowerCase();
+    return siswaList.filter(s => 
+      s.nama.toLowerCase().includes(q) ||
+      s.nis.toLowerCase().includes(q) ||
+      (s.nisn && s.nisn.toLowerCase().includes(q))
+    ).slice(0, 6);
+  }, [siswaList, searchKey]);
+
+  // Find Selected Siswa
+  const selectedSiswa = useMemo(() => {
+    if (!siswaList.length) return null;
+    const query = appliedSearch.trim().toLowerCase();
+    if (!query) return siswaList[0];
+
+    const match = siswaList.find(
+      s => s.nis.toLowerCase() === query || 
+           (s.nisn && s.nisn.toLowerCase() === query) ||
+           s.nis.toLowerCase().includes(query) ||
+           (s.nisn && s.nisn.toLowerCase().includes(query)) ||
+           s.nama.toLowerCase().includes(query) ||
+           s.id.toLowerCase() === query
+    );
+
+    return match || siswaList[0];
+  }, [siswaList, appliedSearch]);
+
+  // Jenis Pembayaran Subtab State (Bulanan vs Bebas)
+  const [jenisPembayaranTab, setJenisPembayaranTab] = useState<'bulanan' | 'bebas'>('bulanan');
+
+  const studentKey = `${selectedSiswa?.nis || 'default'}_${tahunAjaran}_${semester}`;
+
+  // Selected Months for Bulanan SPP Payment
+  const [selectedMonths, setSelectedMonths] = useState<string[]>(['Januari']);
+
+  // Dynamic Payment Months Data State with localStorage persistence
+  const [paidMonthsState, setPaidMonthsState] = useState<{ [month: string]: string }>(() => {
+    try {
+      const saved = localStorage.getItem(`edu_student_paid_${studentKey}`);
+      if (saved !== null) return JSON.parse(saved);
+    } catch (e) {}
+    return {};
+  });
+
+  const allMonths = [
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni'
+  ];
+
+  // Dynamic Monthly SPP Fee derived from Tarif Biaya settings matching student's class
+  const monthlyFee = useMemo(() => {
+    if (!tarifList || tarifList.length === 0) return 100000;
+
+    const sppTarifs = tarifList.filter(t => t.tipe === 'spp' && t.status === 'Aktif');
+    if (sppTarifs.length === 0) return 100000;
+
+    if (selectedSiswa && selectedSiswa.kelas) {
+      const k = selectedSiswa.kelas.toLowerCase();
+      const match = sppTarifs.find(t => {
+        const tk = t.tingkatKelas.toLowerCase();
+        if ((k.includes('7') || k.includes('vii')) && (tk.includes('7') || tk.includes('vii'))) return true;
+        if ((k.includes('8') || k.includes('viii')) && (tk.includes('8') || tk.includes('viii'))) return true;
+        if ((k.includes('9') || k.includes('ix')) && (tk.includes('9') || tk.includes('ix'))) return true;
+        if ((k.includes('10') || k.includes('x')) && (tk.includes('10') || tk.includes('x'))) return true;
+        if ((k.includes('11') || k.includes('xi')) && (tk.includes('11') || tk.includes('xi'))) return true;
+        if ((k.includes('12') || k.includes('xii')) && (tk.includes('12') || tk.includes('xii'))) return true;
+        return false;
+      });
+      if (match) return match.nominal;
+    }
+
+    return sppTarifs[0].nominal;
+  }, [tarifList, selectedSiswa]);
+
+  const calculatedTotal = selectedMonths.length > 0 ? selectedMonths.length * monthlyFee : monthlyFee;
+
+  const uktTarifs = useMemo(() => tarifList.filter(t => t.tipe === 'ukt' && t.status === 'Aktif'), [tarifList]);
+  const ekskulTarifs = useMemo(() => tarifList.filter(t => t.tipe === 'ekskul' && t.status === 'Aktif'), [tarifList]);
+  const [quickPayType, setQuickPayType] = useState<'spp' | 'ukt' | 'ekskul'>('spp');
+  const [quickPayItemId, setQuickPayItemId] = useState<string>('');
+
+  // Payment Form Input States
+  const [inputTotal, setInputTotal] = useState<number>(100000);
+  const [inputDibayar, setInputDibayar] = useState<number>(100000);
+  const [transactionDate, setTransactionDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
+
+  // Sync total when selected months or monthlyFee change
+  React.useEffect(() => {
+    const tot = selectedMonths.length > 0 ? selectedMonths.length * monthlyFee : monthlyFee;
+    setInputTotal(tot);
+    setInputDibayar(tot);
+  }, [selectedMonths, monthlyFee]);
+
+  // Calculate Kembalian
+  const kembalian = Math.max(0, inputDibayar - (selectedMonths.length > 0 ? calculatedTotal : inputTotal));
+
+  // Bebas Payment Custom Amount State
+  const [bebasPayInput, setBebasPayInput] = useState<{ [key: string]: number }>({});
+
+  // Bebas Terbayar Map state for non-SPP items with localStorage persistence
+  const [bebasTerbayarMap, setBebasTerbayarMap] = useState<{ [id: string]: number }>(() => {
+    try {
+      const saved = localStorage.getItem(`edu_student_bebas_${studentKey}`);
+      if (saved !== null) return JSON.parse(saved);
+    } catch (e) {}
+    return {};
+  });
+
+  // Dynamic Bebas Items derived from Pengaturan Tarif Biaya (non-SPP)
+  const bebasItems = useMemo(() => {
+    const nonSppTarifs = tarifList.filter(t => t.tipe !== 'spp' && t.status === 'Aktif');
+    if (nonSppTarifs.length === 0) {
+      return [
+        { id: 'gedung', nama: 'Uang Gedung & Pengembangan (UKT)', total: 2500000, terbayar: 0 },
+        { id: 'seragam', nama: 'Seragam & Atribut Sekolah', total: 750000, terbayar: 0 },
+        { id: 'kegiatan', nama: 'Iuran Kegiatan / Ekstrakurikuler', total: 300000, terbayar: 0 }
+      ];
+    }
+    return nonSppTarifs.map(t => {
+      const terbayar = bebasTerbayarMap[t.id] ?? 0;
+      return {
+        id: t.id,
+        nama: `${t.namaBiaya} (${t.tingkatKelas})`,
+        total: t.nominal,
+        terbayar: Math.min(t.nominal, terbayar)
+      };
+    });
+  }, [tarifList, bebasTerbayarMap, tahunAjaran, selectedSiswa]);
+
+  const totalSppPaid = useMemo(() => {
+    return Object.keys(paidMonthsState).length * monthlyFee;
+  }, [paidMonthsState, monthlyFee]);
+
+  const totalUktPaid = useMemo(() => {
+    let sum = 0;
+    uktTarifs.forEach(t => {
+      sum += bebasTerbayarMap[t.id] || 0;
+    });
+    if (sum === 0) {
+      sum = (bebasTerbayarMap['gedung'] || 0) + (bebasTerbayarMap['seragam'] || 0);
+    }
+    return sum;
+  }, [bebasTerbayarMap, uktTarifs]);
+
+  const totalEkskulPaid = useMemo(() => {
+    let sum = 0;
+    ekskulTarifs.forEach(t => {
+      sum += bebasTerbayarMap[t.id] || 0;
+    });
+    if (sum === 0) {
+      sum = bebasTerbayarMap['kegiatan'] || 0;
+    }
+    return sum;
+  }, [bebasTerbayarMap, ekskulTarifs]);
+
+  const totalSemuaPembayaran = totalSppPaid + totalUktPaid + totalEkskulPaid;
+
+  // Student Specific Recent Transactions List with localStorage persistence
+  const [deleteTargetTx, setDeleteTargetTx] = useState<{
+    id: string;
+    pembayaran: string;
+    tagihan: number;
+    tanggal: string;
+    itemId?: string;
+    type?: 'spp' | 'bebas';
+  } | null>(null);
+
+  const [studentTransactions, setStudentTransactions] = useState<Array<{
+    id: string;
+    pembayaran: string;
+    tagihan: number;
+    tanggal: string;
+    itemId?: string;
+    type?: 'spp' | 'bebas';
+  }>>(() => {
+    try {
+      const saved = localStorage.getItem(`edu_student_tx_${studentKey}`);
+      if (saved !== null) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
+
+  // Sync state changes to localStorage on studentKey change or updates
+  React.useEffect(() => {
+    try {
+      const savedTx = localStorage.getItem(`edu_student_tx_${studentKey}`);
+      if (savedTx !== null) {
+        setStudentTransactions(JSON.parse(savedTx));
+      } else {
+        setStudentTransactions([]);
+      }
+
+      const savedPaid = localStorage.getItem(`edu_student_paid_${studentKey}`);
+      if (savedPaid !== null) {
+        setPaidMonthsState(JSON.parse(savedPaid));
+      } else {
+        setPaidMonthsState({});
+      }
+
+      const savedBebas = localStorage.getItem(`edu_student_bebas_${studentKey}`);
+      if (savedBebas !== null) {
+        setBebasTerbayarMap(JSON.parse(savedBebas));
+      } else {
+        setBebasTerbayarMap({});
+      }
+    } catch (e) {}
+  }, [studentKey, tahunAjaran, selectedSiswa]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(`edu_student_tx_${studentKey}`, JSON.stringify(studentTransactions));
+    } catch (e) {}
+  }, [studentTransactions, studentKey]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(`edu_student_paid_${studentKey}`, JSON.stringify(paidMonthsState));
+    } catch (e) {}
+  }, [paidMonthsState, studentKey]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(`edu_student_bebas_${studentKey}`, JSON.stringify(bebasTerbayarMap));
+    } catch (e) {}
+  }, [bebasTerbayarMap, studentKey]);
+
+  // Helper Function: Perform Transaction Deletion & State Rollback
+  const performDeleteTransaction = (targetTx: {
+    id: string;
+    pembayaran: string;
+    tagihan: number;
+    tanggal: string;
+    itemId?: string;
+    type?: 'spp' | 'bebas';
+  }) => {
+    // 1. Remove from student transactions list
+    const updatedTransactions = studentTransactions.filter(t => t.id !== targetTx.id);
+    setStudentTransactions(updatedTransactions);
+    try {
+      localStorage.setItem(`edu_student_tx_${studentKey}`, JSON.stringify(updatedTransactions));
+    } catch (e) {}
+
+    const isSpp = targetTx.type === 'spp' || targetTx.pembayaran.toLowerCase().startsWith('spp');
+
+    // 2. Restore SPP paid months if applicable
+    let updatedPaid = { ...paidMonthsState };
+    if (isSpp) {
+      const monthMatch = targetTx.pembayaran.match(/\(([^)]+)\)/);
+      if (monthMatch && monthMatch[1]) {
+        const monthNames = monthMatch[1].split(/[,&]/).map(m => m.trim());
+        monthNames.forEach(m => {
+          if (allMonths.includes(m)) {
+            delete updatedPaid[m];
+          }
+        });
+        setPaidMonthsState(updatedPaid);
+        try {
+          localStorage.setItem(`edu_student_paid_${studentKey}`, JSON.stringify(updatedPaid));
+        } catch (e) {}
+      }
+    }
+
+    // 3. Restore Bebas payment balance if applicable
+    let updatedBebas = { ...bebasTerbayarMap };
+    if (targetTx.type === 'bebas' || targetTx.itemId || !isSpp) {
+      if (targetTx.itemId) {
+        updatedBebas[targetTx.itemId!] = Math.max(0, (updatedBebas[targetTx.itemId!] || 0) - targetTx.tagihan);
+      } else {
+        const matchedBebas = bebasItems.find(item => targetTx.pembayaran.toLowerCase().includes(item.nama.toLowerCase()));
+        if (matchedBebas) {
+          updatedBebas[matchedBebas.id] = Math.max(0, (updatedBebas[matchedBebas.id] || 0) - targetTx.tagihan);
+        }
+      }
+      setBebasTerbayarMap(updatedBebas);
+      try {
+        localStorage.setItem(`edu_student_bebas_${studentKey}`, JSON.stringify(updatedBebas));
+      } catch (e) {}
+    }
+
+    // 4. Remove from global transaction list if callback exists
+    if (setTransaksiList) {
+      setTransaksiList(prev => prev.filter(t => t.id !== targetTx.id));
+    }
+  };
+
+
+
+  // Hapus Transaksi Spesifik Handler
+  const handleDeleteSingleTransaction = (txId: string) => {
+    const targetTx = studentTransactions.find(t => t.id === txId);
+    if (!targetTx) return;
+    setDeleteTargetTx(targetTx);
+  };
+
+  // Reset Semua Transaksi Dari Awal Handler
+  const handleResetAllTransactions = () => {
+    if (confirm('PERINGATAN: Apakah Anda yakin ingin mereset SELURUH riwayat transaksi dan status pembayaran siswa dari awal? Tindakan ini akan mengosongkan semua riwayat pembayaran dan mengembalikan status tagihan seperti semula.')) {
+      setStudentTransactions([]);
+      setPaidMonthsState({});
+      setBebasTerbayarMap({});
+      if (setTransaksiList) {
+        setTransaksiList([]);
+      }
+      try {
+        localStorage.setItem(`edu_student_tx_${studentKey}`, JSON.stringify([]));
+        localStorage.setItem(`edu_student_paid_${studentKey}`, JSON.stringify({}));
+        localStorage.setItem(`edu_student_bebas_${studentKey}`, JSON.stringify({}));
+      } catch (e) {}
+      alert('Semua riwayat transaksi berhasil di-reset dari awal.');
+    }
+  };
+
+  // Printable Receipt Modal State
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printReceiptData, setPrintReceiptData] = useState<{
+    noNota: string;
+    tahunAjaran: string;
+    nis: string;
+    nama: string;
+    namaIbu: string;
+    kelas: string;
+    items?: Array<{ id: string; uraian: string; jumlah: number }>;
+    pembayaranTitle?: string;
+    nominal?: number;
+    dibayar: number;
+    kembalian?: number;
+    tanggal: string;
+    penerima: string;
+  } | null>(null);
+
+  // Helper functions to manage receipt items dynamically
+  const handleAddReceiptItem = () => {
+    if (!printReceiptData) return;
+    const currentItems = (printReceiptData.items && printReceiptData.items.length > 0)
+      ? printReceiptData.items
+      : [{ id: '1', uraian: printReceiptData.pembayaranTitle || 'Pembayaran Keuangan', jumlah: printReceiptData.nominal || 100000 }];
+    
+    const newItem = {
+      id: `item-${Date.now()}`,
+      uraian: '',
+      jumlah: 0
+    };
+    setPrintReceiptData({
+      ...printReceiptData,
+      items: [...currentItems, newItem]
+    });
+  };
+
+  const handleUpdateReceiptItem = (id: string, field: 'uraian' | 'jumlah', val: any) => {
+    if (!printReceiptData) return;
+    const currentItems = (printReceiptData.items && printReceiptData.items.length > 0)
+      ? printReceiptData.items
+      : [{ id: '1', uraian: printReceiptData.pembayaranTitle || 'Pembayaran Keuangan', jumlah: printReceiptData.nominal || 100000 }];
+    
+    const updated = currentItems.map(item => {
+      if (item.id === id) {
+        return { ...item, [field]: field === 'jumlah' ? Number(val) || 0 : val };
+      }
+      return item;
+    });
+    setPrintReceiptData({
+      ...printReceiptData,
+      items: updated
+    });
+  };
+
+  const handleDeleteReceiptItem = (id: string) => {
+    if (!printReceiptData) return;
+    const currentItems = printReceiptData.items || [];
+    if (currentItems.length <= 1) return;
+    setPrintReceiptData({
+      ...printReceiptData,
+      items: currentItems.filter(item => item.id !== id)
+    });
+  };
+
+  // Computed receipt items, total nominal, and kembalian
+  const receiptItems = useMemo(() => {
+    if (!printReceiptData) return [];
+    if (printReceiptData.items && printReceiptData.items.length > 0) {
+      return printReceiptData.items;
+    }
+    return [
+      {
+        id: 'default-1',
+        uraian: printReceiptData.pembayaranTitle || 'Pembayaran Keuangan',
+        jumlah: printReceiptData.nominal || 100000
+      }
+    ];
+  }, [printReceiptData]);
+
+  const totalReceiptNominal = useMemo(() => {
+    return receiptItems.reduce((sum, item) => sum + (Number(item.jumlah) || 0), 0);
+  }, [receiptItems]);
+
+  const receiptKembalian = useMemo(() => {
+    if (!printReceiptData) return 0;
+    return Math.max(0, (printReceiptData.dibayar || 0) - totalReceiptNominal);
+  }, [printReceiptData, totalReceiptNominal]);
+
+  // Handle print receipt with fallbacks
+  const handlePrint = () => {
+    try {
+      window.print();
+    } catch (err) {
+      console.warn('Standard window.print() failed, trying iframe fallback:', err);
+      const printContent = document.getElementById('printable-receipt');
+      if (printContent) {
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentWindow?.document;
+        if (doc) {
+          doc.open();
+          doc.write(`
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Kwitansi Bukti Pembayaran Resmi</title>
+                <style>
+                  body { font-family: system-ui, -apple-system, sans-serif; padding: 20px; color: #1e293b; background: #fff; }
+                  .print\\:hidden { display: none !important; }
+                  .print\\:inline { display: inline !important; }
+                  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+                  th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; font-size: 12px; }
+                  th { background-color: #f1f5f9; font-weight: bold; }
+                  .text-right { text-align: right; }
+                  .text-center { text-align: center; }
+                  .font-bold { font-weight: bold; }
+                  .font-mono { font-family: monospace; }
+                  .flex { display: flex; justify-content: space-between; }
+                </style>
+              </head>
+              <body>
+                ${printContent.innerHTML}
+              </body>
+            </html>
+          `);
+          doc.close();
+          iframe.contentWindow?.focus();
+          setTimeout(() => {
+            iframe.contentWindow?.print();
+            setTimeout(() => {
+              if (document.body.contains(iframe)) {
+                document.body.removeChild(iframe);
+              }
+            }, 1000);
+          }, 300);
+        }
+      }
+    }
+  };
+
+  // Handle Download Receipt as HTML/PDF file
+  const handleDownloadReceipt = () => {
+    try {
+      const itemsHtml = receiptItems.map(item => `
+        <tr>
+          <td style="padding: 8px; border: 1px solid #cbd5e1;">${item.uraian || '-'}</td>
+          <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: right; font-family: monospace; font-weight: bold;">
+            Rp ${(Number(item.jumlah) || 0).toLocaleString('id-ID')}
+          </td>
+        </tr>
+      `).join('');
+
+      const htmlContent = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kwitansi ${printReceiptData.noNota} - ${printReceiptData.nama}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background-color: #f8fafc; color: #0f172a; margin: 0; padding: 20px; display: flex; justify-content: center; }
+    .card { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 24px; max-width: 550px; width: 100%; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
+    .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
+    .header h2 { margin: 0; font-size: 16px; font-weight: 800; text-transform: uppercase; }
+    .header p { margin: 4px 0 0 0; font-size: 11px; color: #64748b; }
+    .title { font-size: 12px; font-weight: bold; letter-spacing: 1px; margin-top: 8px; text-transform: uppercase; }
+    .row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; }
+    .label { color: #64748b; }
+    .value { font-weight: bold; color: #0f172a; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 12px; }
+    th { background: #f1f5f9; padding: 8px; text-align: left; border: 1px solid #cbd5e1; font-weight: bold; }
+    .summary { background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; font-size: 12px; margin-top: 12px; }
+    .summary-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+    .summary-row.total { font-weight: bold; font-size: 14px; color: #047857; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
+    .signatures { display: flex; justify-content: space-between; margin-top: 28px; font-size: 11px; text-align: center; }
+    .signature-box { width: 40%; }
+    .space { height: 45px; }
+    .btn-print { display: block; width: 100%; text-align: center; background: #059669; color: white; padding: 10px; border-radius: 8px; font-weight: bold; text-decoration: none; margin-top: 16px; cursor: pointer; border: none; }
+    @media print { .btn-print { display: none; } body { background: #fff; padding: 0; } .card { box-shadow: none; border: none; } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h2>SEKOLAH MENENGAH ATAS WORKSPACE 2026</h2>
+      <p>Jl. Pendidikan No. 45, Kebayoran Baru, Jakarta Selatan • Telp: (021) 7891234</p>
+      <div class="title">KWITANSI BUKTI PEMBAYARAN RESMI</div>
+    </div>
+    <div class="info">
+      <div class="row"><span class="label">No. Nota / Kwitansi</span><span class="value">${printReceiptData.noNota}</span></div>
+      <div class="row"><span class="label">Tahun Ajaran</span><span class="value">${printReceiptData.tahunAjaran}</span></div>
+      <div class="row"><span class="label">NIS & Nama Siswa</span><span class="value">${printReceiptData.nis} - ${printReceiptData.nama}</span></div>
+      <div class="row"><span class="label">Kelas / Nama Ibu</span><span class="value">${printReceiptData.kelas} / ${printReceiptData.namaIbu}</span></div>
+      <div class="row"><span class="label">Tanggal Transaksi</span><span class="value">${printReceiptData.tanggal}</span></div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Uraian Pembayaran</th>
+          <th style="text-align: right; width: 140px;">Jumlah (Rp)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemsHtml}
+      </tbody>
+    </table>
+    <div class="summary">
+      <div class="summary-row total">
+        <span>Total Tagihan:</span>
+        <span>Rp ${totalReceiptNominal.toLocaleString('id-ID')}</span>
+      </div>
+      <div class="summary-row">
+        <span>Jumlah Uang Diserahkan:</span>
+        <span>Rp ${(printReceiptData.dibayar || 0).toLocaleString('id-ID')}</span>
+      </div>
+      <div class="summary-row" style="color: #047857; font-weight: bold;">
+        <span>Uang Kembalian:</span>
+        <span>Rp ${receiptKembalian.toLocaleString('id-ID')}</span>
+      </div>
+    </div>
+    <div class="signatures">
+      <div class="signature-box">
+        <p>Siswa / Penyetor,</p>
+        <div class="space"></div>
+        <p><b>(${printReceiptData.nama})</b></p>
+      </div>
+      <div class="signature-box">
+        <p>Kasir Keuangan,</p>
+        <div class="space"></div>
+        <p><b>(${printReceiptData.penerima})</b></p>
+      </div>
+    </div>
+    <button class="btn-print" onclick="window.print()">Cetak / Simpan PDF Kwitansi</button>
+  </div>
+</body>
+</html>`;
+
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeName = printReceiptData.nama ? printReceiptData.nama.replace(/[^a-zA-Z0-9_]/g, '_') : 'Siswa';
+      link.setAttribute('download', `Kwitansi_${printReceiptData.noNota}_${safeName}.html`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Download receipt error:', err);
+      alert('Gagal mengunduh file kwitansi.');
+    }
+  };
+
+  // Handle Download Receipt as Image (PNG)
+  const handleDownloadReceiptAsImage = () => {
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      canvas.width = 750;
+      const itemsCount = receiptItems.length;
+      canvas.height = 720 + (itemsCount * 32);
+
+      // Background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Outer Border
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(16, 16, canvas.width - 32, canvas.height - 32);
+
+      // Header
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'extrabold 18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('SEKOLAH MENENGAH ATAS WORKSPACE 2026', canvas.width / 2, 55);
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('Jl. Pendidikan No. 45, Kebayoran Baru, Jakarta Selatan • Telp: (021) 7891234', canvas.width / 2, 76);
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('KWITANSI BUKTI PEMBAYARAN RESMI', canvas.width / 2, 102);
+
+      // Header Line
+      ctx.beginPath();
+      ctx.moveTo(40, 118);
+      ctx.lineTo(canvas.width - 40, 118);
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Receipt details
+      let y = 148;
+      const drawRow = (label: string, val: string) => {
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#64748b';
+        ctx.font = '13px sans-serif';
+        ctx.fillText(label, 45, y);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillText(val, canvas.width - 45, y);
+        y += 24;
+      };
+
+      drawRow('No. Nota / Kwitansi', printReceiptData.noNota);
+      drawRow('Tahun Ajaran', printReceiptData.tahunAjaran);
+      drawRow('NIS & Nama Siswa', `${printReceiptData.nis} - ${printReceiptData.nama}`);
+      drawRow('Kelas / Nama Ibu', `${printReceiptData.kelas} / ${printReceiptData.namaIbu}`);
+      drawRow('Tanggal Transaksi', printReceiptData.tanggal);
+
+      y += 8;
+
+      // Table Header
+      ctx.fillStyle = '#f1f5f9';
+      ctx.fillRect(40, y, canvas.width - 80, 32);
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(40, y, canvas.width - 80, 32);
+
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('Uraian Pembayaran', 55, y + 21);
+      ctx.textAlign = 'right';
+      ctx.fillText('Jumlah (Rp)', canvas.width - 55, y + 21);
+
+      y += 32;
+
+      // Items
+      receiptItems.forEach(item => {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(40, y, canvas.width - 80, 32);
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.strokeRect(40, y, canvas.width - 80, 32);
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '13px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(item.uraian || '-', 55, y + 21);
+
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 13px monospace';
+        ctx.fillText(`Rp ${(Number(item.jumlah) || 0).toLocaleString('id-ID')}`, canvas.width - 55, y + 21);
+
+        y += 32;
+      });
+
+      y += 16;
+
+      // Summary Box
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(40, y, canvas.width - 80, 100);
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.strokeRect(40, y, canvas.width - 80, 100);
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText('Total Tagihan:', 55, y + 30);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#047857';
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText(`Rp ${totalReceiptNominal.toLocaleString('id-ID')}`, canvas.width - 55, y + 30);
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#475569';
+      ctx.font = '13px sans-serif';
+      ctx.fillText('Jumlah Uang Diserahkan:', 55, y + 58);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText(`Rp ${(printReceiptData.dibayar || 0).toLocaleString('id-ID')}`, canvas.width - 55, y + 58);
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#047857';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('Uang Kembalian:', 55, y + 84);
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText(`Rp ${receiptKembalian.toLocaleString('id-ID')}`, canvas.width - 55, y + 84);
+
+      y += 135;
+
+      // Signatures
+      ctx.fillStyle = '#334155';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Siswa / Penyetor,', 160, y);
+      ctx.fillText('Kasir Keuangan,', canvas.width - 160, y);
+
+      y += 55;
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText(`(${printReceiptData.nama})`, 160, y);
+      ctx.fillText(`(${printReceiptData.penerima})`, canvas.width - 160, y);
+
+      const safeName = printReceiptData.nama ? printReceiptData.nama.replace(/[^a-zA-Z0-9_]/g, '_') : 'Siswa';
+      const link = document.createElement('a');
+      link.download = `Kwitansi_${printReceiptData.noNota}_${safeName}.png`;
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Download receipt image error:', err);
+      alert('Gagal mengunduh gambar kwitansi.');
+    }
+  };
+
+  // Re-open receipt modal for any previous transaction
+  const handleReprintTransaction = (tx: { id: string; pembayaran: string; tagihan: number; tanggal: string }) => {
+    const receipt = {
+      noNota: `KW-${Math.floor(100000 + Math.random() * 900000)}`,
+      tahunAjaran,
+      nis: selectedSiswa ? selectedSiswa.nis : '20261001',
+      nama: selectedSiswa ? selectedSiswa.nama : 'Ahmad Rizky Pratama',
+      namaIbu: selectedSiswa ? (selectedSiswa.namaIbu || selectedSiswa.namaWali) : 'Ibnu Al haytam / Budi Pratama',
+      kelas: selectedSiswa ? selectedSiswa.kelas : 'Kelas 7',
+      items: [
+        {
+          id: `item-${Date.now()}`,
+          uraian: tx.pembayaran,
+          jumlah: tx.tagihan
+        }
+      ],
+      pembayaranTitle: tx.pembayaran,
+      nominal: tx.tagihan,
+      dibayar: tx.tagihan,
+      kembalian: 0,
+      tanggal: tx.tanggal,
+      penerima: 'Bendahara Sekolah'
+    };
+    setPrintReceiptData(receipt);
+    setShowPrintModal(true);
+  };
+
+  // Fonnte & Sheets Export States
   const [fonnteToken, setFonnteToken] = useState(INITIAL_FONNTE_CONFIG.apiKey);
   const [showFonnteConfigModal, setShowFonnteConfigModal] = useState(false);
   const [waSendingStatus, setWaSendingStatus] = useState<string | null>(null);
-
-  // Google Sheets Export State
   const [exportingSheets, setExportingSheets] = useState(false);
   const [exportResult, setExportResult] = useState<{ success: boolean; url?: string; message?: string } | null>(null);
 
-  // New Payment Modal
-  const [showPayModal, setShowPayModal] = useState(false);
-  const [payTagihanId, setPayTagihanId] = useState<string>('');
-  const [payNominal, setPayNominal] = useState<number>(500000);
-  const [payMetode, setPayMetode] = useState<'Cash / Kasir' | 'Transfer Bank' | 'QRIS'>('QRIS');
-
-  // Calculations
-  const filteredTagihan = tagihanList.filter(t => {
-    const matchTipe = filterTipe === 'Semua' || t.tipe === filterTipe;
-    const matchSearch = t.siswaNama.toLowerCase().includes(search.toLowerCase()) || 
-                        t.namaTagihan.toLowerCase().includes(search.toLowerCase()) ||
-                        t.kelas.toLowerCase().includes(search.toLowerCase());
-    return matchTipe && matchSearch;
+  // Fee Rates Settings View States
+  const [feeCategoryFilter, setFeeCategoryFilter] = useState<'semua' | 'spp' | 'ukt' | 'ekskul'>('semua');
+  const [showTarifModal, setShowTarifModal] = useState(false);
+  const [editingTarif, setEditingTarif] = useState<TarifBiaya | null>(null);
+  const [tarifForm, setTarifForm] = useState<{
+    namaBiaya: string;
+    tipe: TipeKeuangan;
+    tingkatKelas: string;
+    nominal: number;
+    periode: 'Bulanan' | 'Sekali Bayar (Uang Masuk / UKT)' | 'Per Semester';
+    keterangan: string;
+    status: 'Aktif' | 'Nonaktif';
+  }>({
+    namaBiaya: '',
+    tipe: 'spp',
+    tingkatKelas: 'Kelas 7',
+    nominal: 100000,
+    periode: 'Bulanan',
+    keterangan: '',
+    status: 'Aktif'
   });
 
-  const totalNominal = filteredTagihan.reduce((a, b) => a + b.nominal, 0);
-  const totalTerbayar = filteredTagihan.reduce((a, b) => a + b.terbayar, 0);
-  const totalSisa = totalNominal - totalTerbayar;
+  // Modal Generator Tagihan Massal
+  const [showGeneratorModal, setShowGeneratorModal] = useState(false);
+  const [genSelectedTarifId, setGenSelectedTarifId] = useState<string>('');
+  const [genBulanTahun, setGenBulanTahun] = useState<string>('Agustus 2026');
+  const [genJatuhTempo, setGenJatuhTempo] = useState<string>('2026-08-10');
+  const [genSuccessMsg, setGenSuccessMsg] = useState<string | null>(null);
 
-  // WHATSAPP NOTIFICATION HANDLER (FONNTE API)
-  const handleSendWaDeadlineNotice = async (tagihan: TagihanKeuangan) => {
-    const sisa = tagihan.nominal - tagihan.terbayar;
-    const targetPhone = tagihan.noWaOrangTua || '081234567890';
+  // Search Submit Handler
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAppliedSearch(searchKey);
+  };
 
-    const message = `Yth. Orang Tua/Wali dari ${tagihan.siswaNama} (${tagihan.kelas}),\n\n` +
-      `Memberitahukan bahwa tagihan *${tagihan.namaTagihan}* memiliki sisa tunggakan sebesar *Rp ${sisa.toLocaleString('id-ID')}* ` +
-      `dengan tenggat jatuh tempo *${tagihan.jatuhTempo}*.\n\n` +
-      `Mohon segera melakukan penyelesaian pembayaran melalui Kasir Sekolah atau Transfer/QRIS. Terima kasih.\n\n` +
-      `_Pesan Otomatis Sistem Keuangan Sekolah_`;
+  // Month Selection Toggle
+  const toggleMonthSelection = (m: string) => {
+    if (paidMonthsState[m]) return; // Already paid
+    setSelectedMonths(prev => 
+      prev.includes(m) ? prev.filter(item => item !== m) : [...prev, m]
+    );
+  };
 
-    setWaSendingStatus(`Mengirim notifikasi WA ke ${tagihan.siswaNama} (${targetPhone})...`);
-    const res = await sendFonnteMessage(targetPhone, message, fonnteToken);
+  // Process Payment Submission
+  const handleProcessPayment = () => {
+    const studentName = selectedSiswa ? selectedSiswa.nama : '';
+    const todayFormatted = new Date(transactionDate).toLocaleDateString('id-ID', {
+      day: '2-digit', month: 'long', year: 'numeric'
+    });
+    const dateShort = new Date(transactionDate).toLocaleDateString('id-ID', {
+      day: '2-digit', month: '2-digit', year: '2-digit'
+    });
 
-    if (res.success) {
-      setWaSendingStatus(`✓ Berhasil terkirim ke WhatsApp Orang Tua (${targetPhone}) via Fonnte!`);
+    if (quickPayType === 'spp') {
+      const totalToPay = selectedMonths.length > 0 ? selectedMonths.length * monthlyFee : monthlyFee;
+
+      if (inputDibayar < totalToPay) {
+        alert(`Jumlah bayar (Rp ${inputDibayar.toLocaleString('id-ID')}) kurang dari total tagihan (Rp ${totalToPay.toLocaleString('id-ID')})`);
+        return;
+      }
+
+      const itemTitle = selectedMonths.length > 0 
+        ? `SPP - T.A ${tahunAjaran} (${selectedMonths.join(', ')})`
+        : `SPP - T.A ${tahunAjaran} (Bulanan)`;
+
+      if (selectedMonths.length > 0) {
+        const newPaid = { ...paidMonthsState };
+        selectedMonths.forEach(m => {
+          newPaid[m] = dateShort;
+        });
+        setPaidMonthsState(newPaid);
+      }
+
+      const txUniqueId = `tx-${Date.now()}`;
+      const newTx = {
+        id: txUniqueId,
+        pembayaran: itemTitle,
+        tagihan: totalToPay,
+        tanggal: todayFormatted,
+        type: 'spp' as const
+      };
+      setStudentTransactions(prev => [newTx, ...prev]);
+
+      if (setTransaksiList) {
+        const globalTrx: TransaksiKeuangan = {
+          id: txUniqueId,
+          tagihanId: `tag-${Date.now()}`,
+          siswaNama: studentName,
+          tipe: 'spp',
+          nominal: totalToPay,
+          tanggal: new Date().toLocaleString('id-ID'),
+          metodePembayaran: 'Cash / Kasir',
+          penerima: 'Kasir / Bendahara Sekolah'
+        };
+        setTransaksiList(prev => [globalTrx, ...prev]);
+      }
+
+      const receipt = {
+        noNota: `KW-${Math.floor(100000 + Math.random() * 900000)}`,
+        tahunAjaran,
+        nis: selectedSiswa ? selectedSiswa.nis : '',
+        nama: studentName,
+        namaIbu: selectedSiswa ? (selectedSiswa.namaIbu || selectedSiswa.namaWali) : '',
+        kelas: selectedSiswa ? selectedSiswa.kelas : '',
+        items: [{ id: `item-${Date.now()}`, uraian: itemTitle, jumlah: totalToPay }],
+        pembayaranTitle: itemTitle,
+        nominal: totalToPay,
+        dibayar: inputDibayar,
+        kembalian: Math.max(0, inputDibayar - totalToPay),
+        tanggal: todayFormatted,
+        penerima: 'Bendahara Sekolah'
+      };
+
+      setPrintReceiptData(receipt);
+      setShowPrintModal(true);
+      setSelectedMonths([]);
+
+      if (selectedSiswa && selectedSiswa.teleponWali) {
+        const msg = `Yth. Ibu/Bapak Wali dari ${studentName},\n\nTerima kasih! Pembayaran ${itemTitle} sebesar Rp ${totalToPay.toLocaleString('id-ID')} telah DITERIMA oleh Kasir Sekolah pada ${todayFormatted}.\nKembalian: Rp ${Math.max(0, inputDibayar - totalToPay).toLocaleString('id-ID')}.\n\n_Tata Usaha & Keuangan Sekolah_`;
+        sendFonnteMessage(selectedSiswa.teleponWali, msg, fonnteToken);
+      }
     } else {
-      setWaSendingStatus(`Notifikasi WA terkirim (Simulasi/Mode Aktif). Detail: ${res.message}`);
+      const targetTarif = (quickPayType === 'ukt' ? uktTarifs : ekskulTarifs).find(t => t.id === quickPayItemId) || (quickPayType === 'ukt' ? uktTarifs[0] : ekskulTarifs[0]);
+      const payNominal = inputTotal > 0 ? inputTotal : (targetTarif ? targetTarif.nominal : 100000);
+
+      if (inputDibayar < payNominal) {
+        alert(`Jumlah bayar (Rp ${inputDibayar.toLocaleString('id-ID')}) kurang dari tagihan (Rp ${payNominal.toLocaleString('id-ID')})`);
+        return;
+      }
+
+      const itemName = targetTarif ? targetTarif.namaBiaya : (quickPayType === 'ukt' ? 'UKT / Uang Masuk' : 'Ekskul / Kegiatan');
+      const itemId = targetTarif ? targetTarif.id : quickPayType;
+      const itemTitle = `${itemName} (T.A ${tahunAjaran})`;
+
+      setBebasTerbayarMap(prev => {
+        const current = prev[itemId] || 0;
+        const maxTotal = targetTarif ? targetTarif.nominal : payNominal;
+        return { ...prev, [itemId]: Math.min(maxTotal, current + payNominal) };
+      });
+
+      const txUniqueId = `tx-${Date.now()}`;
+      const newTx = {
+        id: txUniqueId,
+        pembayaran: itemTitle,
+        tagihan: payNominal,
+        tanggal: todayFormatted,
+        itemId,
+        type: 'bebas' as const
+      };
+      setStudentTransactions(prev => [newTx, ...prev]);
+
+      if (setTransaksiList) {
+        const globalTrx: TransaksiKeuangan = {
+          id: txUniqueId,
+          tagihanId: `tag-${Date.now()}`,
+          siswaNama: studentName,
+          tipe: quickPayType,
+          nominal: payNominal,
+          tanggal: new Date().toLocaleString('id-ID'),
+          metodePembayaran: 'Cash / Kasir',
+          penerima: 'Kasir / Bendahara Sekolah'
+        };
+        setTransaksiList(prev => [globalTrx, ...prev]);
+      }
+
+      const receipt = {
+        noNota: `KW-${Math.floor(100000 + Math.random() * 900000)}`,
+        tahunAjaran,
+        nis: selectedSiswa ? selectedSiswa.nis : '',
+        nama: studentName,
+        namaIbu: selectedSiswa ? (selectedSiswa.namaIbu || selectedSiswa.namaWali) : '',
+        kelas: selectedSiswa ? selectedSiswa.kelas : '',
+        items: [{ id: `item-${Date.now()}`, uraian: itemTitle, jumlah: payNominal }],
+        pembayaranTitle: itemTitle,
+        nominal: payNominal,
+        dibayar: inputDibayar,
+        kembalian: Math.max(0, inputDibayar - payNominal),
+        tanggal: todayFormatted,
+        penerima: 'Bendahara Sekolah'
+      };
+
+      setPrintReceiptData(receipt);
+      setShowPrintModal(true);
+
+      if (selectedSiswa && selectedSiswa.teleponWali) {
+        const msg = `Yth. Ibu/Bapak Wali dari ${studentName},\n\nTerima kasih! Pembayaran ${itemTitle} sebesar Rp ${payNominal.toLocaleString('id-ID')} telah DITERIMA oleh Kasir Sekolah pada ${todayFormatted}.\nKembalian: Rp ${Math.max(0, inputDibayar - payNominal).toLocaleString('id-ID')}.\n\n_Tata Usaha & Keuangan Sekolah_`;
+        sendFonnteMessage(selectedSiswa.teleponWali, msg, fonnteToken);
+      }
     }
-    setTimeout(() => setWaSendingStatus(null), 5000);
   };
 
-  const handleSendWaPaymentReceipt = async (siswaNama: string, tagihanNama: string, nominalPaid: number, noWa?: string) => {
-    const targetPhone = noWa || '081234567890';
-    const message = `Yth. Orang Tua/Wali dari ${siswaNama},\n\n` +
-      `Terima kasih! Pembayaran sebesar *Rp ${nominalPaid.toLocaleString('id-ID')}* untuk tagihan *${tagihanNama}* ` +
-      `telah BERHASIL DITERIMA oleh Bendahara Sekolah pada ${new Date().toLocaleString('id-ID')}.\n\n` +
-      `Status Tagihan: *LUNAS*.\n\n` +
-      `_Salam hangat, Tata Usaha & Keuangan Sekolah_`;
+  // Process Bebas Payment
+  const handleProcessBebasPayment = (itemId: string, namaItem: string) => {
+    const payNominal = bebasPayInput[itemId] || 0;
+    if (payNominal <= 0) return;
 
-    await sendFonnteMessage(targetPhone, message, fonnteToken);
+    setBebasTerbayarMap(prev => {
+      const current = prev[itemId] || 0;
+      const targetItem = bebasItems.find(i => i.id === itemId);
+      const maxTotal = targetItem ? targetItem.total : payNominal;
+      return { ...prev, [itemId]: Math.min(maxTotal, current + payNominal) };
+    });
+
+    const todayFormatted = new Date().toLocaleDateString('id-ID', {
+      day: '2-digit', month: 'long', year: 'numeric'
+    });
+
+    const txUniqueId = `tx-${Date.now()}`;
+
+    const newTx = {
+      id: txUniqueId,
+      pembayaran: `${namaItem} (T.A ${tahunAjaran})`,
+      tagihan: payNominal,
+      tanggal: todayFormatted,
+      itemId,
+      type: 'bebas' as const
+    };
+    setStudentTransactions(prev => [newTx, ...prev]);
+
+    // Add to global transaksiList
+    const studentName = selectedSiswa ? selectedSiswa.nama : '';
+    if (setTransaksiList) {
+      const globalTrx: TransaksiKeuangan = {
+        id: txUniqueId,
+        tagihanId: `tag-${Date.now()}`,
+        siswaNama: studentName,
+        tipe: 'ukt',
+        nominal: payNominal,
+        tanggal: new Date().toLocaleString('id-ID'),
+        metodePembayaran: 'Cash / Kasir',
+        penerima: 'Kasir / Bendahara Sekolah'
+      };
+      setTransaksiList(prev => [globalTrx, ...prev]);
+    }
+    const receipt = {
+      noNota: `KW-${Math.floor(100000 + Math.random() * 900000)}`,
+      tahunAjaran,
+      nis: selectedSiswa ? selectedSiswa.nis : '',
+      nama: studentName,
+      namaIbu: selectedSiswa ? (selectedSiswa.namaIbu || selectedSiswa.namaWali) : '',
+      kelas: selectedSiswa ? selectedSiswa.kelas : '',
+      items: [
+        {
+          id: `item-${Date.now()}`,
+          uraian: `${namaItem} (T.A ${tahunAjaran})`,
+          jumlah: payNominal
+        }
+      ],
+      pembayaranTitle: `${namaItem} (T.A ${tahunAjaran})`,
+      nominal: payNominal,
+      dibayar: payNominal,
+      kembalian: 0,
+      tanggal: todayFormatted,
+      penerima: 'Bendahara Sekolah'
+    };
+    setPrintReceiptData(receipt);
+    setShowPrintModal(true);
   };
 
-  // GOOGLE SHEETS EXPORT HANDLER
+  // Calculate unpaid SPP sum
+  const unpaidMonthsCount = allMonths.filter(m => !paidMonthsState[m]).length;
+  const totalSisaBulanan = unpaidMonthsCount * monthlyFee;
+
+  // Fee Rates CRUD Handlers
+  const handleOpenAddTarif = () => {
+    setEditingTarif(null);
+    setTarifForm({
+      namaBiaya: '',
+      tipe: 'spp',
+      tingkatKelas: 'Kelas 7',
+      nominal: 100000,
+      periode: 'Bulanan',
+      keterangan: '',
+      status: 'Aktif'
+    });
+    setShowTarifModal(true);
+  };
+
+  const handleOpenEditTarif = (tarif: TarifBiaya) => {
+    setEditingTarif(tarif);
+    setTarifForm({
+      namaBiaya: tarif.namaBiaya,
+      tipe: tarif.tipe,
+      tingkatKelas: tarif.tingkatKelas,
+      nominal: tarif.nominal,
+      periode: tarif.periode,
+      keterangan: tarif.keterangan || '',
+      status: tarif.status
+    });
+    setShowTarifModal(true);
+  };
+
+  const handleSaveTarif = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tarifForm.namaBiaya.trim() || tarifForm.nominal <= 0) {
+      alert('Mohon isi nama biaya dan nominal tarif dengan benar.');
+      return;
+    }
+
+    if (editingTarif) {
+      // Update
+      setTarifList(prev => prev.map(t => t.id === editingTarif.id ? { ...t, ...tarifForm } : t));
+    } else {
+      // Create
+      const newTarif: TarifBiaya = {
+        id: `trf-${Date.now()}`,
+        ...tarifForm
+      };
+      setTarifList(prev => [newTarif, ...prev]);
+    }
+
+    setShowTarifModal(false);
+  };
+
+  const handleDeleteTarif = (id: string) => {
+    if (confirm('Apakah Anda yakin ingin menghapus tarif biaya ini?')) {
+      setTarifList(prev => prev.filter(t => t.id !== id));
+    }
+  };
+
+  const handleToggleTarifStatus = (id: string) => {
+    setTarifList(prev => prev.map(t => {
+      if (t.id === id) {
+        return { ...t, status: t.status === 'Aktif' ? 'Nonaktif' : 'Aktif' };
+      }
+      return t;
+    }));
+  };
+
+  // Mass Tagihan Generator Handler
+  const handleRunMassGenerator = (e: React.FormEvent) => {
+    e.preventDefault();
+    const selectedTarif = tarifList.find(t => t.id === genSelectedTarifId);
+    if (!selectedTarif) {
+      alert('Pilih tarif biaya yang ingin digenerate.');
+      return;
+    }
+
+    const targetStudents = siswaList.length > 0 ? siswaList : [
+      { id: 'sis-01', nis: '20261001', nama: 'Ahmad Rizky Pratama', kelas: 'X-IPA-1' },
+      { id: 'sis-02', nis: '20261002', nama: 'Siti Nurhaliza', kelas: 'X-IPA-1' },
+      { id: 'sis-03', nis: '20261003', nama: 'Bagus Dewantara', kelas: 'XI-IPA-2' }
+    ];
+
+    let createdCount = 0;
+    const newBills: TagihanKeuangan[] = [];
+
+    targetStudents.forEach(siswa => {
+      const billId = `tag-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const newBill: TagihanKeuangan = {
+        id: billId,
+        siswaId: siswa.id,
+        siswaNama: siswa.nama,
+        kelas: siswa.kelas || 'X-IPA-1',
+        tipe: selectedTarif.tipe,
+        namaTagihan: `${selectedTarif.namaBiaya} (${genBulanTahun})`,
+        bulanTahun: genBulanTahun,
+        nominal: selectedTarif.nominal,
+        terbayar: 0,
+        status: 'Belum Lunas',
+        jatuhTempo: genJatuhTempo
+      };
+      newBills.push(newBill);
+      createdCount++;
+    });
+
+    setTagihanList(prev => [...newBills, ...prev]);
+    setGenSuccessMsg(`Berhasil membuat ${createdCount} tagihan ${selectedTarif.namaBiaya} untuk seluruh siswa!`);
+    
+    setTimeout(() => {
+      setShowGeneratorModal(false);
+      setGenSuccessMsg(null);
+    }, 2000);
+  };
+
+  // WhatsApp Fonnte Notification Handlers
+  const handleSendWaReminder = async (tagihan: TagihanKeuangan) => {
+    const s = siswaList.find(item => item.id === tagihan.siswaId || item.nis === tagihan.siswaNama || item.nama === tagihan.siswaNama);
+    const phone = s?.teleponWali || '081234567890';
+    const sisa = tagihan.nominal - tagihan.terbayar;
+    const message = `Yth. Bapak/Ibu Wali dari *${tagihan.siswaNama}* (${tagihan.kelas}),\n\n📌 *PENGINGAT PEMBAYARAN SEKOLAH*\nTerdapat tagihan *${tagihan.namaTagihan}* sebesar *Rp ${tagihan.nominal.toLocaleString('id-ID')}* (Sisa belum dibayar: *Rp ${sisa.toLocaleString('id-ID')}*).\n\nMohon untuk segera melakukan pembayaran ke loket kasir sekolah atau transfer ke rekening resmi.\n\nTerima kasih.\n_Bendahara & Tata Usaha Sekolah_`;
+    
+    setWaSendingStatus(`Mengirim WA Tagihan ke ${tagihan.siswaNama} (${phone})...`);
+    const res = await sendFonnteMessage(phone, message, fonnteToken);
+    setWaSendingStatus(res.message);
+    setTimeout(() => setWaSendingStatus(null), 4000);
+  };
+
+  const handleSendWaConfirmation = async (tagihan: TagihanKeuangan) => {
+    const s = siswaList.find(item => item.id === tagihan.siswaId || item.nis === tagihan.siswaNama || item.nama === tagihan.siswaNama);
+    const phone = s?.teleponWali || '081234567890';
+    const message = `Yth. Bapak/Ibu Wali dari *${tagihan.siswaNama}* (${tagihan.kelas}),\n\n✅ *KONFIRMASI PEMBAYARAN SEKOLAH*\nKami informasikan bahwa pembayaran untuk *${tagihan.namaTagihan}* sebesar *Rp ${tagihan.terbayar > 0 ? tagihan.terbayar.toLocaleString('id-ID') : tagihan.nominal.toLocaleString('id-ID')}* telah *LUNAS* dan tercatat resmi di kasir sekolah.\n\nTerima kasih atas kedisiplinan pembayarannya.\n_Bendahara & Tata Usaha Sekolah_`;
+    
+    setWaSendingStatus(`Mengirim WA Konfirmasi Lunas ke ${tagihan.siswaNama} (${phone})...`);
+    const res = await sendFonnteMessage(phone, message, fonnteToken);
+    setWaSendingStatus(res.message);
+    setTimeout(() => setWaSendingStatus(null), 4000);
+  };
+
+  // Google Sheets Export
   const handleExportGoogleSheets = async () => {
     setExportingSheets(true);
     setExportResult(null);
 
     const columns = [
-      'ID Tagihan', 
-      'Nama Siswa', 
-      'Kelas', 
-      'Tipe Keuangan', 
-      'Nama Tagihan', 
-      'Nominal Tagihan (Rp)', 
-      'Total Terbayar (Rp)', 
-      'Sisa Tunggakan (Rp)', 
-      'Status Pembayaran', 
-      'Jatuh Tempo'
+      'ID Tagihan', 'Nama Siswa', 'Kelas', 'Tipe Keuangan', 'Nama Tagihan', 
+      'Nominal Tagihan (Rp)', 'Total Terbayar (Rp)', 'Sisa Tunggakan (Rp)', 'Status'
     ];
-
     const rows = tagihanList.map(t => [
-      t.id,
-      t.siswaNama,
-      t.kelas,
-      t.tipe.toUpperCase(),
-      t.namaTagihan,
-      t.nominal,
-      t.terbayar,
-      t.nominal - t.terbayar,
-      t.status,
-      t.jatuhTempo
+      t.id, t.siswaNama, t.kelas, t.tipe.toUpperCase(), t.namaTagihan,
+      t.nominal, t.terbayar, t.nominal - t.terbayar, t.status
     ]);
 
     try {
@@ -143,343 +1276,1691 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
           rows
         })
       });
-
       const data = await res.json();
       if (data.success && data.spreadsheetUrl) {
-        setExportResult({
-          success: true,
-          url: data.spreadsheetUrl,
-          message: 'Berhasil membuat Google Spreadsheet di Google Drive!'
-        });
+        setExportResult({ success: true, url: data.spreadsheetUrl, message: 'Berhasil membuat Google Spreadsheet di Drive!' });
       } else {
-        setExportResult({
-          success: false,
-          message: data.message || 'Gagal mengekspor ke Google Sheets.'
-        });
+        setExportResult({ success: false, message: data.message || 'Gagal mengekspor ke Google Sheets.' });
       }
-    } catch (err: any) {
-      console.error(err);
-      setExportResult({
-        success: false,
-        message: 'Gagal menghubungkan ke server Google Sheets API.'
-      });
+    } catch (err) {
+      setExportResult({ success: false, message: 'Gagal terhubung ke API Google Sheets.' });
     } finally {
       setExportingSheets(false);
     }
   };
 
-  // Submit Payment
-  const handlePaymentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const tagihan = tagihanList.find(t => t.id === payTagihanId);
-    if (!tagihan) return;
-
-    const newTerbayar = tagihan.terbayar + Number(payNominal);
-    const newStatus = newTerbayar >= tagihan.nominal ? 'Lunas' : 'Dicicil';
-
-    // Update Tagihan
-    setTagihanList(prev => prev.map(t => t.id === payTagihanId ? {
-      ...t,
-      terbayar: newTerbayar,
-      status: newStatus
-    } : t));
-
-    // Add Transaksi
-    const newTrx: TransaksiKeuangan = {
-      id: `trx-${Date.now()}`,
-      tagihanId: payTagihanId,
-      siswaNama: tagihan.siswaNama,
-      tipe: tagihan.tipe,
-      nominal: Number(payNominal),
-      tanggal: new Date().toLocaleString('id-ID'),
-      metodePembayaran: payMetode,
-      penerima: 'Bendahara Sekolah'
-    };
-
-    setTransaksiList(prev => [newTrx, ...prev]);
-
-    // Send Automated WA Receipt via Fonnte
-    handleSendWaPaymentReceipt(tagihan.siswaNama, tagihan.namaTagihan, Number(payNominal), tagihan.noWaOrangTua);
-
-    setShowPayModal(false);
-    alert('Pembayaran berhasil dicatat dan notifikasi bukti terkirim otomatis ke WhatsApp Orang Tua via Fonnte!');
-  };
+  // Filtered Tarif List
+  const filteredTarifList = useMemo(() => {
+    if (feeCategoryFilter === 'semua') return tarifList;
+    return tarifList.filter(t => t.tipe === feeCategoryFilter);
+  }, [tarifList, feeCategoryFilter]);
 
   return (
-    <div className="space-y-6">
-      
-      {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+    <div className="space-y-6 text-slate-100">
+
+      {/* TOP HEADER & NAVIGATION SUBTABS */}
+      <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <Wallet className="w-5 h-5 text-emerald-600" /> Keuangan Sekolah (SPP, UKT & Ekskul)
+          <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
+            <Wallet className="w-6 h-6 text-emerald-400" />
+            Manajemen Keuangan Sekolah & Kasir
           </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Manajemen tagihan, penerimaan kas, notifikasi WhatsApp Fonnte otomatis, dan ekspor spreadsheet terintegrasi Google Drive.
+          <p className="text-xs text-slate-400 mt-1">
+            Modul transaksi kasir SPP, iuran UKT/Uang Masuk, setting tarif biaya, kwitansi, dan ekspor rekap ke Google Drive.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Main 3 Navigation Subtabs */}
+          <div className="bg-[#181818] p-1 rounded-xl border border-slate-800 flex items-center">
+            <button
+              onClick={() => handleTabChange('pembayaran')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'pembayaran' 
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <CreditCard className="w-3.5 h-3.5" /> Pembayaran Siswa
+            </button>
+
+            <button
+              onClick={() => handleTabChange('pengaturan_biaya')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'pengaturan_biaya' 
+                  ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5 text-amber-300" /> Pengaturan Tarif Biaya
+            </button>
+
+            <button
+              onClick={() => handleTabChange('rekap')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'rekap' 
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Rekap & Fonnte WA
+            </button>
+          </div>
+
           <button
             onClick={() => setShowFonnteConfigModal(true)}
-            className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-xs transition-all flex items-center gap-2 border border-slate-300"
+            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700/60 transition-colors"
+            title="Pengaturan Gateway WA Fonnte"
           >
-            <Settings className="w-4 h-4 text-emerald-600" /> Setting Fonnte WA API
-          </button>
-
-          <button
-            onClick={handleExportGoogleSheets}
-            disabled={exportingSheets}
-            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-2 shadow-md shadow-emerald-500/20"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            {exportingSheets ? 'Mengekspor ke Google Drive...' : 'Ekspor ke Google Sheets'}
+            <Settings className="w-4 h-4 text-emerald-400" />
           </button>
         </div>
       </div>
 
-      {/* WhatsApp Sending Status Banner */}
-      {waSendingStatus && (
-        <div className="p-4 bg-emerald-950/90 border border-emerald-500/50 rounded-2xl text-emerald-200 text-xs font-bold flex items-center gap-3 shadow-lg animate-pulse">
-          <MessageSquare className="w-5 h-5 text-emerald-400 shrink-0" />
-          <span>{waSendingStatus}</span>
-        </div>
-      )}
+      {/* SUBTAB 1: PEMBAYARAN SISWA (MAIN KASIR SPP & BEBAS) */}
+      {activeTab === 'pembayaran' && (
+        <div className="space-y-6">
 
-      {/* Export Result Banner */}
-      {exportResult && (
-        <div className={`p-4 rounded-2xl text-xs font-bold border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
-          exportResult.success
-            ? 'bg-emerald-950 text-emerald-200 border-emerald-800'
-            : 'bg-rose-950 text-rose-200 border-rose-800'
-        }`}>
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-            <span>{exportResult.message}</span>
-          </div>
+          {/* 1. FILTER DATA PEMBAYARAN SISWA */}
+          <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-lg space-y-3">
+            <h3 className="text-sm font-bold text-white tracking-wide border-b border-slate-800 pb-2">
+              Filter Data Pembayaran Siswa
+            </h3>
 
-          {exportResult.url && (
-            <a
-              href={exportResult.url}
-              target="_blank"
-              rel="noreferrer"
-              className="px-3.5 py-2 bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs hover:bg-emerald-300 transition-all flex items-center gap-1.5 flex-shrink-0"
-            >
-              <ExternalLink className="w-4 h-4" /> Buka Google Spreadsheet
-            </a>
-          )}
-        </div>
-      )}
-
-      {/* Financial Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <span className="text-xs font-bold uppercase text-slate-400">Total Nominal Tagihan</span>
-          <div className="text-2xl font-extrabold text-slate-900 mt-2">
-            Rp {totalNominal.toLocaleString('id-ID')}
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <span className="text-xs font-bold uppercase text-emerald-600">Total Terbayar (Kas Masuk)</span>
-          <div className="text-2xl font-extrabold text-emerald-600 mt-2">
-            Rp {totalTerbayar.toLocaleString('id-ID')}
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <span className="text-xs font-bold uppercase text-amber-600">Total Sisa Tunggakan Siswa</span>
-          <div className="text-2xl font-extrabold text-amber-600 mt-2">
-            Rp {totalSisa.toLocaleString('id-ID')}
-          </div>
-        </div>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-        <div className="flex flex-1 items-center gap-3 w-full">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Cari nama siswa, kelas, atau nama tagihan..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-400" />
-            <select
-              value={filterTipe}
-              onChange={e => setFilterTipe(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-800"
-            >
-              <option value="Semua">Semua Tipe</option>
-              <option value="spp">SPP Bulanan</option>
-              <option value="ukt">UKT / Uang Gedung</option>
-              <option value="ekskul">Ekskul & Kegiatan</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Tagihan Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-600">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold uppercase tracking-wider text-[11px]">
-              <tr>
-                <th className="px-4 py-3">Siswa & Kelas</th>
-                <th className="px-4 py-3">Tipe</th>
-                <th className="px-4 py-3">Nama Tagihan</th>
-                <th className="px-4 py-3">Nominal Tagihan</th>
-                <th className="px-4 py-3">Terbayar</th>
-                <th className="px-4 py-3">Sisa</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredTagihan.map(t => {
-                const sisa = t.nominal - t.terbayar;
-                return (
-                  <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="font-bold text-slate-900">{t.siswaNama}</div>
-                      <div className="text-[10px] text-slate-400">{t.kelas}</div>
-                    </td>
-                    <td className="px-4 py-3 font-semibold uppercase">{t.tipe}</td>
-                    <td className="px-4 py-3">{t.namaTagihan}</td>
-                    <td className="px-4 py-3 font-mono font-bold text-slate-900">Rp {t.nominal.toLocaleString('id-ID')}</td>
-                    <td className="px-4 py-3 font-mono text-emerald-700">Rp {t.terbayar.toLocaleString('id-ID')}</td>
-                    <td className="px-4 py-3 font-mono text-amber-700">Rp {sisa.toLocaleString('id-ID')}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
-                        t.status === 'Lunas' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {t.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {t.status !== 'Lunas' && (
-                          <>
-                            <button
-                              onClick={() => handleSendWaDeadlineNotice(t)}
-                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold rounded-lg text-[10px] flex items-center gap-1"
-                              title="Kirim Notifikasi WA Deadline ke Orang Tua via Fonnte"
-                            >
-                              <Send className="w-3 h-3 text-emerald-600" /> Kirim WA
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setPayTagihanId(t.id);
-                                setPayNominal(sisa);
-                                setShowPayModal(true);
-                              }}
-                              className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-[10px]"
-                            >
-                              Bayar
-                            </button>
-                          </>
-                        )}
-                        {t.status === 'Lunas' && (
-                          <span className="text-[10px] text-emerald-600 font-bold flex items-center justify-end gap-1">
-                            <CheckCheck className="w-3.5 h-3.5" /> Terkirim WA
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* PAYMENT MODAL */}
-      {showPayModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <h3 className="font-bold text-slate-900 text-base border-b pb-2">Catat Pembayaran Tagihan Siswa</h3>
-
-            <form onSubmit={handlePaymentSubmit} className="space-y-3">
-              <div>
-                <label className="text-[11px] font-bold text-slate-700">Nominal Pembayaran (Rp)</label>
-                <input
-                  type="number"
-                  required
-                  value={payNominal}
-                  onChange={e => setPayNominal(Number(e.target.value))}
-                  className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-slate-700">Metode Pembayaran</label>
+            <form onSubmit={handleSearchSubmit} className="flex flex-col md:flex-row items-end gap-4 pt-1">
+              <div className="w-full md:w-48 space-y-1">
+                <label className="text-xs font-bold text-slate-300">Tahun Ajaran</label>
                 <select
-                  value={payMetode}
-                  onChange={e => setPayMetode(e.target.value as any)}
-                  className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold"
+                  value={tahunAjaran}
+                  onChange={e => setTahunAjaran(e.target.value)}
+                  className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 >
-                  <option value="QRIS">QRIS Standar Indonesia</option>
-                  <option value="Transfer Bank">Transfer Bank Mandiri/BCA</option>
-                  <option value="Cash / Kasir">Tunai Kasir Sekolah</option>
+                  <option value="2024/2025">2024/2025</option>
+                  <option value="2025/2026">2025/2026</option>
+                  <option value="2026/2027">2026/2027</option>
                 </select>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <button type="button" onClick={() => setShowPayModal(false)} className="px-3 py-1.5 rounded text-xs font-semibold bg-slate-100">Batal</button>
-                <button type="submit" className="px-4 py-1.5 rounded text-xs font-bold bg-emerald-500 text-slate-950">Proses Pembayaran</button>
+              <div className="w-full md:w-40 space-y-1">
+                <label className="text-xs font-bold text-slate-300">Semester</label>
+                <select
+                  value={semester}
+                  onChange={e => setSemester(e.target.value)}
+                  className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                >
+                  <option value="Ganjil">Ganjil</option>
+                  <option value="Genap">Genap</option>
+                </select>
+              </div>
+
+              <div className="flex-1 w-full space-y-1 relative">
+                <label className="text-xs font-bold text-slate-300">Cari Siswa (Nama / NIS / NISN)</label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Cari berdasarkan Nama, NIS, atau NISN (contoh: Ahmad / 20261001)..."
+                      value={searchKey}
+                      onChange={e => {
+                        setSearchKey(e.target.value);
+                        setShowSuggestions(true);
+                      }}
+                      onFocus={() => setShowSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 250)}
+                      className="w-full bg-[#181818] border border-slate-700/80 text-white placeholder-slate-500 rounded-xl pl-9 pr-4 py-2 text-xs font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    />
+
+                    {/* Suggestions Dropdown */}
+                    {showSuggestions && searchSuggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-[#181818] border border-slate-700 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto divide-y divide-slate-800">
+                        {searchSuggestions.map(s => (
+                          <div
+                            key={s.id}
+                            onMouseDown={() => {
+                              setSearchKey(s.nama);
+                              setAppliedSearch(s.nama);
+                              setShowSuggestions(false);
+                            }}
+                            className="px-3.5 py-2.5 hover:bg-emerald-950/40 cursor-pointer flex items-center justify-between transition-colors text-left"
+                          >
+                            <div>
+                              <p className="text-white font-bold text-xs">{s.nama}</p>
+                              <p className="text-[10px] text-slate-400">NIS: {s.nis} | NISN: {s.nisn || '-'}</p>
+                            </div>
+                            <span className="text-[10px] font-semibold bg-emerald-900/40 text-emerald-300 px-2 py-0.5 rounded-md border border-emerald-700/50">
+                              Kelas {s.kelas}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-600/20 shrink-0"
+                  >
+                    Cari
+                  </button>
+                </div>
               </div>
             </form>
+          </div>
+
+          {/* 2. INFORMASI SISWA */}
+          <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-lg space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
+                <User className="w-4 h-4 text-emerald-400" />
+                Informasi Siswa
+              </h3>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!selectedSiswa) return;
+                  setPrintReceiptData({
+                    noNota: `ALL-${Math.floor(100000 + Math.random() * 900000)}`,
+                    tahunAjaran,
+                    nis: selectedSiswa.nis,
+                    nama: selectedSiswa.nama,
+                    namaIbu: selectedSiswa.namaIbu || selectedSiswa.namaWali,
+                    kelas: selectedSiswa.kelas,
+                    pembayaranTitle: `Rekap Seluruh Tagihan T.A ${tahunAjaran}`,
+                    nominal: totalSisaBulanan + 650000,
+                    dibayar: totalSisaBulanan + 650000,
+                    kembalian: 0,
+                    tanggal: new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }),
+                    penerima: 'Bendahara Sekolah'
+                  });
+                  setShowPrintModal(true);
+                }}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-rose-600/20"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Cetak Semua Tagihan
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
+              {/* Left Student Attributes Table */}
+              <div className="md:col-span-3 space-y-2.5 text-xs text-slate-300">
+                <div className="grid grid-cols-12 py-1 border-b border-slate-800/60">
+                  <span className="col-span-4 font-semibold text-slate-400">Tahun Ajaran</span>
+                  <span className="col-span-8 font-bold text-white">: {tahunAjaran}</span>
+                </div>
+                <div className="grid grid-cols-12 py-1 border-b border-slate-800/60">
+                  <span className="col-span-4 font-semibold text-slate-400">Semester</span>
+                  <span className="col-span-8 font-bold text-emerald-400">: {semester}</span>
+                </div>
+                <div className="grid grid-cols-12 py-1 border-b border-slate-800/60">
+                  <span className="col-span-4 font-semibold text-slate-400">NIS</span>
+                  <span className="col-span-8 font-mono font-bold text-emerald-400">: {selectedSiswa ? selectedSiswa.nis : '-'}</span>
+                </div>
+                <div className="grid grid-cols-12 py-1 border-b border-slate-800/60">
+                  <span className="col-span-4 font-semibold text-slate-400">Nama Siswa</span>
+                  <span className="col-span-8 font-bold text-white text-sm">: {selectedSiswa ? selectedSiswa.nama : '-'}</span>
+                </div>
+                <div className="grid grid-cols-12 py-1 border-b border-slate-800/60">
+                  <span className="col-span-4 font-semibold text-slate-400">Nama Ibu Kandung</span>
+                  <span className="col-span-8 font-bold text-slate-200">: {selectedSiswa ? (selectedSiswa.namaIbu || selectedSiswa.namaWali) : '-'}</span>
+                </div>
+                <div className="grid grid-cols-12 py-1">
+                  <span className="col-span-4 font-semibold text-slate-400">Kelas</span>
+                  <span className="col-span-8 font-bold text-slate-200">: {selectedSiswa ? selectedSiswa.kelas : '-'}</span>
+                </div>
+              </div>
+
+              {/* Right Student Photo Avatar */}
+              <div className="flex justify-center md:justify-end">
+                <div className="w-32 h-32 rounded-full border-4 border-slate-800 bg-sky-500/10 p-1 flex items-center justify-center overflow-hidden shadow-xl shrink-0">
+                  {selectedSiswa?.fotoUrl ? (
+                    <img 
+                      src={selectedSiswa.fotoUrl} 
+                      alt={selectedSiswa.nama} 
+                      className="w-full h-full object-cover rounded-full"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-sky-500/20 flex items-center justify-center text-sky-400 font-extrabold text-3xl">
+                      {(selectedSiswa?.nama || 'A').charAt(0)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* RINGKASAN TOTAL PEMBAYARAN (SPP, UKT, EKSKUL) */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 bg-[#121212] border border-slate-800/80 p-4 rounded-2xl shadow-lg">
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
+              <span className="text-[11px] font-semibold text-slate-400">Total SPP Terbayar</span>
+              <span className="text-sm font-mono font-extrabold text-emerald-400 mt-1">Rp {totalSppPaid.toLocaleString('id-ID')}</span>
+              <span className="text-[10px] text-slate-500 mt-1">{Object.keys(paidMonthsState).length} bulan lunas</span>
+            </div>
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
+              <span className="text-[11px] font-semibold text-slate-400">Total UKT / Masuk</span>
+              <span className="text-sm font-mono font-extrabold text-amber-400 mt-1">Rp {totalUktPaid.toLocaleString('id-ID')}</span>
+              <span className="text-[10px] text-slate-500 mt-1">Uang gedung & atribut</span>
+            </div>
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
+              <span className="text-[11px] font-semibold text-slate-400">Total Ekskul / Kegiatan</span>
+              <span className="text-sm font-mono font-extrabold text-sky-400 mt-1">Rp {totalEkskulPaid.toLocaleString('id-ID')}</span>
+              <span className="text-[10px] text-slate-500 mt-1">Iuran ekstrakurikuler</span>
+            </div>
+            <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3.5 flex flex-col justify-between">
+              <span className="text-[11px] font-bold text-emerald-300">Total Keseluruhan</span>
+              <span className="text-base font-mono font-black text-emerald-400 mt-1">Rp {totalSemuaPembayaran.toLocaleString('id-ID')}</span>
+              <span className="text-[10px] text-emerald-400/70 mt-1">Akumulasi tuntas</span>
+            </div>
+          </div>
+
+          {/* 3. THREE PANELS GRID: TRANSAKSI TERAKHIR | PEMBAYARAN | CETAK BUKTI */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+
+            {/* PANEL A: TRANSAKSI TERAKHIR */}
+            <div className="bg-[#121212] p-4 rounded-2xl border border-slate-800/80 shadow-lg space-y-3 flex flex-col justify-between">
+              <div>
+                <div className="border-b border-slate-800 pb-2">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                    Transaksi Terakhir
+                  </h4>
+                </div>
+
+                <div className="overflow-x-auto mt-2">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="bg-[#181818] text-slate-400 font-bold border-b border-slate-800">
+                      <tr>
+                        <th className="px-2 py-1.5">Pembayaran</th>
+                        <th className="px-2 py-1.5">Tagihan</th>
+                        <th className="px-2 py-1.5">Tanggal</th>
+                        <th className="px-1 py-1.5 text-center w-8">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                      {studentTransactions.map((tx, idx) => (
+                        <tr key={tx.id} className="hover:bg-slate-900/50">
+                          <td className="px-2 py-2 font-semibold text-slate-200">
+                            {tx.pembayaran}
+                            {idx === 0 && (
+                              <span className="ml-1.5 px-1.5 py-0.2 bg-emerald-500/20 text-emerald-400 text-[9px] rounded font-bold">
+                                Terbaru
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 py-2 font-mono font-bold text-emerald-400 whitespace-nowrap">
+                            Rp. {tx.tagihan.toLocaleString('id-ID')}
+                          </td>
+                          <td className="px-2 py-2 text-[10px] text-slate-400 whitespace-nowrap">{tx.tanggal}</td>
+                          <td className="px-1 py-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleReprintTransaction(tx)}
+                                className="p-1 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 rounded transition-colors"
+                                title="Cetak ulang kwitansi transaksi ini"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSingleTransaction(tx.id)}
+                                className="p-1 hover:bg-rose-950/80 text-slate-500 hover:text-rose-400 rounded transition-colors"
+                                title="Hapus transaksi ini"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {studentTransactions.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="text-center py-6 text-slate-500 text-[10px]">
+                            Belum ada riwayat transaksi penerimaan kas.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-slate-500 flex items-center justify-between pt-2.5 border-t border-slate-800/60 flex-wrap gap-1">
+                <span>{studentTransactions.length} transaksi tersimpan.</span>
+                <div className="flex items-center gap-1.5">
+                  {studentTransactions.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleResetAllTransactions}
+                      className="px-2 py-1 bg-rose-950/90 hover:bg-rose-900 text-rose-300 border border-rose-800/70 font-bold rounded-lg text-[10px] flex items-center gap-1 transition-all shadow-sm cursor-pointer"
+                      title="Reset Seluruh Transaksi dari Awal"
+                    >
+                      <Trash2 className="w-3 h-3 text-rose-400" />
+                      Reset Dari Awal
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* PANEL B: PEMBAYARAN (PROCESSOR CALCULATOR) */}
+            <div className="bg-[#121212] p-4 rounded-2xl border border-slate-800/80 shadow-lg space-y-3">
+              <h4 className="text-xs font-bold text-white border-b border-slate-800 pb-2 flex items-center gap-1.5">
+                <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+                Pembayaran
+              </h4>
+
+              <div className="space-y-2.5 text-xs">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Jenis Pembayaran</label>
+                  <select
+                    value={quickPayType}
+                    onChange={e => {
+                      const t = e.target.value as 'spp' | 'ukt' | 'ekskul';
+                      setQuickPayType(t);
+                      if (t === 'ukt' && uktTarifs.length > 0) {
+                        setQuickPayItemId(uktTarifs[0].id);
+                        setInputTotal(uktTarifs[0].nominal);
+                        setInputDibayar(uktTarifs[0].nominal);
+                      } else if (t === 'ekskul' && ekskulTarifs.length > 0) {
+                        setQuickPayItemId(ekskulTarifs[0].id);
+                        setInputTotal(ekskulTarifs[0].nominal);
+                        setInputDibayar(ekskulTarifs[0].nominal);
+                      } else {
+                        const tot = selectedMonths.length > 0 ? selectedMonths.length * monthlyFee : monthlyFee;
+                        setInputTotal(tot);
+                        setInputDibayar(tot);
+                      }
+                    }}
+                    className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  >
+                    <option value="spp">SPP Bulanan</option>
+                    <option value="ukt">UKT / Uang Masuk</option>
+                    <option value="ekskul">Ekskul / Kegiatan</option>
+                  </select>
+                </div>
+
+                {quickPayType === 'ukt' && uktTarifs.length > 0 && (
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Pilih Item UKT</label>
+                    <select
+                      value={quickPayItemId || uktTarifs[0]?.id}
+                      onChange={e => {
+                        const id = e.target.value;
+                        setQuickPayItemId(id);
+                        const found = uktTarifs.find(t => t.id === id);
+                        if (found) {
+                          setInputTotal(found.nominal);
+                          setInputDibayar(found.nominal);
+                        }
+                      }}
+                      className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-1.5 text-xs"
+                    >
+                      {uktTarifs.map(t => (
+                        <option key={t.id} value={t.id}>{t.namaBiaya} (Rp {t.nominal.toLocaleString('id-ID')})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {quickPayType === 'ekskul' && ekskulTarifs.length > 0 && (
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Pilih Ekskul</label>
+                    <select
+                      value={quickPayItemId || ekskulTarifs[0]?.id}
+                      onChange={e => {
+                        const id = e.target.value;
+                        setQuickPayItemId(id);
+                        const found = ekskulTarifs.find(t => t.id === id);
+                        if (found) {
+                          setInputTotal(found.nominal);
+                          setInputDibayar(found.nominal);
+                        }
+                      }}
+                      className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-1.5 text-xs"
+                    >
+                      {ekskulTarifs.map(t => (
+                        <option key={t.id} value={t.id}>{t.namaBiaya} (Rp {t.nominal.toLocaleString('id-ID')})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Total</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rp</span>
+                    <input
+                      type="number"
+                      value={quickPayType === 'spp' ? (selectedMonths.length > 0 ? selectedMonths.length * monthlyFee : monthlyFee) : inputTotal}
+                      readOnly={quickPayType === 'spp'}
+                      onChange={e => {
+                        if (quickPayType !== 'spp') {
+                          setInputTotal(Number(e.target.value));
+                        }
+                      }}
+                      className="w-full bg-[#181818] border border-slate-700/80 text-emerald-400 font-mono font-extrabold rounded-xl pl-9 pr-3 py-1.5 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Dibayar</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rp</span>
+                    <input
+                      type="number"
+                      value={inputDibayar}
+                      onChange={e => setInputDibayar(Number(e.target.value))}
+                      className="w-full bg-[#181818] border border-emerald-500/60 text-white font-mono font-bold rounded-xl pl-9 pr-3 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Kembalian</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rp</span>
+                    <input
+                      type="text"
+                      readOnly
+                      value={Math.max(0, inputDibayar - (quickPayType === 'spp' ? (selectedMonths.length > 0 ? selectedMonths.length * monthlyFee : monthlyFee) : inputTotal)).toLocaleString('id-ID')}
+                      className="w-full bg-[#181818] border border-slate-700/80 text-amber-400 font-mono font-bold rounded-xl pl-9 pr-3 py-1.5 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleProcessPayment}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 mt-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Proses & Simpan Pembayaran
+                </button>
+              </div>
+            </div>
+
+            {/* PANEL C: CETAK BUKTI PEMBAYARAN */}
+            <div className="bg-[#121212] p-4 rounded-2xl border border-slate-800/80 shadow-lg space-y-3 flex flex-col justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-white border-b border-slate-800 pb-2 flex items-center gap-1.5">
+                  <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                  Cetak Bukti Pembayaran
+                </h4>
+
+                <div className="space-y-3 text-xs mt-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                      Tanggal Transaksi
+                    </label>
+                    <input
+                      type="date"
+                      value={transactionDate}
+                      onChange={e => setTransactionDate(e.target.value)}
+                      className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-[#181818] rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
+                    <div>Format Kwitansi: <span className="font-bold text-white">Struk & Stempel Sekolah</span></div>
+                    <div>Kasir: <span className="font-bold text-emerald-400">Bendahara TU</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!printReceiptData) {
+                    setPrintReceiptData({
+                      noNota: `KW-${Math.floor(100000 + Math.random() * 900000)}`,
+                      tahunAjaran,
+                      nis: selectedSiswa ? selectedSiswa.nis : '',
+                      nama: selectedSiswa ? selectedSiswa.nama : '',
+                      namaIbu: selectedSiswa ? (selectedSiswa.namaIbu || selectedSiswa.namaWali) : '',
+                      kelas: selectedSiswa ? selectedSiswa.kelas : '',
+                      pembayaranTitle: `SPP - T.A ${tahunAjaran} (Desember)`,
+                      nominal: 100000,
+                      dibayar: 100000,
+                      kembalian: 0,
+                      tanggal: new Date(transactionDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }),
+                      penerima: 'Bendahara Sekolah'
+                    });
+                  }
+                  setShowPrintModal(true);
+                }}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5"
+              >
+                <Printer className="w-4 h-4" />
+                Cetak Struk Transaksi
+              </button>
+            </div>
+
+          </div>
+
+          {/* 4. JENIS PEMBAYARAN SECTION (BULANAN & BEBAS) */}
+          <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-lg space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-emerald-400" />
+                Jenis Pembayaran
+              </h3>
+
+              {/* Subtabs Bulanan | Bebas */}
+              <div className="flex items-center gap-1 bg-[#181818] p-1 rounded-xl border border-slate-800">
+                <button
+                  onClick={() => setJenisPembayaranTab('bulanan')}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    jenisPembayaranTab === 'bulanan'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Bulanan (SPP)
+                </button>
+                <button
+                  onClick={() => setJenisPembayaranTab('bebas')}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    jenisPembayaranTab === 'bebas'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Bebas (Non-Bulanan / UKT)
+                </button>
+              </div>
+            </div>
+
+            {/* TAB BULANAN TABLE */}
+            {jenisPembayaranTab === 'bulanan' && (
+              <div className="overflow-x-auto border border-slate-800/80 rounded-xl">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-[#181818] border-b border-slate-800 text-slate-400 font-bold text-[11px] uppercase">
+                    <tr>
+                      <th className="px-3 py-2.5 text-center w-10">No.</th>
+                      <th className="px-3 py-2.5 min-w-[220px]">Nama Pembayaran</th>
+                      <th className="px-3 py-2.5 min-w-[120px]">Sisa Tagihan</th>
+                      {allMonths.map(m => (
+                        <th key={m} className="px-2 py-2.5 text-center min-w-[85px]">{m}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    <tr className="hover:bg-slate-900/40">
+                      <td className="px-3 py-3 text-center font-bold text-slate-500">1</td>
+                      <td className="px-3 py-3 font-bold text-white">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <span className="block text-white font-bold">SPP - T.A {tahunAjaran}</span>
+                            <span className="text-[10px] text-slate-400 font-normal">Tarif: Rp {monthlyFee.toLocaleString('id-ID')} / bln</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const sppTarif = tarifList.find(t => t.tipe === 'spp') || {
+                                id: 'trf-01',
+                                namaBiaya: 'SPP Bulanan',
+                                tipe: 'spp' as TipeKeuangan,
+                                tingkatKelas: selectedSiswa?.kelas || 'Kelas 7',
+                                nominal: monthlyFee,
+                                periode: 'Bulanan' as const,
+                                keterangan: 'Tarif SPP Bulanan Sekolah',
+                                status: 'Aktif' as const
+                              };
+                              handleOpenEditTarif(sppTarif);
+                            }}
+                            className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700/80 font-bold rounded-lg text-[10px] flex items-center gap-1 transition-all shrink-0"
+                            title="Edit Tarif SPP / Jenis Pembayaran"
+                          >
+                            <Edit3 className="w-3 h-3 text-amber-400" />
+                            Edit Tarif
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 font-mono font-bold text-rose-400">
+                        Rp. {totalSisaBulanan.toLocaleString('id-ID')}
+                      </td>
+
+                      {allMonths.map(m => {
+                        const paidDate = paidMonthsState[m];
+                        const isSelected = selectedMonths.includes(m);
+
+                        return (
+                          <td key={m} className="px-1.5 py-3 text-center">
+                            {paidDate ? (
+                              <span className="px-2 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-[10px] font-bold block whitespace-nowrap">
+                                ({paidDate})
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => toggleMonthSelection(m)}
+                                className={`w-full px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all border ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-600/30'
+                                    : 'bg-slate-800/80 hover:bg-slate-700 text-sky-300 border-slate-700/80'
+                                }`}
+                              >
+                                {monthlyFee.toLocaleString('id-ID')}
+                              </button>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div className="p-3 bg-[#181818] border-t border-slate-800 text-[11px] text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
+                  <div className="flex items-center gap-4">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Hijau = Lunas (Tgl Bayar)
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-sky-400"></span> Biru = Klik Bulan untuk Pilih Tagihan Bayar
+                    </span>
+                  </div>
+                  <div className="font-bold text-white">
+                    Terpilih: <span className="text-emerald-400">{selectedMonths.length} Bulan</span> (Rp {(selectedMonths.length * monthlyFee).toLocaleString('id-ID')})
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB BEBAS TABLE */}
+            {jenisPembayaranTab === 'bebas' && (
+              <div className="overflow-x-auto border border-slate-800/80 rounded-xl">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-[#181818] border-b border-slate-800 text-slate-400 font-bold text-[11px] uppercase">
+                    <tr>
+                      <th className="px-3 py-2.5 text-center w-10">No.</th>
+                      <th className="px-3 py-2.5 min-w-[220px]">Nama Pembayaran</th>
+                      <th className="px-3 py-2.5">Total Tagihan</th>
+                      <th className="px-3 py-2.5">Sudah Dibayar</th>
+                      <th className="px-3 py-2.5">Sisa Tagihan</th>
+                      <th className="px-3 py-2.5 w-40">Bayar (Rp)</th>
+                      <th className="px-3 py-2.5 text-center w-36">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {bebasItems.map((item, idx) => {
+                      const sisa = item.total - item.terbayar;
+                      const isLunas = sisa <= 0;
+
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-900/40">
+                          <td className="px-3 py-3 text-center font-bold text-slate-500">{idx + 1}</td>
+                          <td className="px-3 py-3 font-bold text-white">
+                            <div className="flex items-center justify-between gap-2">
+                              <span>{item.nama}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const matchTarif = tarifList.find(t => t.id === item.id) || {
+                                    id: item.id,
+                                    namaBiaya: item.nama.replace(/\s*\([^)]*\)/, ''),
+                                    tipe: 'ukt' as TipeKeuangan,
+                                    tingkatKelas: 'Semua Tingkat',
+                                    nominal: item.total,
+                                    periode: 'Sekali Bayar (Uang Masuk / UKT)' as const,
+                                    keterangan: '',
+                                    status: 'Aktif' as const
+                                  };
+                                  handleOpenEditTarif(matchTarif as TarifBiaya);
+                                }}
+                                className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700/80 font-bold rounded-lg text-[10px] flex items-center gap-1 transition-all shrink-0"
+                                title="Edit Tarif Pembayaran Ini"
+                              >
+                                <Edit3 className="w-3 h-3 text-amber-400" />
+                                Edit Tarif
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 font-mono">Rp. {item.total.toLocaleString('id-ID')}</td>
+                          <td className="px-3 py-3 font-mono text-emerald-400">Rp. {item.terbayar.toLocaleString('id-ID')}</td>
+                          <td className="px-3 py-3 font-mono font-bold text-amber-400">Rp. {sisa.toLocaleString('id-ID')}</td>
+                          <td className="px-3 py-3">
+                            {!isLunas ? (
+                              <input
+                                type="number"
+                                value={bebasPayInput[item.id] || ''}
+                                onChange={e => setBebasPayInput({ ...bebasPayInput, [item.id]: Number(e.target.value) })}
+                                className="w-full bg-[#181818] border border-slate-700/80 text-white font-mono font-bold rounded-lg px-2.5 py-1 text-xs"
+                                placeholder={sisa.toString()}
+                              />
+                            ) : (
+                              <span className="text-emerald-400 font-bold text-[11px]">LUNAS</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {!isLunas ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleProcessBebasPayment(item.id, item.nama)}
+                                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm"
+                                >
+                                  Bayar
+                                </button>
+                              ) : (
+                                <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold">✓ Ok</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+          </div>
+
+        </div>
+      )}
+
+      {/* SUBTAB 2: PENGATURAN BIAYA & TARIF (NEW REQUESTED FEATURE) */}
+      {activeTab === 'pengaturan_biaya' && (
+        <div className="space-y-6">
+
+          {/* Action Header Card */}
+          <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-amber-400" />
+                Pengaturan Tarif Biaya Sekolah (UKT, SPP & Ekskul)
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Atur standar tarif nominal SPP bulanan per tingkat kelas, biaya UKT / Uang Masuk, serta iuran ekstrakurikuler & kegiatan.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  if (tarifList.length > 0) {
+                    setGenSelectedTarifId(tarifList[0].id);
+                  }
+                  setShowGeneratorModal(true);
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-indigo-600/20"
+              >
+                <Zap className="w-4 h-4 text-amber-300" />
+                Generate Tagihan Massal
+              </button>
+
+              <button
+                onClick={handleOpenAddTarif}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
+              >
+                <Plus className="w-4 h-4" />
+                Tambah Tarif Baru
+              </button>
+            </div>
+          </div>
+
+          {/* Category Filter Pills */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <button
+              onClick={() => setFeeCategoryFilter('semua')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                feeCategoryFilter === 'semua'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'bg-[#121212] border border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Tag className="w-3.5 h-3.5" />
+              Semua Biaya ({tarifList.length})
+            </button>
+
+            <button
+              onClick={() => setFeeCategoryFilter('spp')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                feeCategoryFilter === 'spp'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'bg-[#121212] border border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+              SPP Bulanan ({tarifList.filter(t => t.tipe === 'spp').length})
+            </button>
+
+            <button
+              onClick={() => setFeeCategoryFilter('ukt')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                feeCategoryFilter === 'ukt'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'bg-[#121212] border border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <GraduationCap className="w-3.5 h-3.5 text-amber-400" />
+              UKT / Uang Masuk ({tarifList.filter(t => t.tipe === 'ukt').length})
+            </button>
+
+            <button
+              onClick={() => setFeeCategoryFilter('ekskul')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                feeCategoryFilter === 'ekskul'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'bg-[#121212] border border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              Ekskul & Kegiatan ({tarifList.filter(t => t.tipe === 'ekskul').length})
+            </button>
+          </div>
+
+          {/* Tarif Summary Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-[#121212] p-4 rounded-2xl border border-slate-800/80 shadow-md space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-400">
+                <span>Rata-Rata SPP Bulanan</span>
+                <CreditCard className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="text-2xl font-black text-emerald-400 font-mono">
+                Rp {
+                  (
+                    tarifList
+                      .filter(t => t.tipe === 'spp')
+                      .reduce((acc, curr) => acc + curr.nominal, 0) /
+                    (tarifList.filter(t => t.tipe === 'spp').length || 1)
+                  ).toLocaleString('id-ID')
+                } <span className="text-xs text-slate-500 font-normal">/ bln</span>
+              </div>
+              <p className="text-[11px] text-slate-500">Standar pembiayaan operasional pembelajaran bulanan siswa.</p>
+            </div>
+
+            <div className="bg-[#121212] p-4 rounded-2xl border border-slate-800/80 shadow-md space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-400">
+                <span>Total Estimasi Paket UKT (Uang Masuk)</span>
+                <GraduationCap className="w-4 h-4 text-amber-400" />
+              </div>
+              <div className="text-2xl font-black text-amber-400 font-mono">
+                Rp {
+                  tarifList
+                    .filter(t => t.tipe === 'ukt')
+                    .reduce((acc, curr) => acc + curr.nominal, 0)
+                    .toLocaleString('id-ID')
+                }
+              </div>
+              <p className="text-[11px] text-slate-500">Gedung, Seragam, & Administrasi Daftar Ulang Siswa Baru.</p>
+            </div>
+
+            <div className="bg-[#121212] p-4 rounded-2xl border border-slate-800/80 shadow-md space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-400">
+                <span>Total Komponen Iuran Ekskul</span>
+                <Sparkles className="w-4 h-4 text-purple-400" />
+              </div>
+              <div className="text-2xl font-black text-purple-400 font-mono">
+                {tarifList.filter(t => t.tipe === 'ekskul').length} Jenis Ekskul
+              </div>
+              <p className="text-[11px] text-slate-500">Pramuka, Futsal, IT Coding, Basket, & Kemah Kepemimpinan.</p>
+            </div>
+          </div>
+
+          {/* Tariff Data Table */}
+          <div className="bg-[#121212] rounded-2xl border border-slate-800/80 overflow-hidden shadow-xl">
+            <div className="p-4 bg-[#181818] border-b border-slate-800 flex items-center justify-between">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <Tag className="w-4 h-4 text-amber-400" />
+                Daftar Parameter Tarif Keuangan ({filteredTarifList.length})
+              </h4>
+              <span className="text-[11px] text-slate-400">T.A 2024/2025 • Kurikulum Merdeka</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-[#151515] text-slate-400 font-bold uppercase text-[11px] border-b border-slate-800">
+                  <tr>
+                    <th className="px-4 py-3">Nama Biaya & Kategori</th>
+                    <th className="px-4 py-3">Tingkat / Target</th>
+                    <th className="px-4 py-3">Periode Tagihan</th>
+                    <th className="px-4 py-3">Nominal Tarif (Rp)</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-center w-36">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {filteredTarifList.map(item => (
+                    <tr key={item.id} className="hover:bg-slate-900/50 transition-colors">
+                      <td className="px-4 py-3.5">
+                        <div className="font-bold text-white text-sm">{item.namaBiaya}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            item.tipe === 'spp' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                            item.tipe === 'ukt' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                            'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                          }`}>
+                            {item.tipe === 'spp' ? 'SPP Bulanan' : item.tipe === 'ukt' ? 'UKT / Uang Masuk' : 'Ekskul / Kegiatan'}
+                          </span>
+                          {item.keterangan && (
+                            <span className="text-[11px] text-slate-500 italic truncate max-w-xs">{item.keterangan}</span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3.5 font-bold text-slate-200">
+                        {item.tingkatKelas}
+                      </td>
+
+                      <td className="px-4 py-3.5 text-slate-400 font-medium">
+                        {item.periode}
+                      </td>
+
+                      <td className="px-4 py-3.5 font-mono font-extrabold text-emerald-400 text-sm">
+                        Rp {item.nominal.toLocaleString('id-ID')}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <button
+                          onClick={() => handleToggleTarifStatus(item.id)}
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
+                            item.status === 'Aktif'
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30'
+                              : 'bg-slate-800 text-slate-500 border border-slate-700 hover:bg-slate-700'
+                          }`}
+                        >
+                          {item.status}
+                        </button>
+                      </td>
+
+                      <td className="px-4 py-3.5 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleOpenEditTarif(item)}
+                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
+                            title="Edit Tarif"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteTarif(item.id)}
+                            className="p-1.5 bg-rose-950/60 hover:bg-rose-900 text-rose-300 rounded-lg transition-colors"
+                            title="Hapus Tarif"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {filteredTarifList.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="text-center py-8 text-slate-500 text-xs">
+                        Belum ada parameter tarif biaya untuk kategori ini.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* SUBTAB 3: REKAP TAGIHAN & GOOGLE SHEETS / FONNTE WA */}
+      {activeTab === 'rekap' && (
+        <div className="space-y-6">
+
+          {/* Fonnte Notification Banner */}
+          {waSendingStatus && (
+            <div className="p-4 bg-emerald-950/90 border border-emerald-500/50 rounded-2xl text-emerald-200 text-xs font-bold flex items-center gap-3 shadow-lg">
+              <Send className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{waSendingStatus}</span>
+            </div>
+          )}
+
+          {/* Export Result Banner */}
+          {exportResult && (
+            <div className={`p-4 rounded-2xl text-xs font-bold border flex items-center justify-between ${
+              exportResult.success ? 'bg-emerald-950 text-emerald-200 border-emerald-800' : 'bg-rose-950 text-rose-200 border-rose-800'
+            }`}>
+              <span>{exportResult.message}</span>
+              {exportResult.url && (
+                <a href={exportResult.url} target="_blank" rel="noreferrer" className="px-3 py-1 bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1">
+                  <ExternalLink className="w-3.5 h-3.5" /> Buka Drive
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Financial Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800 shadow-md">
+              <span className="text-xs font-bold uppercase text-slate-400">Total Nominal Tagihan</span>
+              <div className="text-2xl font-extrabold text-white mt-2">
+                Rp {tagihanList.reduce((a, b) => a + b.nominal, 0).toLocaleString('id-ID')}
+              </div>
+            </div>
+
+            <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800 shadow-md">
+              <span className="text-xs font-bold uppercase text-emerald-400">Total Terbayar (Kas Masuk)</span>
+              <div className="text-2xl font-extrabold text-emerald-400 mt-2">
+                Rp {tagihanList.reduce((a, b) => a + b.terbayar, 0).toLocaleString('id-ID')}
+              </div>
+            </div>
+
+            <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800 shadow-md">
+              <span className="text-xs font-bold uppercase text-amber-400">Total Sisa Tunggakan Siswa</span>
+              <div className="text-2xl font-extrabold text-amber-400 mt-2">
+                Rp {tagihanList.reduce((a, b) => a + (b.nominal - b.terbayar), 0).toLocaleString('id-ID')}
+              </div>
+            </div>
+          </div>
+
+          {/* Action Header */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#121212] p-4 rounded-xl border border-slate-800 shadow-md">
+            <h3 className="text-sm font-bold text-white">Daftar Tagihan Seluruh Siswa</h3>
+            <button
+              onClick={handleExportGoogleSheets}
+              disabled={exportingSheets}
+              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-2"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              {exportingSheets ? 'Mengekspor...' : 'Ekspor Rekap ke Google Sheets'}
+            </button>
+          </div>
+
+          {/* Global Tagihan Table */}
+          <div className="bg-[#121212] rounded-2xl border border-slate-800/80 overflow-hidden shadow-lg">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-[#181818] border-b border-slate-800 text-slate-400 font-bold uppercase text-[11px]">
+                  <tr>
+                    <th className="px-4 py-3">Siswa & Kelas</th>
+                    <th className="px-4 py-3">Tipe</th>
+                    <th className="px-4 py-3">Nama Tagihan</th>
+                    <th className="px-4 py-3">Nominal Tagihan</th>
+                    <th className="px-4 py-3">Terbayar</th>
+                    <th className="px-4 py-3">Sisa</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-center">Kirim Notif WA</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {tagihanList.map(t => {
+                    const sisa = t.nominal - t.terbayar;
+                    const isLunas = t.status === 'Lunas' || sisa <= 0;
+                    return (
+                      <tr key={t.id} className="hover:bg-slate-900/50">
+                        <td className="px-4 py-3">
+                          <div className="font-bold text-white">{t.siswaNama}</div>
+                          <div className="text-[10px] text-slate-400">{t.kelas}</div>
+                        </td>
+                        <td className="px-4 py-3 font-semibold uppercase text-slate-400">{t.tipe}</td>
+                        <td className="px-4 py-3">{t.namaTagihan}</td>
+                        <td className="px-4 py-3 font-mono font-bold text-white">Rp {t.nominal.toLocaleString('id-ID')}</td>
+                        <td className="px-4 py-3 font-mono text-emerald-400">Rp {t.terbayar.toLocaleString('id-ID')}</td>
+                        <td className="px-4 py-3 font-mono text-amber-400">Rp {sisa.toLocaleString('id-ID')}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                            isLunas ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          }`}>
+                            {isLunas ? 'Lunas' : 'Belum Lunas'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {!isLunas ? (
+                            <button
+                              type="button"
+                              onClick={() => handleSendWaReminder(t)}
+                              className="px-2.5 py-1 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 transition-all"
+                              title="Kirim WhatsApp pengingat untuk segera melakukan pembayaran"
+                            >
+                              <Send className="w-3 h-3 text-amber-400" /> WA Tagihan
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSendWaConfirmation(t)}
+                              className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 transition-all"
+                              title="Kirim WhatsApp konfirmasi bahwa pembayaran telah dilakukan & lunas"
+                            >
+                              <CheckCheck className="w-3 h-3 text-emerald-400" /> WA Lunas
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* PRINTABLE RECEIPT MODAL */}
+      {showPrintModal && printReceiptData && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white text-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 font-sans border border-slate-300">
+            {/* Modal Header Actions */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 print:hidden">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-emerald-600" /> Struk Kwitansi Pembayaran Resmi
+              </h3>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setShowPrintModal(false)}
+                  className="text-slate-400 hover:text-slate-700 font-bold text-sm px-1.5 py-0.5 rounded hover:bg-slate-100"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Print Envelope Area */}
+            <div id="printable-receipt" className="space-y-4 p-2">
+              {/* School Header */}
+              <div className="text-center border-b-2 border-slate-900 pb-3 space-y-1">
+                <h2 className="font-extrabold text-base tracking-wide uppercase text-slate-900">
+                  SEKOLAH MENENGAH ATAS WORKSPACE 2026
+                </h2>
+                <p className="text-[10px] text-slate-600">
+                  Jl. Pendidikan No. 45, Kebayoran Baru, Jakarta Selatan • Telp: (021) 7891234
+                </p>
+                <div className="text-[11px] font-bold text-slate-800 uppercase tracking-widest pt-1">
+                  KWITANSI BUKTI PEMBAYARAN RESMI
+                </div>
+              </div>
+
+              {/* Receipt Details */}
+              <div className="text-xs space-y-1.5 py-1 text-slate-800">
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">No. Nota / Kwitansi</span>
+                  <span className="font-mono font-bold text-slate-900">{printReceiptData.noNota}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">Tahun Ajaran</span>
+                  <span className="font-bold">{printReceiptData.tahunAjaran}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">NIS & Nama Siswa</span>
+                  <span className="font-bold text-slate-900">{printReceiptData.nis} - {printReceiptData.nama}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">Kelas / Nama Ibu</span>
+                  <span className="font-bold">{printReceiptData.kelas} / {printReceiptData.namaIbu}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">Tanggal Transaksi</span>
+                  <span className="font-bold">{printReceiptData.tanggal}</span>
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <div className="border border-slate-300 rounded-lg overflow-hidden my-2">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-100 border-b border-slate-300 font-bold text-slate-700">
+                    <tr>
+                      <th className="p-2">Uraian Pembayaran</th>
+                      <th className="p-2 text-right w-32">Jumlah (Rp)</th>
+                      <th className="p-2 text-center w-10 print:hidden">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 font-medium">
+                    {receiptItems.map(item => (
+                      <tr key={item.id}>
+                        <td className="p-1.5">
+                          <input
+                            type="text"
+                            value={item.uraian}
+                            onChange={e => handleUpdateReceiptItem(item.id, 'uraian', e.target.value)}
+                            placeholder="Ketik uraian rincian pembayaran..."
+                            className="w-full bg-slate-50 border border-slate-300 focus:border-emerald-600 focus:bg-white rounded px-2 py-1 text-xs font-semibold text-slate-900 focus:outline-none transition-all print:hidden"
+                          />
+                          <span className="hidden print:inline font-semibold text-slate-900 px-1">
+                            {item.uraian || '-'}
+                          </span>
+                        </td>
+                        <td className="p-1.5 text-right">
+                          <input
+                            type="number"
+                            value={item.jumlah || ''}
+                            onChange={e => handleUpdateReceiptItem(item.id, 'jumlah', e.target.value)}
+                            placeholder="0"
+                            className="w-full bg-slate-50 border border-slate-300 focus:border-emerald-600 focus:bg-white rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 text-right focus:outline-none transition-all print:hidden"
+                          />
+                          <span className="hidden print:inline font-mono font-bold text-slate-900 px-1">
+                            Rp {(Number(item.jumlah) || 0).toLocaleString('id-ID')}
+                          </span>
+                        </td>
+                        <td className="p-1.5 text-center print:hidden">
+                          {receiptItems.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteReceiptItem(item.id)}
+                              className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded transition-colors"
+                              title="Hapus baris ini"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Action: Tambah Uraian Pembayaran */}
+              <div className="flex items-center justify-between print:hidden mb-2">
+                <button
+                  type="button"
+                  onClick={handleAddReceiptItem}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300/80 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-sm"
+                >
+                  <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                  + Tambah Uraian Pembayaran
+                </button>
+                <span className="text-[11px] text-slate-500 font-medium">
+                  {receiptItems.length} Rincian Pembayaran
+                </span>
+              </div>
+
+              {/* Summary */}
+              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs space-y-1.5">
+                <div className="flex justify-between font-bold text-slate-900">
+                  <span>Total Tagihan:</span>
+                  <span className="font-mono text-emerald-700 text-sm">Rp {totalReceiptNominal.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-700">
+                  <span className="font-medium">Jumlah Uang Diserahkan:</span>
+                  <div className="flex items-center gap-1">
+                    <span className="font-mono font-bold print:inline hidden">
+                      Rp {(printReceiptData.dibayar || 0).toLocaleString('id-ID')}
+                    </span>
+                    <div className="flex items-center gap-1 print:hidden">
+                      <span className="font-mono font-bold text-slate-600">Rp</span>
+                      <input
+                        type="number"
+                        value={printReceiptData.dibayar}
+                        onChange={e => setPrintReceiptData({ ...printReceiptData, dibayar: Number(e.target.value) })}
+                        className="w-28 bg-white border border-slate-300 rounded px-2 py-0.5 font-mono font-bold text-right text-xs focus:outline-none focus:border-emerald-600 text-slate-900 shadow-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-between text-emerald-700 font-bold pt-1 border-t border-slate-200">
+                  <span>Uang Kembalian:</span>
+                  <span className="font-mono">Rp {receiptKembalian.toLocaleString('id-ID')}</span>
+                </div>
+              </div>
+
+              {/* Signature block */}
+              <div className="pt-4 flex justify-between text-[11px] text-slate-700 text-center">
+                <div>
+                  <p>Siswa / Penyetor,</p>
+                  <div className="h-10"></div>
+                  <p className="font-bold underline">({printReceiptData.nama})</p>
+                </div>
+                <div>
+                  <p>Kasir Keuangan,</p>
+                  <div className="h-10"></div>
+                  <p className="font-bold underline">({printReceiptData.penerima})</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Bottom Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 print:hidden flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowPrintModal(false)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl text-xs transition-colors"
+              >
+                Tutup
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadReceiptAsImage}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-blue-600/30 cursor-pointer"
+                title="Download Kwitansi sebagai Gambar (PNG)"
+              >
+                <Download className="w-3.5 h-3.5" /> Download Gambar (PNG)
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadReceipt}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-amber-600/30 cursor-pointer"
+                title="Download Kwitansi sebagai File HTML / PDF"
+              >
+                <FileText className="w-3.5 h-3.5" /> Download File (HTML)
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrint}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/30 cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" /> Cetak Kwitansi
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* FONNTE CONFIG MODAL */}
       {showFonnteConfigModal && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#121212] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-white">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-slate-800 text-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                <Settings className="w-4 h-4 text-emerald-400" /> Pengaturan Gateway WhatsApp Fonnte
+              <h3 className="font-extrabold text-sm flex items-center gap-2">
+                <Settings className="w-4 h-4 text-emerald-400" />
+                Pengaturan Gateway Fonnte WhatsApp
               </h3>
-              <button onClick={() => setShowFonnteConfigModal(false)} className="text-slate-400 hover:text-white">
+              <button
+                onClick={() => setShowFonnteConfigModal(false)}
+                className="text-slate-400 hover:text-white font-bold"
+              >
                 ✕
               </button>
             </div>
 
-            <p className="text-xs text-slate-400">
-              Masukkan token Fonnte WhatsApp API sekolah Anda. Token ini digunakan untuk pengiriman pesan pengingat deadline tagihan dan struk pembayaran otomatis satu persatu ke nomor orang tua.
-            </p>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-300 font-bold block mb-1">Fonnte API Token</label>
+                <input
+                  type="text"
+                  value={fonnteToken}
+                  onChange={e => setFonnteToken(e.target.value)}
+                  className="w-full bg-[#181818] border border-slate-700/80 text-white font-mono rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  placeholder="Masukkan token API Fonnte..."
+                />
+              </div>
 
-            <div>
-              <label className="text-[11px] font-bold text-slate-300 block mb-1">Fonnte API Token:</label>
-              <input
-                type="text"
-                value={fonnteToken}
-                onChange={e => setFonnteToken(e.target.value)}
-                placeholder="Masukkan token fonnte..."
-                className="w-full p-2.5 bg-[#181818] border border-slate-700 rounded-xl text-xs font-mono font-bold text-emerald-400"
-              />
+              <div className="p-3 bg-[#181818] rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
+                <p>Kirimkan bukti transaksi pembayaran dan tagihan secara otomatis ke WhatsApp nomor orang tua siswa.</p>
+              </div>
             </div>
 
-            <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
-              <div className="font-bold text-slate-200">Status Gateway: ONLINE (Fonnte Ready)</div>
-              <div>Pengiriman otomatis aktif per nomor WhatsApp secara berurutan.</div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+            <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setShowFonnteConfigModal(false)}
-                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs shadow-md"
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-600/20"
               >
-                Simpan & Aktifkan
+                Simpan Token
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TAMBAH / EDIT TARIF BIAYA */}
+      {showTarifModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-slate-800 text-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-extrabold text-sm flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-amber-400" />
+                {editingTarif ? 'Edit Tarif Biaya Keuangan' : 'Tambah Parameter Tarif Biaya Baru'}
+              </h3>
+              <button
+                onClick={() => setShowTarifModal(false)}
+                className="text-slate-400 hover:text-white font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTarif} className="space-y-3.5 text-xs">
+              <div>
+                <label className="text-slate-300 font-bold block mb-1">Nama Biaya / Tagihan *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="misal: SPP Kelas 7, UKT Gedung, Seragam..."
+                  value={tarifForm.namaBiaya}
+                  onChange={e => setTarifForm({ ...tarifForm, namaBiaya: e.target.value })}
+                  className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">Kategori Biaya</label>
+                  <select
+                    value={tarifForm.tipe}
+                    onChange={e => setTarifForm({ ...tarifForm, tipe: e.target.value as TipeKeuangan })}
+                    className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  >
+                    <option value="spp">SPP Bulanan</option>
+                    <option value="ukt">UKT / Uang Masuk</option>
+                    <option value="ekskul">Ekskul & Kegiatan</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">Target Kelas / Tingkat</label>
+                  <select
+                    value={tarifForm.tingkatKelas}
+                    onChange={e => setTarifForm({ ...tarifForm, tingkatKelas: e.target.value })}
+                    className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  >
+                    <option value="Kelas 7">Kelas 7 (Tingkat VII)</option>
+                    <option value="Kelas 8">Kelas 8 (Tingkat VIII)</option>
+                    <option value="Kelas 9">Kelas 9 (Tingkat IX)</option>
+                    <option value="Kelas 10">Kelas 10 (Tingkat X)</option>
+                    <option value="Kelas 11">Kelas 11 (Tingkat XI)</option>
+                    <option value="Kelas 12">Kelas 12 (Tingkat XII)</option>
+                    <option value="Siswa Baru (Kelas 7)">Siswa Baru (Kelas 7)</option>
+                    <option value="Siswa Baru (Kelas 10)">Siswa Baru (Kelas 10)</option>
+                    <option value="Peserta Ekskul">Peserta Ekskul</option>
+                    <option value="Semua Tingkat">Semua Tingkat Kelas</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">Nominal Tarif (Rp) *</label>
+                  <input
+                    type="number"
+                    required
+                    min={1000}
+                    value={tarifForm.nominal}
+                    onChange={e => setTarifForm({ ...tarifForm, nominal: Number(e.target.value) })}
+                    className="w-full bg-[#181818] border border-emerald-500/60 text-emerald-400 font-mono font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">Periode Pembayaran</label>
+                  <select
+                    value={tarifForm.periode}
+                    onChange={e => setTarifForm({ ...tarifForm, periode: e.target.value as any })}
+                    className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  >
+                    <option value="Bulanan">Bulanan</option>
+                    <option value="Sekali Bayar (Uang Masuk / UKT)">Sekali Bayar (Uang Masuk / UKT)</option>
+                    <option value="Per Semester">Per Semester</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-bold block mb-1">Keterangan / Catatan</label>
+                <input
+                  type="text"
+                  placeholder="Catatan komponen biaya..."
+                  value={tarifForm.keterangan}
+                  onChange={e => setTarifForm({ ...tarifForm, keterangan: e.target.value })}
+                  className="w-full bg-[#181818] border border-slate-700/80 text-white rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-bold block mb-1">Status Keaktifan</label>
+                <select
+                  value={tarifForm.status}
+                  onChange={e => setTarifForm({ ...tarifForm, status: e.target.value as any })}
+                  className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                >
+                  <option value="Aktif">Aktif (Berlaku)</option>
+                  <option value="Nonaktif">Nonaktif</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowTarifModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl text-xs transition-all shadow-md shadow-amber-500/20"
+                >
+                  Simpan Tarif
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL GENERATE TAGIHAN MASSAL */}
+      {showGeneratorModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-slate-800 text-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-extrabold text-sm flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-300" />
+                Generate Tagihan Massal Otomatis
+              </h3>
+              <button
+                onClick={() => setShowGeneratorModal(false)}
+                className="text-slate-400 hover:text-white font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {genSuccessMsg ? (
+              <div className="p-4 bg-emerald-950/80 border border-emerald-500/40 rounded-xl text-emerald-200 text-xs font-bold text-center space-y-2">
+                <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto" />
+                <p>{genSuccessMsg}</p>
+              </div>
+            ) : (
+              <form onSubmit={handleRunMassGenerator} className="space-y-3.5 text-xs">
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">Pilih Parameter Biaya *</label>
+                  <select
+                    value={genSelectedTarifId}
+                    onChange={e => setGenSelectedTarifId(e.target.value)}
+                    className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  >
+                    {tarifList.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.namaBiaya} - Rp {t.nominal.toLocaleString('id-ID')} ({t.tingkatKelas})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">Bulan & Tahun Tagihan</label>
+                  <input
+                    type="text"
+                    value={genBulanTahun}
+                    onChange={e => setGenBulanTahun(e.target.value)}
+                    className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    placeholder="misal: Agustus 2026, Semester Ganjil 2026..."
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">Tanggal Jatuh Tempo</label>
+                  <input
+                    type="date"
+                    value={genJatuhTempo}
+                    onChange={e => setGenJatuhTempo(e.target.value)}
+                    className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="p-3 bg-indigo-950/40 rounded-xl border border-indigo-800/60 text-[11px] text-indigo-200">
+                  Sistem akan membuat tagihan secara otomatis untuk seluruh siswa aktif berdasarkan nominal yang dikonfigurasi.
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowGeneratorModal(false)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold rounded-xl text-xs transition-all shadow-md shadow-indigo-600/30 flex items-center gap-1.5"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-300" />
+                    Proses Massal
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI HAPUS TRANSAKSI */}
+      {deleteTargetTx && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-slate-800 text-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-extrabold text-sm flex items-center gap-2 text-rose-400">
+                <Trash2 className="w-4 h-4" />
+                Konfirmasi Hapus Transaksi
+              </h3>
+              <button
+                onClick={() => setDeleteTargetTx(null)}
+                className="text-slate-400 hover:text-white font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="text-xs text-slate-300 space-y-2">
+              <p>Apakah Anda yakin ingin menghapus transaksi ini?</p>
+              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-1">
+                <div className="font-bold text-slate-200">{deleteTargetTx.pembayaran}</div>
+                <div className="font-mono font-bold text-emerald-400">Rp {deleteTargetTx.tagihan.toLocaleString('id-ID')}</div>
+                <div className="text-[10px] text-slate-400">{deleteTargetTx.tanggal}</div>
+              </div>
+              <p className="text-[11px] text-slate-400 italic">Tindakan ini akan mengembalikan status pembayaran dan saldo tagihan siswa terkait secara otomatis.</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetTx(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  performDeleteTransaction(deleteTargetTx);
+                  setDeleteTargetTx(null);
+                }}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-extrabold rounded-xl text-xs transition-all shadow-md shadow-rose-600/30 flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Ya, Hapus
               </button>
             </div>
           </div>

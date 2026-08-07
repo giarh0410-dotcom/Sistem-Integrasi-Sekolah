@@ -13,6 +13,9 @@ import { LoginView } from './components/LoginView';
 import { 
   Role, 
   SubTab,
+  CbtSubTab,
+  KeuanganSubTab,
+  TarifBiaya,
   Siswa, 
   Guru, 
   Staf, 
@@ -43,7 +46,8 @@ import {
   INITIAL_ADMINISTRASI, 
   INITIAL_TAGIHAN, 
   INITIAL_TRANSAKSI,
-  INITIAL_SCHOOL_SETTINGS
+  INITIAL_SCHOOL_SETTINGS,
+  INITIAL_TARIF_BIAYA
 } from './data/mockData';
 
 import { initAuth, googleSignOut } from './lib/firebase';
@@ -52,7 +56,15 @@ import { exportAllToGoogleSheets } from './lib/googleDriveSync';
 function getSavedData<T>(key: string, initial: T): T {
   try {
     const saved = localStorage.getItem(key);
-    return saved ? JSON.parse(saved) : initial;
+    if (!saved) return initial;
+    if (typeof initial === 'string') {
+      try {
+        return JSON.parse(saved) as T;
+      } catch {
+        return saved as unknown as T;
+      }
+    }
+    return JSON.parse(saved);
   } catch (e) {
     console.error(`Error loading ${key} from localStorage:`, e);
     return initial;
@@ -64,6 +76,8 @@ export default function App() {
   const [currentRole, setCurrentRole] = useState<Role>('admin');
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [databaseSubTab, setDatabaseSubTab] = useState<SubTab>('siswa');
+  const [cbtSubTab, setCbtSubTab] = useState<CbtSubTab>('bank_soal');
+  const [keuanganSubTab, setKeuanganSubTab] = useState<KeuanganSubTab>('pembayaran');
 
   // Google OAuth Auth State
   const [userGoogleToken, setUserGoogleToken] = useState<string>('demo_workspace_token_active');
@@ -91,11 +105,16 @@ export default function App() {
   // Financial State
   const [tagihanList, setTagihanList] = useState<TagihanKeuangan[]>(() => getSavedData('edu_tagihanList', INITIAL_TAGIHAN));
   const [transaksiList, setTransaksiList] = useState<TransaksiKeuangan[]>(() => getSavedData('edu_transaksiList', INITIAL_TRANSAKSI));
+  const [tarifBiayaList, setTarifBiayaList] = useState<TarifBiaya[]>(() => getSavedData('edu_tarifBiayaList', INITIAL_TARIF_BIAYA));
 
   // School Identity & Settings State
   const [schoolSettings, setSchoolSettings] = useState<SchoolSettings>(() => getSavedData('edu_schoolSettings', INITIAL_SCHOOL_SETTINGS));
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => getSavedData('edu_theme', 'dark'));
 
   // Sync state to localStorage on changes
+  useEffect(() => {
+    localStorage.setItem('edu_theme', theme);
+  }, [theme]);
   useEffect(() => {
     localStorage.setItem('edu_rombelList', JSON.stringify(rombelList));
   }, [rombelList]);
@@ -147,6 +166,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('edu_transaksiList', JSON.stringify(transaksiList));
   }, [transaksiList]);
+
+  useEffect(() => {
+    localStorage.setItem('edu_tarifBiayaList', JSON.stringify(tarifBiayaList));
+  }, [tarifBiayaList]);
 
   useEffect(() => {
     localStorage.setItem('edu_schoolSettings', JSON.stringify(schoolSettings));
@@ -277,7 +300,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-slate-200 font-sans flex flex-col antialiased selection:bg-blue-600 selection:text-white">
+    <div className={`min-h-screen ${theme === 'light' ? 'bg-slate-50 text-slate-900' : 'bg-[#0A0A0A] text-slate-200'} font-sans flex flex-col antialiased selection:bg-blue-600 selection:text-white transition-colors`}>
       
       {/* Navbar Header */}
       <Header
@@ -289,6 +312,8 @@ export default function App() {
         setUserEmail={setUserEmail}
         schoolSettings={schoolSettings}
         onLogout={handleLogout}
+        theme={theme}
+        setTheme={setTheme}
       />
 
       {/* Main App Layout */}
@@ -302,15 +327,20 @@ export default function App() {
           currentRole={currentRole}
           databaseSubTab={databaseSubTab}
           setDatabaseSubTab={setDatabaseSubTab}
+          cbtSubTab={cbtSubTab}
+          setCbtSubTab={setCbtSubTab}
+          keuanganSubTab={keuanganSubTab}
+          setKeuanganSubTab={setKeuanganSubTab}
           siswaCount={siswaList.length}
           guruCount={guruList.length}
           stafCount={stafList.length}
           rombelCount={rombelList.length}
           mapelCount={mapelList.length}
+          bankSoalCount={bankSoalList.length}
         />
 
         {/* Content View Area */}
-        <main className="flex-1 min-w-0 bg-[#0A0A0A] rounded-2xl p-4 sm:p-6 border border-slate-800 shadow-2xl">
+        <main className={`flex-1 min-w-0 ${theme === 'light' ? 'bg-white text-slate-900 border-slate-200' : 'bg-[#0A0A0A] text-slate-200 border-slate-800'} rounded-2xl p-4 sm:p-6 border shadow-2xl transition-colors`}>
           {activeTab === 'dashboard' && (
             <DashboardView
               siswaList={siswaList}
@@ -375,6 +405,8 @@ export default function App() {
               siswaList={siswaList}
               currentRole={currentRole}
               userEmail={userEmail}
+              subTab={cbtSubTab}
+              setSubTab={setCbtSubTab}
             />
           )}
 
@@ -395,6 +427,11 @@ export default function App() {
               transaksiList={transaksiList}
               setTransaksiList={setTransaksiList}
               userGoogleToken={userGoogleToken}
+              siswaList={siswaList}
+              subTab={keuanganSubTab}
+              setSubTab={setKeuanganSubTab}
+              tarifBiayaList={tarifBiayaList}
+              setTarifBiayaList={setTarifBiayaList}
             />
           )}
 
@@ -421,7 +458,7 @@ export default function App() {
       </div>
 
       {/* Footer */}
-      <footer className="bg-[#0A0A0A] border-t border-slate-800 py-4 text-center text-xs text-slate-500 uppercase font-medium tracking-wider">
+      <footer className={`${theme === 'light' ? 'bg-white text-slate-500 border-slate-200' : 'bg-[#0A0A0A] text-slate-500 border-slate-800'} border-t py-4 text-center text-xs uppercase font-medium tracking-wider transition-colors`}>
         <p>© 2026 EduPortal Pro Integrated • Google AI Studio Applet</p>
       </footer>
 

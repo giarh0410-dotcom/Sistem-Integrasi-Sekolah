@@ -7,7 +7,9 @@ import {
   ShieldCheck, 
   FileSpreadsheet,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { Role, SchoolSettings } from '../types/school';
 import { googleSignIn, googleSignOut } from '../lib/firebase';
@@ -21,6 +23,8 @@ interface HeaderProps {
   setUserEmail: (email: string) => void;
   schoolSettings?: SchoolSettings;
   onLogout?: () => void;
+  theme: 'dark' | 'light';
+  setTheme: (theme: 'dark' | 'light') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,7 +35,9 @@ export const Header: React.FC<HeaderProps> = ({
   userEmail,
   setUserEmail,
   schoolSettings,
-  onLogout
+  onLogout,
+  theme,
+  setTheme
 }) => {
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
@@ -66,13 +72,13 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="bg-[#0A0A0A] text-white border-b border-slate-800 sticky top-0 z-40 shadow-sm">
+    <header className={`${theme === 'light' ? 'bg-white text-slate-900 border-slate-200' : 'bg-[#0A0A0A] text-white border-slate-800'} border-b sticky top-0 z-40 shadow-sm transition-colors`}>
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
         {/* Brand */}
         <div className="flex items-center gap-3">
           {schoolSettings?.logoUrl ? (
-            <div className="w-9 h-9 bg-white/10 rounded-lg p-1 border border-slate-700 flex items-center justify-center shrink-0 shadow-md">
+            <div className={`w-9 h-9 rounded-lg p-1 border flex items-center justify-center shrink-0 shadow-md ${theme === 'light' ? 'bg-slate-100 border-slate-300' : 'bg-white/10 border-slate-700'}`}>
               <img src={schoolSettings.logoUrl} alt="Logo Sekolah" className="w-full h-full object-contain" />
             </div>
           ) : (
@@ -81,13 +87,13 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
           <div>
-            <h1 className="font-semibold text-sm sm:text-base tracking-tight text-white uppercase flex items-center gap-2">
+            <h1 className={`font-semibold text-sm sm:text-base tracking-tight uppercase flex items-center gap-2 ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
               {schoolSettings?.namaSekolah || 'EduPortal Pro'}
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">
                 v2026
               </span>
             </h1>
-            <p className="text-[11px] text-slate-500 hidden sm:block">
+            <p className={`text-[11px] hidden sm:block ${theme === 'light' ? 'text-slate-500' : 'text-slate-500'}`}>
               {schoolSettings ? `NPSN: ${schoolSettings.npsn} • Akreditasi ${schoolSettings.akreditasi}` : 'Sistem Informasi Manajemen, CBT & Keuangan Terpadu'}
             </p>
           </div>
@@ -96,9 +102,24 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Center/Right Controls */}
         <div className="flex items-center gap-3">
 
+          {/* Theme Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer ${
+              theme === 'light'
+                ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                : 'bg-[#121212] text-amber-400 border-slate-800 hover:bg-slate-800'
+            }`}
+            title={theme === 'dark' ? 'Beralih ke Tampilan Terang (Light Mode)' : 'Beralih ke Tampilan Gelap (Dark Mode)'}
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-amber-700" />}
+            <span className="hidden sm:inline">{theme === 'dark' ? 'Terang' : 'Gelap'}</span>
+          </button>
+
           {/* Role Switcher */}
-          <div className="hidden md:flex items-center bg-[#121212] p-1 rounded-lg border border-slate-800">
-            <span className="text-xs font-semibold text-slate-500 px-2 flex items-center gap-1">
+          <div className={`hidden md:flex items-center p-1 rounded-lg border ${theme === 'light' ? 'bg-slate-100 border-slate-200' : 'bg-[#121212] border-slate-800'}`}>
+            <span className={`text-xs font-semibold px-2 flex items-center gap-1 ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>
               <ShieldCheck className="w-3.5 h-3.5" /> Peran:
             </span>
             {(['admin', 'guru', 'staf', 'siswa'] as Role[]).map((role) => {

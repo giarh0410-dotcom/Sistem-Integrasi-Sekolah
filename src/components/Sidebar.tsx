@@ -13,9 +13,14 @@ import {
   UserCheck,
   ChevronDown,
   Layers,
-  BookOpen
+  BookOpen,
+  Calendar,
+  Play,
+  CreditCard,
+  Sliders,
+  FileSpreadsheet
 } from 'lucide-react';
-import { Role, SubTab } from '../types/school';
+import { Role, SubTab, CbtSubTab, KeuanganSubTab } from '../types/school';
 
 export type TabType = 'dashboard' | 'database' | 'absensi' | 'cbt' | 'administrasi' | 'keuangan' | 'pengaturan';
 
@@ -26,11 +31,16 @@ interface SidebarProps {
   currentRole?: Role;
   databaseSubTab: SubTab;
   setDatabaseSubTab: (subTab: SubTab) => void;
+  cbtSubTab?: CbtSubTab;
+  setCbtSubTab?: (subTab: CbtSubTab) => void;
+  keuanganSubTab?: KeuanganSubTab;
+  setKeuanganSubTab?: (subTab: KeuanganSubTab) => void;
   siswaCount: number;
   guruCount: number;
   stafCount: number;
   rombelCount: number;
   mapelCount: number;
+  bankSoalCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -40,11 +50,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentRole = 'admin',
   databaseSubTab,
   setDatabaseSubTab,
+  cbtSubTab = 'bank_soal',
+  setCbtSubTab,
+  keuanganSubTab = 'pembayaran',
+  setKeuanganSubTab,
   siswaCount,
   guruCount,
   stafCount,
   rombelCount,
-  mapelCount
+  mapelCount,
+  bankSoalCount
 }) => {
   const allMenuItems: { id: TabType; label: string; icon: React.ReactNode; badge?: string; desc: string }[] = [
     {
@@ -255,6 +270,220 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span className="text-[9px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded font-mono">
                           {mapelCount}
                         </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            if (item.id === 'cbt') {
+              return (
+                <div key={item.id} className="space-y-1">
+                  <button
+                    onClick={() => {
+                      setActiveTab('cbt');
+                    }}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-between group ${
+                      isActive
+                        ? 'bg-slate-800/90 text-blue-400 font-bold border border-slate-700/80 shadow-md ring-1 ring-blue-500/20'
+                        : 'hover:bg-slate-800/50 hover:text-white text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`${isActive ? 'text-blue-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                        {item.icon}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold leading-none">{item.label}</div>
+                        <div className={`text-[10px] mt-1 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                          {item.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-transform duration-300 ${isActive ? 'transform rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Dropdown nested items for CBT */}
+                  {isActive && (
+                    <div className="pl-3 pr-1 py-1 space-y-1 border-l border-slate-800 ml-6 mt-1 transition-all">
+                      {/* 1. Bank Soal */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('cbt');
+                          if (setCbtSubTab) setCbtSubTab('bank_soal');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          cbtSubTab === 'bank_soal'
+                            ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Bank Soal Ujian</span>
+                        </div>
+                        {bankSoalCount !== undefined && (
+                          <span className="text-[9px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                            {bankSoalCount}
+                          </span>
+                        )}
+                      </button>
+
+                      {/* 2. Jadwal & Kartu Ujian */}
+                      {currentRole !== 'guru' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('jadwal_kartu');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'jadwal_kartu'
+                              ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Jadwal & Kartu Ujian</span>
+                          </div>
+                        </button>
+                      )}
+
+                      {/* 3. AI Generator Soal */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('cbt');
+                          if (setCbtSubTab) setCbtSubTab('ai_generator');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          cbtSubTab === 'ai_generator'
+                            ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                          <span>AI Generator Soal</span>
+                        </div>
+                        <span className="text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1 py-0.5 rounded font-bold">
+                          AI
+                        </span>
+                      </button>
+
+                      {/* 4. Simulasi CBT Anti-Cheat */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('cbt');
+                          if (setCbtSubTab) setCbtSubTab('simulasi_ujian');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          cbtSubTab === 'simulasi_ujian'
+                            ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Play className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Simulasi CBT Anti-Cheat</span>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            if (item.id === 'keuangan') {
+              return (
+                <div key={item.id} className="space-y-1">
+                  <button
+                    onClick={() => {
+                      setActiveTab('keuangan');
+                    }}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-between group ${
+                      isActive
+                        ? 'bg-slate-800/90 text-emerald-400 font-bold border border-slate-700/80 shadow-md ring-1 ring-emerald-500/20'
+                        : 'hover:bg-slate-800/50 hover:text-white text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`${isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                        {item.icon}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold leading-none">{item.label}</div>
+                        <div className={`text-[10px] mt-1 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                          {item.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-transform duration-300 ${isActive ? 'transform rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Dropdown nested items for Keuangan */}
+                  {isActive && (
+                    <div className="pl-3 pr-1 py-1 space-y-1 border-l border-slate-800 ml-6 mt-1 transition-all">
+                      {/* 1. Pembayaran Siswa */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('keuangan');
+                          if (setKeuanganSubTab) setKeuanganSubTab('pembayaran');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          keuanganSubTab === 'pembayaran'
+                            ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Pembayaran Siswa</span>
+                        </div>
+                        <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1 py-0.5 rounded font-bold">
+                          Kasir
+                        </span>
+                      </button>
+
+                      {/* 2. Pengaturan Biaya UKT, SPP, Ekskul */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('keuangan');
+                          if (setKeuanganSubTab) setKeuanganSubTab('pengaturan_biaya');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          keuanganSubTab === 'pengaturan_biaya'
+                            ? 'bg-amber-600/10 text-amber-400 border border-amber-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Pengaturan Tarif Biaya</span>
+                        </div>
+                        <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1 py-0.5 rounded font-bold">
+                          UKT/SPP
+                        </span>
+                      </button>
+
+                      {/* 3. Rekap & Google Sheets */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('keuangan');
+                          if (setKeuanganSubTab) setKeuanganSubTab('rekap');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          keuanganSubTab === 'rekap'
+                            ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Rekap & Fonnte WA</span>
+                        </div>
                       </button>
                     </div>
                   )}

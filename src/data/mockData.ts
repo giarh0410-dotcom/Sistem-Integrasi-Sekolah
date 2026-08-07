@@ -16,7 +16,8 @@ import {
   TransaksiKeuangan,
   JadwalUjianItem,
   FonnteConfig,
-  SchoolSettings
+  SchoolSettings,
+  TarifBiaya
 } from '../types/school';
 
 export const INITIAL_ROMBEL: RombelKelas[] = [
@@ -948,6 +949,109 @@ export const INITIAL_MAPEL: MataPelajaranItem[] = [
       { id: 'js-10', hari: 'Senin', jamMulai: '10:00', jamSelesai: '12:00', kelasTarget: 'XI-IPS-1', ruangan: 'Ruang R.205 (Gedung B)' },
       { id: 'js-11', hari: 'Rabu', jamMulai: '13:00', jamSelesai: '14:30', kelasTarget: 'XII-IPA-1', ruangan: 'Ruang R.301 (Gedung C)' }
     ]
+  }
+];
+
+export const INITIAL_TARIF_BIAYA: TarifBiaya[] = [
+  {
+    id: 'trf-01',
+    namaBiaya: 'SPP Bulanan Kelas 7 (Tingkat VII)',
+    tipe: 'spp',
+    tingkatKelas: 'Kelas 7',
+    nominal: 100000,
+    periode: 'Bulanan',
+    keterangan: 'Tarif SPP standar bulanan siswa kelas VII (7)',
+    status: 'Aktif'
+  },
+  {
+    id: 'trf-02',
+    namaBiaya: 'SPP Bulanan Kelas 8 (Tingkat VIII)',
+    tipe: 'spp',
+    tingkatKelas: 'Kelas 8',
+    nominal: 110000,
+    periode: 'Bulanan',
+    keterangan: 'Tarif SPP standar bulanan siswa kelas VIII (8)',
+    status: 'Aktif'
+  },
+  {
+    id: 'trf-03',
+    namaBiaya: 'SPP Bulanan Kelas 9 (Tingkat IX)',
+    tipe: 'spp',
+    tingkatKelas: 'Kelas 9',
+    nominal: 120000,
+    periode: 'Bulanan',
+    keterangan: 'Tarif SPP standar bulanan siswa kelas IX (9)',
+    status: 'Aktif'
+  },
+  {
+    id: 'trf-04',
+    namaBiaya: 'SPP Bulanan Kelas 10 (Tingkat X)',
+    tipe: 'spp',
+    tingkatKelas: 'Kelas 10',
+    nominal: 125000,
+    periode: 'Bulanan',
+    keterangan: 'Tarif SPP standar bulanan siswa kelas X',
+    status: 'Aktif'
+  },
+  {
+    id: 'trf-05',
+    namaBiaya: 'Uang Gedung & Pengembangan (UKT)',
+    tipe: 'ukt',
+    tingkatKelas: 'Siswa Baru (Kelas 7)',
+    nominal: 2500000,
+    periode: 'Sekali Bayar (Uang Masuk / UKT)',
+    keterangan: 'DSP / UKT Pembangunan Fasilitas Laboratorium & Kelas',
+    status: 'Aktif'
+  },
+  {
+    id: 'trf-06',
+    namaBiaya: 'Seragam & Atribut Lengkap Sekolah',
+    tipe: 'ukt',
+    tingkatKelas: 'Siswa Baru (Kelas 7)',
+    nominal: 750000,
+    periode: 'Sekali Bayar (Uang Masuk / UKT)',
+    keterangan: 'Paket 5 Stel Seragam, Batik, Olahraga & Atribut Pramuka',
+    status: 'Aktif'
+  },
+  {
+    id: 'trf-07',
+    namaBiaya: 'Uang Pendaftaran & Administrasi Masuk',
+    tipe: 'ukt',
+    tingkatKelas: 'Siswa Baru (Kelas 7)',
+    nominal: 300000,
+    periode: 'Sekali Bayar (Uang Masuk / UKT)',
+    keterangan: 'Biaya Administrasi Daftar Ulang & Masa Orientasi Siswa',
+    status: 'Aktif'
+  },
+  {
+    id: 'trf-08',
+    namaBiaya: 'Iuran Wajib Kegiatan Pramuka',
+    tipe: 'ekskul',
+    tingkatKelas: 'Semua Tingkat',
+    nominal: 30000,
+    periode: 'Per Semester',
+    keterangan: 'Kemah & Sertifikasi Kecakapan Pramuka Wajib',
+    status: 'Aktif'
+  },
+  {
+    id: 'trf-09',
+    namaBiaya: 'Iuran Ekskul Olahraga & Futsal / Basket',
+    tipe: 'ekskul',
+    tingkatKelas: 'Peserta Ekskul',
+    nominal: 50000,
+    periode: 'Bulanan',
+    keterangan: 'Sewa Lapangan & Pelatih Professional',
+    status: 'Aktif'
+  },
+  {
+    id: 'trf-10',
+    namaBiaya: 'Iuran Ekskul Coding & IT Club',
+    tipe: 'ekskul',
+    tingkatKelas: 'Peserta Ekskul',
+    nominal: 75000,
+    periode: 'Bulanan',
+    keterangan: 'Modul Pemrograman & Sertifikasi IT Studio',
+    status: 'Aktif'
   }
 ];
 

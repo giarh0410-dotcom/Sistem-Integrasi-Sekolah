@@ -80,7 +80,7 @@ export default function App() {
   const [keuanganSubTab, setKeuanganSubTab] = useState<KeuanganSubTab>('pembayaran');
 
   // Google OAuth Auth State
-  const [userGoogleToken, setUserGoogleToken] = useState<string>('demo_workspace_token_active');
+  const [userGoogleToken, setUserGoogleToken] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('giar.hermawan4@guru.smp.belajar.id');
 
   // Main School Master Data
@@ -238,7 +238,7 @@ export default function App() {
   useEffect(() => {
     initAuth(
       (user, token) => {
-        setUserGoogleToken(token || 'demo_workspace_token_active');
+        setUserGoogleToken(token || '');
         setUserEmail(user.email || 'giar.hermawan4@guru.smp.belajar.id');
         setIsLoggedIn(true);
       },
@@ -432,6 +432,12 @@ export default function App() {
               setSubTab={setKeuanganSubTab}
               tarifBiayaList={tarifBiayaList}
               setTarifBiayaList={setTarifBiayaList}
+              schoolSettings={schoolSettings}
+              onRefresh={() => {
+                setTagihanList(getSavedData('edu_tagihanList', INITIAL_TAGIHAN));
+                setTransaksiList(getSavedData('edu_transaksiList', INITIAL_TRANSAKSI));
+                setTarifBiayaList(getSavedData('edu_tarifBiayaList', INITIAL_TARIF_BIAYA));
+              }}
             />
           )}
 

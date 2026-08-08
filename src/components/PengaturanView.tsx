@@ -475,6 +475,16 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
                     <option value="Genap">Semester Genap</option>
                   </select>
                 </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">Nama Kasir (Untuk Kuitansi)</label>
+                  <input
+                    type="text"
+                    value={formData.namaKasir || ''}
+                    onChange={e => handleInputChange('namaKasir', e.target.value)}
+                    placeholder="Contoh: Bendahara TU"
+                    className="w-full p-2.5 bg-[#181818] border border-slate-700 rounded-xl text-xs font-bold text-white focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
 

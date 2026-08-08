@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Wallet, 
   FileSpreadsheet, 
@@ -28,9 +28,10 @@ import {
   Tag,
   GraduationCap,
   Sparkles,
-  Layers
+  Layers,
+  RefreshCw
 } from 'lucide-react';
-import { TagihanKeuangan, TransaksiKeuangan, Siswa, KeuanganSubTab, TarifBiaya, TipeKeuangan } from '../types/school';
+import { TagihanKeuangan, TransaksiKeuangan, Siswa, KeuanganSubTab, TarifBiaya, TipeKeuangan, SchoolSettings } from '../types/school';
 import { sendFonnteMessage } from '../lib/fonnte';
 import { INITIAL_FONNTE_CONFIG, INITIAL_TARIF_BIAYA } from '../data/mockData';
 
@@ -45,6 +46,8 @@ interface KeuanganViewProps {
   setSubTab?: (subTab: KeuanganSubTab) => void;
   tarifBiayaList?: TarifBiaya[];
   setTarifBiayaList?: React.Dispatch<React.SetStateAction<TarifBiaya[]>>;
+  schoolSettings?: SchoolSettings;
+  onRefresh?: () => void;
 }
 
 export const KeuanganView: React.FC<KeuanganViewProps> = ({
@@ -57,8 +60,11 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   subTab,
   setSubTab,
   tarifBiayaList: propTarifBiayaList,
-  setTarifBiayaList: propSetTarifBiayaList
+  setTarifBiayaList: propSetTarifBiayaList,
+  schoolSettings,
+  onRefresh
 }) => {
+  console.log('KeuanganView rendered with tagihanList.length:', tagihanList.length);
   // Navigation Subtab State
   const [localActiveTab, setLocalActiveTab] = useState<KeuanganSubTab>('pembayaran');
   const activeTab = subTab || localActiveTab;
@@ -879,6 +885,43 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   const [genBulanTahun, setGenBulanTahun] = useState<string>('Agustus 2026');
   const [genJatuhTempo, setGenJatuhTempo] = useState<string>('2026-08-10');
   const [genSuccessMsg, setGenSuccessMsg] = useState<string | null>(null);
+  
+  // Effect to automatically update tagihan status and terbayar amount when transactions change
+  useEffect(() => {
+    setTagihanList(prevTagihanList => {
+      let hasChanged = false;
+      const newList = prevTagihanList.map(tagihan => {
+        const txsForTagihan = transaksiList.filter(tx => tx.tagihanId === tagihan.id);
+        if (txsForTagihan.length > 0) {
+          const terbayarFromTx = txsForTagihan.reduce((sum, tx) => sum + tx.nominal, 0);
+          const sisa = tagihan.nominal - terbayarFromTx;
+          const status = sisa <= 0 ? 'Lunas' : (terbayarFromTx > 0 ? 'Dicicil' : 'Belum Lunas');
+          
+          if (tagihan.terbayar !== terbayarFromTx || tagihan.status !== status) {
+            hasChanged = true;
+            return { ...tagihan, terbayar: terbayarFromTx, status };
+          }
+        }
+        return tagihan;
+      });
+      return hasChanged ? newList : prevTagihanList;
+    });
+  }, [transaksiList, setTagihanList]);
+  
+  // Modal Edit Tagihan
+  const [showEditTagihanModal, setShowEditTagihanModal] = useState(false);
+  const [editingTagihan, setEditingTagihan] = useState<TagihanKeuangan | null>(null);
+  const [editTagihanForm, setEditTagihanForm] = useState<{
+    namaTagihan: string;
+    nominal: number;
+    jatuhTempo: string;
+    status: 'Lunas' | 'Belum Lunas' | 'Dicicil';
+  }>({
+    namaTagihan: '',
+    nominal: 0,
+    jatuhTempo: '',
+    status: 'Belum Lunas'
+  });
 
   // Search Submit Handler
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -1269,7 +1312,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          accessToken: userGoogleToken || 'demo_active_token',
+          accessToken: userGoogleToken,
           title: `Laporan Keuangan Sekolah - ${new Date().toLocaleDateString('id-ID')}`,
           sheetName: 'Rekap Keuangan SPP UKT',
           columns,
@@ -1815,7 +1858,14 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (!printReceiptData) {
+                  if (studentTransactions.length > 0) {
+                    // Collect all recent transactions for the receipt
+                    const receiptItems = studentTransactions.map(tx => ({
+                      id: tx.id,
+                      uraian: tx.pembayaran,
+                      jumlah: tx.tagihan
+                    }));
+
                     setPrintReceiptData({
                       noNota: `KW-${Math.floor(100000 + Math.random() * 900000)}`,
                       tahunAjaran,
@@ -1823,15 +1873,39 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                       nama: selectedSiswa ? selectedSiswa.nama : '',
                       namaIbu: selectedSiswa ? (selectedSiswa.namaIbu || selectedSiswa.namaWali) : '',
                       kelas: selectedSiswa ? selectedSiswa.kelas : '',
+                      items: receiptItems,
+                      pembayaranTitle: 'Rekap Pembayaran Terbaru',
+                      nominal: studentTransactions.reduce((sum, tx) => sum + tx.tagihan, 0),
+                      dibayar: studentTransactions.reduce((sum, tx) => sum + tx.tagihan, 0),
+                      kembalian: 0,
+                      tanggal: new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }),
+                      penerima: 'Bendahara Sekolah'
+                    });
+                    setShowPrintModal(true);
+                  } else if (!printReceiptData) {
+                    setPrintReceiptData({
+                      noNota: `KW-${Math.floor(100000 + Math.random() * 900000)}`,
+                      tahunAjaran,
+                      nis: selectedSiswa ? selectedSiswa.nis : '',
+                      nama: selectedSiswa ? selectedSiswa.nama : '',
+                      namaIbu: selectedSiswa ? (selectedSiswa.namaIbu || selectedSiswa.namaWali) : '',
+                      kelas: selectedSiswa ? selectedSiswa.kelas : '',
+                      items: [{
+                        id: `item-${Date.now()}`,
+                        uraian: `SPP - T.A ${tahunAjaran} (Desember)`,
+                        jumlah: 100000
+                      }],
                       pembayaranTitle: `SPP - T.A ${tahunAjaran} (Desember)`,
                       nominal: 100000,
                       dibayar: 100000,
                       kembalian: 0,
-                      tanggal: new Date(transactionDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }),
+                      tanggal: new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }),
                       penerima: 'Bendahara Sekolah'
                     });
+                    setShowPrintModal(true);
+                  } else {
+                    setShowPrintModal(true);
                   }
-                  setShowPrintModal(true);
                 }}
                 className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5"
               >
@@ -2333,8 +2407,8 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
           )}
 
           {/* Financial Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800 shadow-md">
+          <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-6 gap-4">
+            <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800 shadow-md sm:col-span-2">
               <span className="text-xs font-bold uppercase text-slate-400">Total Nominal Tagihan</span>
               <div className="text-2xl font-extrabold text-white mt-2">
                 Rp {tagihanList.reduce((a, b) => a + b.nominal, 0).toLocaleString('id-ID')}
@@ -2342,15 +2416,36 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
             </div>
 
             <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800 shadow-md">
-              <span className="text-xs font-bold uppercase text-emerald-400">Total Terbayar (Kas Masuk)</span>
-              <div className="text-2xl font-extrabold text-emerald-400 mt-2">
-                Rp {tagihanList.reduce((a, b) => a + b.terbayar, 0).toLocaleString('id-ID')}
+              <span className="text-xs font-bold uppercase text-emerald-400">Total SPP</span>
+              <div className="text-xl font-extrabold text-emerald-400 mt-2">
+                Rp {totalSppPaid.toLocaleString('id-ID')}
               </div>
             </div>
 
             <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800 shadow-md">
-              <span className="text-xs font-bold uppercase text-amber-400">Total Sisa Tunggakan Siswa</span>
-              <div className="text-2xl font-extrabold text-amber-400 mt-2">
+              <span className="text-xs font-bold uppercase text-amber-400">Total UKT</span>
+              <div className="text-xl font-extrabold text-amber-400 mt-2">
+                Rp {totalUktPaid.toLocaleString('id-ID')}
+              </div>
+            </div>
+
+            <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800 shadow-md">
+              <span className="text-xs font-bold uppercase text-purple-400">Total Ekskul</span>
+              <div className="text-xl font-extrabold text-purple-400 mt-2">
+                Rp {totalEkskulPaid.toLocaleString('id-ID')}
+              </div>
+            </div>
+
+            <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800 shadow-md">
+              <span className="text-xs font-bold uppercase text-white">Total Akumulasi</span>
+              <div className="text-xl font-extrabold text-white mt-2">
+                Rp {(totalSppPaid + totalUktPaid + totalEkskulPaid).toLocaleString('id-ID')}
+              </div>
+            </div>
+
+            <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800 shadow-md">
+              <span className="text-xs font-bold uppercase text-rose-400">Total Sisa</span>
+              <div className="text-xl font-extrabold text-rose-400 mt-2">
                 Rp {tagihanList.reduce((a, b) => a + (b.nominal - b.terbayar), 0).toLocaleString('id-ID')}
               </div>
             </div>
@@ -2359,14 +2454,35 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
           {/* Action Header */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#121212] p-4 rounded-xl border border-slate-800 shadow-md">
             <h3 className="text-sm font-bold text-white">Daftar Tagihan Seluruh Siswa</h3>
-            <button
-              onClick={handleExportGoogleSheets}
-              disabled={exportingSheets}
-              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-2"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              {exportingSheets ? 'Mengekspor...' : 'Ekspor Rekap ke Google Sheets'}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  if (tarifList.length > 0) {
+                    setGenSelectedTarifId(tarifList[0].id);
+                  }
+                  setShowGeneratorModal(true);
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-2"
+              >
+                <Zap className="w-4 h-4 text-amber-300" />
+                Generate Tagihan
+              </button>
+              <button
+                onClick={onRefresh}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-2"
+                title="Refresh Status"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleExportGoogleSheets}
+                disabled={exportingSheets}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-2"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                {exportingSheets ? 'Mengekspor...' : 'Ekspor Rekap ke Google Sheets'}
+              </button>
+            </div>
           </div>
 
           {/* Global Tagihan Table */}
@@ -2382,55 +2498,133 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                     <th className="px-4 py-3">Terbayar</th>
                     <th className="px-4 py-3">Sisa</th>
                     <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-center">Aksi</th>
                     <th className="px-4 py-3 text-center">Kirim Notif WA</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {tagihanList.map(t => {
-                    const sisa = t.nominal - t.terbayar;
-                    const isLunas = t.status === 'Lunas' || sisa <= 0;
-                    return (
-                      <tr key={t.id} className="hover:bg-slate-900/50">
+                  {tagihanList.length > 0 ? (
+                    tagihanList.map(t => {
+                      const totalTerbayar = transaksiList
+                        .filter(tx => tx.tagihanId === t.id)
+                        .reduce((sum, tx) => sum + tx.nominal, 0);
+                      
+                      const sisa = t.nominal - totalTerbayar;
+                      const isLunas = t.status === 'Lunas';
+                      const isDicicil = t.status === 'Dicicil';
+                      
+                      return (
+                        <tr key={t.id} className="hover:bg-slate-900/50">
+                          <td className="px-4 py-3">
+                            <div className="font-bold text-white">{t.siswaNama}</div>
+                            <div className="text-[10px] text-slate-400">{t.kelas}</div>
+                          </td>
+                          <td className="px-4 py-3 font-semibold uppercase text-slate-400">{t.tipe}</td>
+                          <td className="px-4 py-3">{t.namaTagihan}</td>
+                          <td className="px-4 py-3 font-mono font-bold text-white">Rp {t.nominal.toLocaleString('id-ID')}</td>
+                          <td className="px-4 py-3 font-mono text-emerald-400">Rp {totalTerbayar.toLocaleString('id-ID')}</td>
+                          <td className="px-4 py-3 font-mono text-amber-400">Rp {sisa.toLocaleString('id-ID')}</td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                              isLunas ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 
+                              isDicicil ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 
+                              'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            }`}>
+                              {t.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center relative z-50">
+                              <button
+                               type="button"
+                               onClick={() => {
+                                 setEditingTagihan(t);
+                                 setEditTagihanForm({
+                                   namaTagihan: t.namaTagihan,
+                                   nominal: t.nominal,
+                                   jatuhTempo: t.jatuhTempo || '',
+                                   status: t.status || 'Belum Lunas'
+                                 });
+                                 setShowEditTagihanModal(true);
+                               }}
+                               className="p-1.5 text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 rounded-lg transition-all mr-1"
+                               title="Edit Tagihan"
+                             >
+                               <Edit3 className="w-4 h-4" />
+                             </button>
+                             <button
+                              type="button"
+                              onClick={() => {
+                                try {
+                                  console.log('Delete button clicked for tagihan ID:', t.id, 'Siswa:', t.siswaNama);
+                                  // 1. Remove the billing item
+                                  setTagihanList(prev => {
+                                    const updated = prev.filter(item => item.id !== t.id);
+                                    console.log('Updated tagihanList length:', updated.length);
+                                    return updated;
+                                  });
+                                  
+                                  // 2. Remove associated payment/transaction records
+                                  setTransaksiList(prev => {
+                                    const updated = prev.filter(tx => tx.tagihanId !== t.id);
+                                    console.log('Updated transaksiList length:', updated.length);
+                                    return updated;
+                                  });
+                                } catch (error) {
+                                  console.error('Error deleting tagihan:', error);
+                                }
+                              }}
+                              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-900/20 rounded-lg transition-all"
+                              title="Hapus Tagihan"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {!isLunas ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSendWaReminder(t)}
+                                className="px-2.5 py-1 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 transition-all"
+                                title="Kirim WhatsApp pengingat untuk segera melakukan pembayaran"
+                              >
+                                <Send className="w-3 h-3 text-amber-400" /> WA Tagihan
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleSendWaConfirmation(t)}
+                                className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 transition-all"
+                                title="Kirim WhatsApp konfirmasi bahwa pembayaran telah dilakukan & lunas"
+                              >
+                                <CheckCheck className="w-3 h-3 text-emerald-400" /> WA Lunas
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    siswaList.map(s => (
+                      <tr key={s.id} className="hover:bg-slate-900/50">
                         <td className="px-4 py-3">
-                          <div className="font-bold text-white">{t.siswaNama}</div>
-                          <div className="text-[10px] text-slate-400">{t.kelas}</div>
+                          <div className="font-bold text-white">{s.nama}</div>
+                          <div className="text-[10px] text-slate-400">{s.kelas}</div>
                         </td>
-                        <td className="px-4 py-3 font-semibold uppercase text-slate-400">{t.tipe}</td>
-                        <td className="px-4 py-3">{t.namaTagihan}</td>
-                        <td className="px-4 py-3 font-mono font-bold text-white">Rp {t.nominal.toLocaleString('id-ID')}</td>
-                        <td className="px-4 py-3 font-mono text-emerald-400">Rp {t.terbayar.toLocaleString('id-ID')}</td>
-                        <td className="px-4 py-3 font-mono text-amber-400">Rp {sisa.toLocaleString('id-ID')}</td>
+                        <td className="px-4 py-3 font-semibold uppercase text-slate-400">-</td>
+                        <td className="px-4 py-3 italic text-slate-500">Belum ada tagihan</td>
+                        <td className="px-4 py-3">-</td>
+                        <td className="px-4 py-3">-</td>
+                        <td className="px-4 py-3">-</td>
                         <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
-                            isLunas ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          }`}>
-                            {isLunas ? 'Lunas' : 'Belum Lunas'}
+                          <span className="bg-slate-500/20 text-slate-400 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                            Belum Dibuat
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          {!isLunas ? (
-                            <button
-                              type="button"
-                              onClick={() => handleSendWaReminder(t)}
-                              className="px-2.5 py-1 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 transition-all"
-                              title="Kirim WhatsApp pengingat untuk segera melakukan pembayaran"
-                            >
-                              <Send className="w-3 h-3 text-amber-400" /> WA Tagihan
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleSendWaConfirmation(t)}
-                              className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 transition-all"
-                              title="Kirim WhatsApp konfirmasi bahwa pembayaran telah dilakukan & lunas"
-                            >
-                              <CheckCheck className="w-3 h-3 text-emerald-400" /> WA Lunas
-                            </button>
-                          )}
-                        </td>
+                        <td className="px-4 py-3 text-center">-</td>
+                        <td className="px-4 py-3 text-center">-</td>
                       </tr>
-                    );
-                  })}
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -2463,10 +2657,10 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
               {/* School Header */}
               <div className="text-center border-b-2 border-slate-900 pb-3 space-y-1">
                 <h2 className="font-extrabold text-base tracking-wide uppercase text-slate-900">
-                  SEKOLAH MENENGAH ATAS WORKSPACE 2026
+                  {schoolSettings?.namaSekolah || 'SEKOLAH MENENGAH ATAS WORKSPACE 2026'}
                 </h2>
                 <p className="text-[10px] text-slate-600">
-                  Jl. Pendidikan No. 45, Kebayoran Baru, Jakarta Selatan • Telp: (021) 7891234
+                  {schoolSettings?.alamat || 'Jl. Pendidikan No. 45, Kebayoran Baru, Jakarta Selatan'} • Telp: {schoolSettings?.telepon || '(021) 7891234'}
                 </p>
                 <div className="text-[11px] font-bold text-slate-800 uppercase tracking-widest pt-1">
                   KWITANSI BUKTI PEMBAYARAN RESMI
@@ -2606,7 +2800,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                 <div>
                   <p>Kasir Keuangan,</p>
                   <div className="h-10"></div>
-                  <p className="font-bold underline">({printReceiptData.penerima})</p>
+                  <p className="font-bold underline">({printReceiptData.penerima === 'Bendahara Sekolah' ? (schoolSettings?.namaKasir || 'Bendahara Sekolah') : printReceiptData.penerima})</p>
                 </div>
               </div>
             </div>
@@ -2828,6 +3022,102 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT TAGIHAN */}
+      {showEditTagihanModal && editingTagihan && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-slate-800 text-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-extrabold text-sm flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-blue-400" />
+                Edit Tagihan: {editingTagihan.namaTagihan}
+              </h3>
+              <button
+                onClick={() => setShowEditTagihanModal(false)}
+                className="text-slate-400 hover:text-white font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-300 font-bold block mb-1">Nama Tagihan</label>
+                <input
+                  type="text"
+                  value={editTagihanForm.namaTagihan}
+                  onChange={e => setEditTagihanForm({ ...editTagihanForm, namaTagihan: e.target.value })}
+                  className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-slate-300 font-bold block mb-1">Nominal (Rp)</label>
+                <input
+                  type="number"
+                  value={editTagihanForm.nominal}
+                  onChange={e => setEditTagihanForm({ ...editTagihanForm, nominal: Number(e.target.value) })}
+                  className="w-full bg-[#181818] border border-slate-700/80 text-white font-mono font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-slate-300 font-bold block mb-1">Jatuh Tempo</label>
+                <input
+                  type="date"
+                  value={editTagihanForm.jatuhTempo}
+                  onChange={e => setEditTagihanForm({ ...editTagihanForm, jatuhTempo: e.target.value })}
+                  className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-slate-300 font-bold block mb-1">Status Pembayaran</label>
+                <select
+                  value={editTagihanForm.status}
+                  onChange={e => setEditTagihanForm({ ...editTagihanForm, status: e.target.value as 'Lunas' | 'Belum Lunas' | 'Dicicil' })}
+                  className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                >
+                  <option value="Belum Lunas">Belum Lunas</option>
+                  <option value="Dicicil">Dicicil / Sebagian</option>
+                  <option value="Lunas">Lunas</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setShowEditTagihanModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  setTagihanList(prev => prev.map(t => {
+                    if (t.id === editingTagihan.id) {
+                      let updatedTerbayar = t.terbayar;
+                      if (editTagihanForm.status === 'Lunas' && updatedTerbayar < editTagihanForm.nominal) {
+                        updatedTerbayar = editTagihanForm.nominal;
+                      } else if (editTagihanForm.status === 'Belum Lunas') {
+                        updatedTerbayar = 0;
+                      }
+                      return {
+                        ...t,
+                        namaTagihan: editTagihanForm.namaTagihan,
+                        nominal: editTagihanForm.nominal,
+                        jatuhTempo: editTagihanForm.jatuhTempo,
+                        status: editTagihanForm.status,
+                        terbayar: updatedTerbayar
+                      };
+                    }
+                    return t;
+                  }));
+                  setShowEditTagihanModal(false);
+                }}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-xl text-xs transition-all shadow-md shadow-blue-600/30"
+              >
+                Simpan Perubahan
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -352,6 +352,7 @@ export interface SchoolSettings {
   tahunAjaran: string;
   semesterAktif: string;
   logoUrl: string;
+  namaKasir?: string;
   googleSyncEmail?: string;
   googleSyncEnabled?: boolean;
   googleSyncSpreadsheetId?: string;

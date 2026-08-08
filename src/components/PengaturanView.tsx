@@ -26,11 +26,23 @@ import {
   ShieldAlert,
   AlertCircle,
   Database,
-  RefreshCw
+  RefreshCw,
+  MessageSquare,
+  Key,
+  Eye,
+  EyeOff,
+  Send,
+  Smartphone,
+  Copy,
+  Zap,
+  Sliders,
+  Clock,
+  Timer
 } from 'lucide-react';
-import { SchoolSettings, Siswa, Guru, Staf, RombelKelas, MataPelajaranItem, AbsensiSiswaHarian, AbsensiSiswaKelas } from '../types/school';
+import { SchoolSettings, Siswa, Guru, Staf, RombelKelas, MataPelajaranItem, AbsensiSiswaHarian, AbsensiSiswaKelas, FonnteConfig, JadwalPresensi } from '../types/school';
 import { exportAllToGoogleSheets } from '../lib/googleDriveSync';
 import { googleSignIn, googleSignOut } from '../lib/firebase';
+import { getFonnteDeviceStatus, sendFonnteMessage, FonnteDeviceStatus } from '../lib/fonnte';
 
 interface PengaturanViewProps {
   schoolSettings: SchoolSettings;
@@ -65,11 +77,19 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
   absensiHarian,
   absensiKelasList
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'identitas' | 'logo' | 'google_drive'>('identitas');
+  const [activeSubTab, setActiveSubTab] = useState<'identitas' | 'logo' | 'google_drive' | 'fonnte' | 'jadwal'>('identitas');
   const [formData, setFormData] = useState<SchoolSettings>({ ...schoolSettings });
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isSyncingManual, setIsSyncingManual] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fonnte Token local testing & editing state
+  const [showFonnteToken, setShowFonnteToken] = useState(false);
+  const [isCheckingFonnte, setIsCheckingFonnte] = useState(false);
+  const [fonnteDeviceStatus, setFonnteDeviceStatus] = useState<FonnteDeviceStatus | null>(null);
+  const [testPhoneTarget, setTestPhoneTarget] = useState('081298765432');
+  const [testMessageText, setTestMessageText] = useState('Halo, ini adalah pesan uji coba integrasi Token Fonnte WhatsApp Gateway dari SMP Modern Al Fakhir.');
+  const [sendingTestWA, setSendingTestWA] = useState(false);
 
   // Synchronize internal form state when prop settings change
   React.useEffect(() => {
@@ -212,6 +232,26 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
             }`}
           >
             <Cloud className="w-4 h-4" /> Google Drive & Auto-Sync
+          </button>
+          <button
+            onClick={() => setActiveSubTab('fonnte')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+              activeSubTab === 'fonnte'
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4 text-emerald-400" /> Token Fonnte (WA)
+          </button>
+          <button
+            onClick={() => setActiveSubTab('jadwal')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+              activeSubTab === 'jadwal'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Clock className="w-4 h-4 text-blue-400" /> Jadwal Masuk & Pulang
           </button>
         </div>
       </div>
@@ -927,6 +967,597 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* SUBTAB 4: TOKEN FONNTE (WHATSAPP GATEWAY) */}
+      {activeSubTab === 'fonnte' && (
+        <div className="space-y-6 animate-fade-in">
+          
+          {/* Main Fonnte Container */}
+          <div className="bg-[#121212] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+            <div>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2 mb-1">
+                  <MessageSquare className="w-4 h-4 text-emerald-400" /> Integrasi Token Fonnte WhatsApp Gateway
+                </h3>
+                <a
+                  href="https://fonnte.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1 bg-emerald-950/50 border border-emerald-500/30 hover:bg-emerald-900/50 text-emerald-300 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all"
+                >
+                  Buka Fonnte.com <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              <p className="text-xs text-slate-400">
+                Hubungkan akun Fonnte WhatsApp API Anda untuk mengirimkan pesan notifikasi kehadiran siswa (Masuk & Pulang) langsung ke nomor HP WhatsApp Orang Tua / Wali secara otomatis saat scan ID Barcode.
+              </p>
+            </div>
+
+            {/* Grid layout for Token Input & Connection Status */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              
+              {/* Card 1: API Token Configuration */}
+              <div className="bg-[#181818] border border-slate-800 rounded-2xl p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                    <Key className="w-4 h-4 text-emerald-400" /> Fonnte Account API Token
+                  </h4>
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold uppercase border border-emerald-500/30">
+                    Fonnte v2 API
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-300 block">Token API Fonnte Anda *</label>
+                  <div className="relative flex items-center">
+                    <input
+                      type={showFonnteToken ? 'text' : 'password'}
+                      value={formData.fonnteToken || ''}
+                      onChange={e => handleInputChange('fonnteToken', e.target.value)}
+                      placeholder="Masukkan Token Fonnte (contoh: FONNTE_TOKEN_2026_XYZ)"
+                      className="w-full p-2.5 pr-20 bg-[#121212] border border-slate-700 rounded-xl text-xs font-mono font-bold text-emerald-300 focus:border-emerald-500 focus:outline-none"
+                    />
+                    <div className="absolute right-2 flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowFonnteToken(!showFonnteToken)}
+                        className="p-1 text-slate-400 hover:text-white transition-colors"
+                        title={showFonnteToken ? 'Sembunyikan Token' : 'Tampilkan Token'}
+                      >
+                        {showFonnteToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (formData.fonnteToken) {
+                            navigator.clipboard.writeText(formData.fonnteToken);
+                            alert('Token Fonnte berhasil disalin ke clipboard!');
+                          }
+                        }}
+                        className="p-1 text-slate-400 hover:text-white transition-colors"
+                        title="Salin Token"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Dapatkan token resmi dari dashboard menu Device / API di website Fonnte (https://fonnte.com).
+                  </p>
+                </div>
+
+                {/* Auto Sending Toggles */}
+                <div className="pt-3 border-t border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between p-3 bg-[#121212] rounded-xl border border-slate-800">
+                    <div>
+                      <h5 className="text-xs font-bold text-white">Auto-Send WA Presensi Siswa</h5>
+                      <p className="text-[10px] text-slate-500">Kirim notifikasi otomatis ke orang tua saat barcode siswa discan.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cur = formData.fonnteConfig?.autoSendAbsensi ?? true;
+                        const nextCfg: FonnteConfig = {
+                          ...(formData.fonnteConfig || {
+                            apiKey: formData.fonnteToken || '',
+                            senderName: formData.namaSekolah,
+                            templateReminder: '',
+                            templateReceipt: '',
+                            enabled: true
+                          }),
+                          autoSendAbsensi: !cur
+                        };
+                        setFormData(prev => ({ ...prev, fonnteConfig: nextCfg }));
+                      }}
+                      className={`w-11 h-6 rounded-full p-1 transition-colors duration-200 focus:outline-none ${
+                        (formData.fonnteConfig?.autoSendAbsensi ?? true) ? 'bg-emerald-600' : 'bg-slate-700 opacity-60'
+                      }`}
+                    >
+                      <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
+                        (formData.fonnteConfig?.autoSendAbsensi ?? true) ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-[#121212] rounded-xl border border-slate-800">
+                    <div>
+                      <h5 className="text-xs font-bold text-white">Auto-Send WA Bukti Kuitansi</h5>
+                      <p className="text-[10px] text-slate-500">Kirim struk bukti pembayaran SPP & Keuangan via Fonnte WA.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cur = formData.fonnteConfig?.autoSendKeuangan ?? true;
+                        const nextCfg: FonnteConfig = {
+                          ...(formData.fonnteConfig || {
+                            apiKey: formData.fonnteToken || '',
+                            senderName: formData.namaSekolah,
+                            templateReminder: '',
+                            templateReceipt: '',
+                            enabled: true
+                          }),
+                          autoSendKeuangan: !cur
+                        };
+                        setFormData(prev => ({ ...prev, fonnteConfig: nextCfg }));
+                      }}
+                      className={`w-11 h-6 rounded-full p-1 transition-colors duration-200 focus:outline-none ${
+                        (formData.fonnteConfig?.autoSendKeuangan ?? true) ? 'bg-emerald-600' : 'bg-slate-700 opacity-60'
+                      }`}
+                    >
+                      <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
+                        (formData.fonnteConfig?.autoSendKeuangan ?? true) ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/30"
+                  >
+                    <Save className="w-4 h-4" /> Simpan Konfigurasi Token Fonnte
+                  </button>
+                </div>
+
+              </div>
+
+              {/* Card 2: Device Status & Connection Tester */}
+              <div className="bg-[#181818] border border-slate-800 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
+                
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                      <Smartphone className="w-4 h-4 text-emerald-400" /> Status Device & Kuota Fonnte Gateway
+                    </h4>
+                    <button
+                      type="button"
+                      disabled={isCheckingFonnte}
+                      onClick={async () => {
+                        setIsCheckingFonnte(true);
+                        const res = await getFonnteDeviceStatus(formData.fonnteToken || '');
+                        setFonnteDeviceStatus(res);
+                        setIsCheckingFonnte(false);
+                      }}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-lg text-[11px] flex items-center gap-1.5 transition-all border border-slate-700"
+                    >
+                      {isCheckingFonnte ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                      )}
+                      Cek Status Device
+                    </button>
+                  </div>
+
+                  {fonnteDeviceStatus ? (
+                    <div className="space-y-3">
+                      <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-xl flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                          <div>
+                            <p className="text-xs font-black text-emerald-300">{fonnteDeviceStatus.message}</p>
+                            <p className="text-[10px] text-slate-400">Device: {fonnteDeviceStatus.device}</p>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase">
+                          ONLINE
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="p-2.5 bg-[#121212] rounded-xl border border-slate-800">
+                          <span className="text-[10px] text-slate-500 uppercase font-semibold">Nomor Pengirim / Sender</span>
+                          <p className="font-bold text-white font-mono">{fonnteDeviceStatus.sender}</p>
+                        </div>
+                        <div className="p-2.5 bg-[#121212] rounded-xl border border-slate-800">
+                          <span className="text-[10px] text-slate-500 uppercase font-semibold">Paket Layanan</span>
+                          <p className="font-bold text-emerald-400">{fonnteDeviceStatus.package}</p>
+                        </div>
+                        <div className="p-2.5 bg-[#121212] rounded-xl border border-slate-800">
+                          <span className="text-[10px] text-slate-500 uppercase font-semibold">Sisa Kuota Notif</span>
+                          <p className="font-bold text-amber-400">{fonnteDeviceStatus.quota}</p>
+                        </div>
+                        <div className="p-2.5 bg-[#121212] rounded-xl border border-slate-800">
+                          <span className="text-[10px] text-slate-500 uppercase font-semibold">Masa Aktif Paket</span>
+                          <p className="font-bold text-white">{fonnteDeviceStatus.expired}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-[#121212] rounded-xl border border-slate-800 text-center space-y-2">
+                      <Zap className="w-8 h-8 text-emerald-500 mx-auto opacity-80" />
+                      <p className="text-xs font-bold text-slate-300">Token Fonnte Aktif di Sistem</p>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        Klik tombol <span className="text-emerald-400 font-bold">"Cek Status Device"</span> di atas untuk memverifikasi koneksi WhatsApp Gateway dan mengecek kuota pengiriman pesan.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Test Message Tool */}
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <h5 className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                    <Send className="w-3.5 h-3.5 text-emerald-400" /> Uji Coba Kirim WA via Token Fonnte
+                  </h5>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={testPhoneTarget}
+                      onChange={e => setTestPhoneTarget(e.target.value)}
+                      placeholder="Nomor HP (contoh: 081298765432)"
+                      className="w-2/5 p-2 bg-[#121212] border border-slate-700 rounded-xl text-xs font-mono font-bold text-white focus:border-emerald-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={sendingTestWA}
+                      onClick={async () => {
+                        if (!testPhoneTarget.trim()) {
+                          alert('Mohon masukkan nomor HP tujuan untuk tes!');
+                          return;
+                        }
+                        setSendingTestWA(true);
+                        const res = await sendFonnteMessage(
+                          testPhoneTarget,
+                          testMessageText,
+                          formData.fonnteToken
+                        );
+                        setSendingTestWA(false);
+                        alert(res.message);
+                      }}
+                      className="w-3/5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md"
+                    >
+                      {sendingTestWA ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                      Kirim Pesan Uji Coba
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* Section: Templates Manager */}
+            <div className="pt-4 border-t border-slate-800 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                    <Sliders className="w-4 h-4" /> Template Pesan WhatsApp Presensi & Keuangan
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Variabel dinamis yang dapat digunakan: <code className="bg-slate-800 text-amber-300 px-1 py-0.5 rounded text-[10px]">&#123;NAMA_SISWA&#125;</code>, <code className="bg-slate-800 text-amber-300 px-1 py-0.5 rounded text-[10px]">&#123;KELAS&#125;</code>, <code className="bg-slate-800 text-amber-300 px-1 py-0.5 rounded text-[10px]">&#123;JAM_SCAN&#125;</code>, <code className="bg-slate-800 text-amber-300 px-1 py-0.5 rounded text-[10px]">&#123;TANGGAL&#125;</code>, <code className="bg-slate-800 text-amber-300 px-1 py-0.5 rounded text-[10px]">&#123;NAMA_SEKOLAH&#125;</code>
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Template Presensi Masuk */}
+                <div className="bg-[#181818] border border-slate-800 rounded-2xl p-4 space-y-2">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Template Presensi Masuk Siswa
+                  </span>
+                  <textarea
+                    rows={6}
+                    value={formData.fonnteConfig?.templateAbsensiMasuk || `*PRESENSI SEKOLAH - NOTIFIKASI MASUK*\n\nYth. Bapak/Ibu Wali dari *{NAMA_SISWA}* (*Kelas {KELAS}*),\n\nKami menginformasikan bahwa siswa/i atas nama *{NAMA_SISWA}* telah *HADIR & MELAKUKAN PRESENSI MASUK* di sekolah pada:\n🗓 Tanggal: *{TANGGAL}*\n⏰ Jam Scan: *{JAM_SCAN} WIB*\n📍 Status: *Hadir Tepat Waktu*\n\nTerima kasih atas perhatian dan kerja sama Bapak/Ibu Wali Murid.\n\n_{NAMA_SEKOLAH}_`}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        fonnteConfig: {
+                          ...(prev.fonnteConfig || { apiKey: '', senderName: '', templateReminder: '', templateReceipt: '', enabled: true }),
+                          templateAbsensiMasuk: val
+                        }
+                      }));
+                    }}
+                    className="w-full p-2.5 bg-[#121212] border border-slate-700 rounded-xl text-xs font-mono text-slate-200 focus:border-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                {/* Template Presensi Pulang */}
+                <div className="bg-[#181818] border border-slate-800 rounded-2xl p-4 space-y-2">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-blue-400" /> Template Presensi Pulang Siswa
+                  </span>
+                  <textarea
+                    rows={6}
+                    value={formData.fonnteConfig?.templateAbsensiPulang || `*PRESENSI SEKOLAH - NOTIFIKASI PULANG*\n\nYth. Bapak/Ibu Wali dari *{NAMA_SISWA}* (*Kelas {KELAS}*),\n\nKami menginformasikan bahwa siswa/i atas nama *{NAMA_SISWA}* telah *SELESAI KBM & PRESENSI PULANG* dari sekolah pada:\n🗓 Tanggal: *{TANGGAL}*\n⏰ Jam Scan: *{JAM_SCAN} WIB*\n📍 Status: *Sudah Pulang*\n\nTerima kasih dan selamat beristirahat.\n\n_{NAMA_SEKOLAH}_`}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        fonnteConfig: {
+                          ...(prev.fonnteConfig || { apiKey: '', senderName: '', templateReminder: '', templateReceipt: '', enabled: true }),
+                          templateAbsensiPulang: val
+                        }
+                      }));
+                    }}
+                    className="w-full p-2.5 bg-[#121212] border border-slate-700 rounded-xl text-xs font-mono text-slate-200 focus:border-emerald-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/30"
+                >
+                  <Save className="w-4 h-4" /> Simpan Semua Pengaturan Fonnte
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* SUBTAB 5: JADWAL PRESENSI MASUK & PULANG */}
+      {activeSubTab === 'jadwal' && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="bg-[#121212] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+            
+            <div className="border-b border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-blue-400" /> Pengaturan Jadwal Jam Masuk & Jam Pulang Sekolah
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Atur batasan jam presensi siswa dan guru untuk penentuan otomatis status Tepat Waktu, Terlambat, maupun Pulang Cepat pada scanner barcode.
+                </p>
+              </div>
+              <span className="px-3 py-1 bg-blue-950/60 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-bold self-start sm:self-auto flex items-center gap-1.5">
+                <Timer className="w-3.5 h-3.5" /> Berlaku untuk Presensi Barcode & Online
+              </span>
+            </div>
+
+            {/* Main Form Fields */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              
+              {/* Card 1: Jam Masuk Utama */}
+              <div className="bg-[#181818] border border-slate-800 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <LogIn className="w-4 h-4 text-emerald-400" /> Jam Masuk Utama
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                    Target Masuk
+                  </span>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Target Jam Masuk (WIB) *</label>
+                  <input
+                    type="time"
+                    value={formData.jadwalPresensi?.jamMasuk || '07:00'}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        jadwalPresensi: {
+                          ...(prev.jadwalPresensi || { jamMasuk: '07:00', jamToleransi: '07:15', jamPulang: '14:30', hariKerja: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'] }),
+                          jamMasuk: val
+                        }
+                      }));
+                    }}
+                    className="w-full p-2.5 bg-[#121212] border border-slate-700 rounded-xl text-sm font-mono font-bold text-white focus:border-blue-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Siswa yang scan sebelum jam ini dicatat sebagai <span className="text-emerald-400 font-bold">Hadir Tepat Waktu</span>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 2: Batas Toleransi Terlambat */}
+              <div className="bg-[#181818] border border-slate-800 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Timer className="w-4 h-4 text-amber-400" /> Batas Toleransi
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold">
+                    Batas Maksimal
+                  </span>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Jam Batas Toleransi (WIB) *</label>
+                  <input
+                    type="time"
+                    value={formData.jadwalPresensi?.jamToleransi || '07:15'}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        jadwalPresensi: {
+                          ...(prev.jadwalPresensi || { jamMasuk: '07:00', jamToleransi: '07:15', jamPulang: '14:30', hariKerja: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'] }),
+                          jamToleransi: val
+                        }
+                      }));
+                    }}
+                    className="w-full p-2.5 bg-[#121212] border border-slate-700 rounded-xl text-sm font-mono font-bold text-amber-300 focus:border-amber-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Scan setelah jam ini dicatat sebagai <span className="text-rose-400 font-bold">Terlambat</span>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 3: Jam Pulang Sekolah */}
+              <div className="bg-[#181818] border border-slate-800 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-blue-400" /> Jam Pulang Sekolah
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-bold">
+                    Target Pulang
+                  </span>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Jam Pulang Resmi (WIB) *</label>
+                  <input
+                    type="time"
+                    value={formData.jadwalPresensi?.jamPulang || '14:30'}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        jadwalPresensi: {
+                          ...(prev.jadwalPresensi || { jamMasuk: '07:00', jamToleransi: '07:15', jamPulang: '14:30', hariKerja: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'] }),
+                          jamPulang: val
+                        }
+                      }));
+                    }}
+                    className="w-full p-2.5 bg-[#121212] border border-slate-700 rounded-xl text-sm font-mono font-bold text-blue-300 focus:border-blue-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Scan sebelum jam ini dicatat <span className="text-amber-300 font-bold">Pulang Cepat</span>.
+                  </p>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Hari Kerja Operasional & Auto Switch */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+              
+              {/* Hari Operasional Sekolah */}
+              <div className="bg-[#181818] border border-slate-800 rounded-2xl p-5 space-y-3">
+                <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-purple-400" /> Hari Operasional Sekolah
+                </h4>
+                <p className="text-[11px] text-slate-400">Pilih hari kerja di mana presensi harian wajib dilaksanakan:</p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'].map(hari => {
+                    const currentDays = formData.jadwalPresensi?.hariKerja || ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+                    const isSelected = currentDays.includes(hari);
+                    return (
+                      <button
+                        type="button"
+                        key={hari}
+                        onClick={() => {
+                          const nextDays = isSelected
+                            ? currentDays.filter(d => d !== hari)
+                            : [...currentDays, hari];
+                          setFormData(prev => ({
+                            ...prev,
+                            jadwalPresensi: {
+                              ...(prev.jadwalPresensi || { jamMasuk: '07:00', jamToleransi: '07:15', jamPulang: '14:30', hariKerja: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'] }),
+                              hariKerja: nextDays
+                            }
+                          }));
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                            : 'bg-[#121212] text-slate-500 border border-slate-800 hover:text-slate-300'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-3 h-3 text-white" />} {hari}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Auto Switch Mode Scanner */}
+              <div className="bg-[#181818] border border-slate-800 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-amber-400" /> Auto Switch Mode Scanner (Masuk / Pulang)
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                    Sistem akan secara otomatis mengubah mode scanner ke <span className="text-emerald-400 font-bold">"Masuk"</span> pada pagi hari dan otomatis beralih ke <span className="text-amber-400 font-bold">"Pulang"</span> setelah lewat tengah hari / mendekati jam pulang.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-[#121212] rounded-xl border border-slate-800">
+                  <div>
+                    <h5 className="text-xs font-bold text-white">Aktifkan Auto-Switch Mode</h5>
+                    <p className="text-[10px] text-slate-500">Ganti mode scan otomatis mengikuti jam server realtime</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cur = formData.jadwalPresensi?.autoSwitchScanMode ?? true;
+                      setFormData(prev => ({
+                        ...prev,
+                        jadwalPresensi: {
+                          ...(prev.jadwalPresensi || { jamMasuk: '07:00', jamToleransi: '07:15', jamPulang: '14:30', hariKerja: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'] }),
+                          autoSwitchScanMode: !cur
+                        }
+                      }));
+                    }}
+                    className={`w-11 h-6 rounded-full p-1 transition-colors duration-200 focus:outline-none ${
+                      (formData.jadwalPresensi?.autoSwitchScanMode ?? true) ? 'bg-blue-600' : 'bg-slate-700 opacity-60'
+                    }`}
+                  >
+                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
+                      (formData.jadwalPresensi?.autoSwitchScanMode ?? true) ? 'translate-x-5' : 'translate-x-0'
+                    }`} />
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Status Classification Rule Preview Box */}
+            <div className="p-4 bg-[#181818] border border-slate-800 rounded-2xl space-y-2 text-xs">
+              <h5 className="font-bold text-slate-200 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Ringkasan Aturan Keterlambatan Realtime
+              </h5>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                <div className="p-2.5 bg-[#121212] rounded-xl border border-slate-800 space-y-0.5">
+                  <span className="text-[10px] text-emerald-400 font-bold uppercase">Sebelum {formData.jadwalPresensi?.jamMasuk || '07:00'}</span>
+                  <p className="font-bold text-white">Hadir Tepat Waktu</p>
+                </div>
+                <div className="p-2.5 bg-[#121212] rounded-xl border border-slate-800 space-y-0.5">
+                  <span className="text-[10px] text-amber-400 font-bold uppercase">{formData.jadwalPresensi?.jamMasuk || '07:00'} s/d {formData.jadwalPresensi?.jamToleransi || '07:15'}</span>
+                  <p className="font-bold text-white">Hadir (Toleransi)</p>
+                </div>
+                <div className="p-2.5 bg-[#121212] rounded-xl border border-slate-800 space-y-0.5">
+                  <span className="text-[10px] text-rose-400 font-bold uppercase">Setelah {formData.jadwalPresensi?.jamToleransi || '07:15'}</span>
+                  <p className="font-bold text-white">Terlambat X Menit</p>
+                </div>
+                <div className="p-2.5 bg-[#121212] rounded-xl border border-slate-800 space-y-0.5">
+                  <span className="text-[10px] text-blue-400 font-bold uppercase">Jam Pulang {formData.jadwalPresensi?.jamPulang || '14:30'}</span>
+                  <p className="font-bold text-white">Pulang Sesuai Jadwal</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={handleSave}
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-2 shadow-lg shadow-blue-600/30"
+              >
+                <Save className="w-4 h-4" /> Simpan Jadwal Masuk & Pulang
+              </button>
+            </div>
+
           </div>
         </div>
       )}

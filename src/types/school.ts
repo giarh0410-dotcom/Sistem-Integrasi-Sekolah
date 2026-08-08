@@ -325,7 +325,11 @@ export interface FonnteConfig {
   senderName: string;
   templateReminder: string;
   templateReceipt: string;
+  templateAbsensiMasuk?: string;
+  templateAbsensiPulang?: string;
   enabled: boolean;
+  autoSendAbsensi?: boolean;
+  autoSendKeuangan?: boolean;
 }
 
 export interface GoogleDriveExportResult {
@@ -333,6 +337,14 @@ export interface GoogleDriveExportResult {
   spreadsheetUrl?: string;
   spreadsheetId?: string;
   message?: string;
+}
+
+export interface JadwalPresensi {
+  jamMasuk: string; // HH:mm format, e.g. "07:00"
+  jamToleransi: string; // HH:mm format, e.g. "07:15"
+  jamPulang: string; // HH:mm format, e.g. "14:30"
+  hariKerja: string[]; // e.g. ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
+  autoSwitchScanMode?: boolean; // Otomatis berpindah mode Masuk/Pulang berdasarkan jam realtime
 }
 
 export interface SchoolSettings {
@@ -357,6 +369,9 @@ export interface SchoolSettings {
   semesterAktif: string;
   logoUrl: string;
   namaKasir?: string;
+  fonnteToken?: string;
+  fonnteConfig?: FonnteConfig;
+  jadwalPresensi?: JadwalPresensi;
   googleSyncEmail?: string;
   googleSyncEnabled?: boolean;
   googleSyncSpreadsheetId?: string;

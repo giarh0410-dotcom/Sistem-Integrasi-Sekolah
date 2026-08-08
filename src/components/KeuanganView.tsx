@@ -82,11 +82,20 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   const setTarifList = propSetTarifBiayaList || setInternalTarifList;
 
   // Filter Data Pembayaran Siswa State
-  const [tahunAjaran, setTahunAjaran] = useState<string>('2024/2025');
-  const [semester, setSemester] = useState<string>('Ganjil');
-  const [searchKey, setSearchKey] = useState<string>(siswaList[0]?.nis || '');
-  const [appliedSearch, setAppliedSearch] = useState<string>(siswaList[0]?.nis || '');
+  const [tahunAjaran, setTahunAjaran] = useState<string>(schoolSettings?.tahunAjaran || '2026/2027');
+  const [semester, setSemester] = useState<string>(schoolSettings?.semesterAktif || 'Ganjil');
+  const [searchKey, setSearchKey] = useState<string>('');
+  const [appliedSearch, setAppliedSearch] = useState<string>('');
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (schoolSettings?.tahunAjaran) {
+      setTahunAjaran(schoolSettings.tahunAjaran);
+    }
+    if (schoolSettings?.semesterAktif) {
+      setSemester(schoolSettings.semesterAktif);
+    }
+  }, [schoolSettings]);
 
   // Search Suggestions memo
   const searchSuggestions = useMemo(() => {
@@ -103,7 +112,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   const selectedSiswa = useMemo(() => {
     if (!siswaList.length) return null;
     const query = appliedSearch.trim().toLowerCase();
-    if (!query) return siswaList[0];
+    if (!query) return null;
 
     const match = siswaList.find(
       s => s.nis.toLowerCase() === query || 
@@ -114,7 +123,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
            s.id.toLowerCase() === query
     );
 
-    return match || siswaList[0];
+    return match || null;
   }, [siswaList, appliedSearch]);
 
   // Jenis Pembayaran Subtab State (Bulanan vs Bebas)
@@ -851,11 +860,17 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   };
 
   // Fonnte & Sheets Export States
-  const [fonnteToken, setFonnteToken] = useState(INITIAL_FONNTE_CONFIG.apiKey);
+  const [fonnteToken, setFonnteToken] = useState(schoolSettings?.fonnteToken || INITIAL_FONNTE_CONFIG.apiKey);
   const [showFonnteConfigModal, setShowFonnteConfigModal] = useState(false);
   const [waSendingStatus, setWaSendingStatus] = useState<string | null>(null);
   const [exportingSheets, setExportingSheets] = useState(false);
   const [exportResult, setExportResult] = useState<{ success: boolean; url?: string; message?: string } | null>(null);
+
+  React.useEffect(() => {
+    if (schoolSettings?.fonnteToken) {
+      setFonnteToken(schoolSettings.fonnteToken);
+    }
+  }, [schoolSettings]);
 
   // Fee Rates Settings View States
   const [feeCategoryFilter, setFeeCategoryFilter] = useState<'semua' | 'spp' | 'ukt' | 'ekskul'>('semua');
@@ -1418,9 +1433,9 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                   onChange={e => setTahunAjaran(e.target.value)}
                   className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 >
-                  <option value="2024/2025">2024/2025</option>
-                  <option value="2025/2026">2025/2026</option>
                   <option value="2026/2027">2026/2027</option>
+                  <option value="2025/2026">2025/2026</option>
+                  <option value="2024/2025">2024/2025</option>
                 </select>
               </div>
 
@@ -1501,6 +1516,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
 
               <button
                 type="button"
+                disabled={!selectedSiswa}
                 onClick={() => {
                   if (!selectedSiswa) return;
                   setPrintReceiptData({
@@ -1519,7 +1535,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                   });
                   setShowPrintModal(true);
                 }}
-                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-rose-600/20"
+                className={`px-4 py-1.5 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md ${!selectedSiswa ? 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-50' : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/20'}`}
               >
                 <Printer className="w-3.5 h-3.5" />
                 Cetak Semua Tagihan
@@ -1547,7 +1563,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                 </div>
                 <div className="grid grid-cols-12 py-1 border-b border-slate-800/60">
                   <span className="col-span-4 font-semibold text-slate-400">Nama Ibu Kandung</span>
-                  <span className="col-span-8 font-bold text-slate-200">: {selectedSiswa ? (selectedSiswa.namaIbu || selectedSiswa.namaWali) : '-'}</span>
+                  <span className="col-span-8 font-bold text-slate-200">: {selectedSiswa ? (selectedSiswa.namaIbu || selectedSiswa.namaWali || '-') : '-'}</span>
                 </div>
                 <div className="grid grid-cols-12 py-1">
                   <span className="col-span-4 font-semibold text-slate-400">Kelas</span>
@@ -1565,9 +1581,13 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                       className="w-full h-full object-cover rounded-full"
                       referrerPolicy="no-referrer"
                     />
-                  ) : (
+                  ) : selectedSiswa?.nama ? (
                     <div className="w-full h-full rounded-full bg-sky-500/20 flex items-center justify-center text-sky-400 font-extrabold text-3xl">
-                      {(selectedSiswa?.nama || 'A').charAt(0)}
+                      {selectedSiswa.nama.charAt(0)}
+                    </div>
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-slate-500">
+                      <User className="w-12 h-12 text-slate-600" />
                     </div>
                   )}
                 </div>
@@ -2284,7 +2304,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                 <Tag className="w-4 h-4 text-amber-400" />
                 Daftar Parameter Tarif Keuangan ({filteredTarifList.length})
               </h4>
-              <span className="text-[11px] text-slate-400">T.A 2024/2025 • Kurikulum Merdeka</span>
+              <span className="text-[11px] text-slate-400">T.A {schoolSettings?.tahunAjaran || '2026/2027'} • Kurikulum Merdeka</span>
             </div>
 
             <div className="overflow-x-auto">

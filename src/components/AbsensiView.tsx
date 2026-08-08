@@ -35,9 +35,12 @@ import {
   StatusAbsensi,
   Role,
   RombelKelas,
-  MataPelajaranItem
+  MataPelajaranItem,
+  SchoolSettings,
+  JadwalPresensi
 } from '../types/school';
 import { exportAllToGoogleSheets } from '../lib/googleDriveSync';
+import { sendFonnteMessage, getFonnteDeviceStatus, FonnteDeviceStatus } from '../lib/fonnte';
 
 interface AbsensiViewProps {
   siswaList: Siswa[];
@@ -55,6 +58,8 @@ interface AbsensiViewProps {
   stafList?: Staf[];
   subTab?: SubTabAbsensi;
   setSubTab?: (subTab: SubTabAbsensi) => void;
+  schoolSettings?: SchoolSettings;
+  setSchoolSettings?: React.Dispatch<React.SetStateAction<SchoolSettings>>;
 }
 
 type SubTabAbsensi = 'scan_barcode' | 'harian_siswa' | 'kelas_mapel' | 'absensi_guru';
@@ -74,7 +79,9 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   mapelList = [],
   stafList = [],
   subTab: controlledSubTab,
-  setSubTab: setControlledSubTab
+  setSubTab: setControlledSubTab,
+  schoolSettings,
+  setSchoolSettings
 }) => {
   const [internalSubTab, setInternalSubTab] = useState<SubTabAbsensi>(currentRole === 'guru' ? 'kelas_mapel' : 'scan_barcode');
 
@@ -93,7 +100,79 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     }
   }, [currentRole, subTab]);
 
-  // --- Subtab Barcode Scanner State ---
+  // --- Subtab Barcode Scanner, Jadwal & Fonnte Modal State ---
+  const [showFonnteModal, setShowFonnteModal] = useState(false);
+  const [showJadwalModal, setShowJadwalModal] = useState(false);
+  const [localJadwal, setLocalJadwal] = useState<JadwalPresensi>(
+    schoolSettings?.jadwalPresensi || {
+      jamMasuk: '07:00',
+      jamToleransi: '07:15',
+      jamPulang: '14:30',
+      hariKerja: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'],
+      autoSwitchScanMode: true
+    }
+  );
+
+  useEffect(() => {
+    if (schoolSettings?.jadwalPresensi) {
+      setLocalJadwal(schoolSettings.jadwalPresensi);
+    }
+  }, [schoolSettings]);
+
+  // Auto switch scan mode based on current server/client hour
+  useEffect(() => {
+    const currentJadwal = schoolSettings?.jadwalPresensi || localJadwal;
+    if (currentJadwal?.autoSwitchScanMode) {
+      const now = new Date();
+      const currentH = now.getHours();
+      const [pH] = (currentJadwal.jamPulang || '14:30').split(':').map(Number);
+      if (currentH >= 12 || currentH >= (pH - 1)) {
+        setScanMode('Pulang');
+      } else {
+        setScanMode('Masuk');
+      }
+    }
+  }, [schoolSettings?.jadwalPresensi, localJadwal]);
+
+  // Helper to calculate status attendance label (Tepat Waktu, Terlambat, Pulang Cepat)
+  const calculateAttendanceStatusLabel = (timeStr: string, mode: 'Masuk' | 'Pulang') => {
+    const jadwal = schoolSettings?.jadwalPresensi || localJadwal;
+    const parts = timeStr.split(':').map(Number);
+    const curH = parts[0] || 0;
+    const curM = parts[1] || 0;
+    const curTotalSec = curH * 3600 + curM * 60;
+
+    if (mode === 'Masuk') {
+      const [mH, mM] = (jadwal.jamMasuk || '07:00').split(':').map(Number);
+      const [tH, tM] = (jadwal.jamToleransi || '07:15').split(':').map(Number);
+      const masukSec = mH * 3600 + mM * 60;
+      const toleransiSec = tH * 3600 + tM * 60;
+
+      if (curTotalSec <= masukSec) {
+        return { label: 'Hadir Tepat Waktu', isLate: false };
+      } else if (curTotalSec <= toleransiSec) {
+        const diffMins = Math.max(1, Math.ceil((curTotalSec - masukSec) / 60));
+        return { label: `Hadir (Toleransi ${diffMins}m)`, isLate: false };
+      } else {
+        const lateMins = Math.max(1, Math.ceil((curTotalSec - toleransiSec) / 60));
+        return { label: `Terlambat (${lateMins} Menit)`, isLate: true };
+      }
+    } else {
+      const [pH, pM] = (jadwal.jamPulang || '14:30').split(':').map(Number);
+      const pulangSec = pH * 3600 + pM * 60;
+
+      if (curTotalSec < pulangSec) {
+        const earlyMins = Math.max(1, Math.ceil((pulangSec - curTotalSec) / 60));
+        return { label: `Pulang Cepat (${earlyMins}m)`, isLate: false };
+      } else {
+        return { label: 'Pulang Sesuai Jadwal', isLate: false };
+      }
+    }
+  };
+
+  const [localFonnteToken, setLocalFonnteToken] = useState(schoolSettings?.fonnteToken || 'FONNTE_EDU_TOKEN_2026_SMP_MODERN_AL_FAKHIR');
+  const [fonnteStatusInfo, setFonnteStatusInfo] = useState<FonnteDeviceStatus | null>(null);
+  const [isCheckingToken, setIsCheckingToken] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
   const [scanTargetType, setScanTargetType] = useState<'siswa' | 'guru'>('siswa');
   const [scanMode, setScanMode] = useState<'Masuk' | 'Pulang'>('Masuk');
@@ -109,6 +188,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     namaWali?: string;
     tipeAbsensi?: 'Masuk' | 'Pulang';
     siswaObj?: Siswa;
+    waSentStatus?: string;
   } | null>(null);
 
   const [scanHistory, setScanHistory] = useState<Array<{
@@ -122,15 +202,16 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     siswaObj?: Siswa;
   }>>([]);
 
-  // Helper to send WhatsApp Notification
-  const sendWhatsAppNotif = (siswa: Siswa, waktu: string, tipe: 'Masuk' | 'Pulang') => {
+  // Helper to send WhatsApp Notification using Fonnte API Token
+  const sendWhatsAppNotif = async (siswa: Siswa, waktu: string, tipe: 'Masuk' | 'Pulang') => {
     if (!siswa.teleponWali || !siswa.teleponWali.trim()) {
       alert(`Nomor WhatsApp/Telepon wali untuk ${siswa.nama} belum terdaftar di database.`);
       return;
     }
-    let formattedPhone = siswa.teleponWali.trim().replace(/\D/g, '');
-    if (formattedPhone.startsWith('0')) formattedPhone = '62' + formattedPhone.slice(1);
-    else if (formattedPhone.startsWith('8')) formattedPhone = '62' + formattedPhone;
+
+    const tokenToUse = schoolSettings?.fonnteToken || localFonnteToken || 'FONNTE_EDU_TOKEN_2026_SMP_MODERN_AL_FAKHIR';
+    const config = schoolSettings?.fonnteConfig;
+    const namaSekolah = schoolSettings?.namaSekolah || 'SMP Modern Al Fakhir';
 
     const tanggalIndo = new Date().toLocaleDateString('id-ID', {
       weekday: 'long',
@@ -139,28 +220,43 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
       year: 'numeric'
     });
 
+    const statusInfo = calculateAttendanceStatusLabel(waktu, tipe);
+
     let message = '';
-    if (tipe === 'Masuk') {
-      message = `*PRESENSI SEKOLAH - NOTIFIKASI HADIR MASUK*\n\n` +
-        `Yth. Bapak/Ibu Wali dari *${siswa.nama}* (*Kelas ${siswa.kelas}*),\n\n` +
-        `Kami menginformasikan bahwa siswa/i atas nama *${siswa.nama}* telah *PRESENSI HADIR MASUK* di sekolah pada:\n` +
-        `🗓 Tanggal: *${tanggalIndo}*\n` +
-        `⏰ Jam Scan: *${waktu} WIB*\n` +
-        `📍 Status: *Hadir Tepat Waktu*\n\n` +
-        `Terima kasih atas perhatian dan kerja sama Bapak/Ibu Wali Murid.\n\n` +
-        `_Sistem Informasi Presensi SMP Modern Al Fakhir_`;
+    const template = tipe === 'Masuk' ? config?.templateAbsensiMasuk : config?.templateAbsensiPulang;
+    if (template && template.trim()) {
+      message = template
+        .replace(/{NAMA_SISWA}/g, siswa.nama)
+        .replace(/{KELAS}/g, siswa.kelas)
+        .replace(/{JAM_SCAN}/g, waktu)
+        .replace(/{TANGGAL}/g, tanggalIndo)
+        .replace(/{STATUS_KEHADIRAN}/g, statusInfo.label)
+        .replace(/{NAMA_SEKOLAH}/g, namaSekolah);
     } else {
-      message = `*PRESENSI SEKOLAH - NOTIFIKASI PULANG*\n\n` +
-        `Yth. Bapak/Ibu Wali dari *${siswa.nama}* (*Kelas ${siswa.kelas}*),\n\n` +
-        `Kami menginformasikan bahwa siswa/i atas nama *${siswa.nama}* telah *SELESAI KBM & PRESENSI PULANG* dari sekolah pada:\n` +
-        `🗓 Tanggal: *${tanggalIndo}*\n` +
-        `⏰ Jam Scan: *${waktu} WIB*\n` +
-        `📍 Status: *Sudah Pulang*\n\n` +
-        `Terima kasih dan selamat beristirahat.\n\n` +
-        `_Sistem Informasi Presensi SMP Modern Al Fakhir_`;
+      if (tipe === 'Masuk') {
+        message = `*PRESENSI SEKOLAH - NOTIFIKASI HADIR MASUK*\n\n` +
+          `Yth. Bapak/Ibu Wali dari *${siswa.nama}* (*Kelas ${siswa.kelas}*),\n\n` +
+          `Kami menginformasikan bahwa siswa/i atas nama *${siswa.nama}* telah *PRESENSI HADIR MASUK* di sekolah pada:\n` +
+          `🗓 Tanggal: *${tanggalIndo}*\n` +
+          `⏰ Jam Scan: *${waktu} WIB*\n` +
+          `📍 Status: *${statusInfo.label}*\n\n` +
+          `Terima kasih atas perhatian dan kerja sama Bapak/Ibu Wali Murid.\n\n` +
+          `_${namaSekolah}_`;
+      } else {
+        message = `*PRESENSI SEKOLAH - NOTIFIKASI PULANG*\n\n` +
+          `Yth. Bapak/Ibu Wali dari *${siswa.nama}* (*Kelas ${siswa.kelas}*),\n\n` +
+          `Kami menginformasikan bahwa siswa/i atas nama *${siswa.nama}* telah *SELESAI KBM & PRESENSI PULANG* dari sekolah pada:\n` +
+          `🗓 Tanggal: *${tanggalIndo}*\n` +
+          `⏰ Jam Scan: *${waktu} WIB*\n` +
+          `📍 Status: *${statusInfo.label}*\n\n` +
+          `Terima kasih dan selamat beristirahat.\n\n` +
+          `_${namaSekolah}_`;
+      }
     }
 
-    window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, '_blank');
+    // Direct automated call to Fonnte API Gateway
+    const res = await sendFonnteMessage(siswa.teleponWali, message, tokenToUse);
+    setLastScannedResult(prev => prev ? { ...prev, waSentStatus: res.message } : null);
   };
 
   // Synthesize Web Audio Beep Sound
@@ -200,6 +296,8 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
       );
 
       if (foundSiswa) {
+        const statusInfo = calculateAttendanceStatusLabel(timeNow, scanMode);
+
         setAbsensiHarian(prev => {
           const existing = prev.find(a => a.siswaId === foundSiswa.id && a.tanggal === today);
           const filtered = prev.filter(a => !(a.siswaId === foundSiswa.id && a.tanggal === today));
@@ -208,7 +306,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
               id: `abh-${foundSiswa.id}-${today}`,
               siswaId: foundSiswa.id,
               tanggal: today,
-              status: 'Hadir',
+              status: statusInfo.isLate ? 'Terlambat' : 'Hadir',
               jamScan: timeNow,
               jamMasuk: scanMode === 'Masuk' ? timeNow : (existing?.jamMasuk || timeNow),
               jamPulang: scanMode === 'Pulang' ? timeNow : existing?.jamPulang,
@@ -224,7 +322,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
           role: `Siswa Kelas ${foundSiswa.kelas}`,
           kode: foundSiswa.kodeBarcode || `SIS-${foundSiswa.nisn}`,
           waktu: timeNow,
-          detail: `NISN: ${foundSiswa.nisn} | Wali: ${foundSiswa.namaWali || '-'} (${foundSiswa.teleponWali || '-'})`,
+          detail: `NISN: ${foundSiswa.nisn} | Status: ${statusInfo.label} | Wali: ${foundSiswa.namaWali || '-'} (${foundSiswa.teleponWali || '-'})`,
           teleponWali: foundSiswa.teleponWali,
           namaWali: foundSiswa.namaWali,
           tipeAbsensi: scanMode,
@@ -672,19 +770,58 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                 )}
               </div>
 
-              {/* WhatsApp Notification Auto-send Toggle */}
+              {/* WhatsApp Notification Auto-send Toggle & Token Setting */}
               {scanTargetType === 'siswa' && (
-                <label className="flex items-center gap-2 cursor-pointer bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-emerald-300 font-semibold transition-all">
-                  <input
-                    type="checkbox"
-                    checked={autoSendWA}
-                    onChange={e => setAutoSendWA(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded accent-emerald-500 bg-slate-900 border-slate-700"
-                  />
-                  <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Kirim WA Notif Ke Orang Tua ({scanMode})</span>
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-emerald-300 font-semibold transition-all">
+                    <input
+                      type="checkbox"
+                      checked={autoSendWA}
+                      onChange={e => setAutoSendWA(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded accent-emerald-500 bg-slate-900 border-slate-700"
+                    />
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Auto WA Notif ({scanMode})</span>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowFonnteModal(true)}
+                    className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-sm"
+                    title="Pengaturan Token Fonnte WhatsApp"
+                  >
+                    <Smartphone className="w-3.5 h-3.5" /> Token Fonnte Active
+                  </button>
+                </div>
               )}
+            </div>
+
+            {/* Active Presensi Schedule Info Banner */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 bg-[#181818] px-4 py-2.5 rounded-xl border border-blue-500/30 text-xs text-slate-300">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="font-bold text-blue-400 flex items-center gap-1.5 shrink-0">
+                  <Clock className="w-4 h-4 text-blue-400" /> Jadwal Presensi Aktif:
+                </span>
+                <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
+                  <span className="bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 px-2.5 py-0.5 rounded-md font-bold flex items-center gap-1">
+                    <LogIn className="w-3 h-3 text-emerald-400" /> Masuk: {schoolSettings?.jadwalPresensi?.jamMasuk || localJadwal.jamMasuk} WIB
+                  </span>
+                  <span className="bg-amber-950/60 border border-amber-500/30 text-amber-300 px-2.5 py-0.5 rounded-md font-bold">
+                    Toleransi: {schoolSettings?.jadwalPresensi?.jamToleransi || localJadwal.jamToleransi} WIB
+                  </span>
+                  <span className="bg-blue-950/60 border border-blue-500/30 text-blue-300 px-2.5 py-0.5 rounded-md font-bold flex items-center gap-1">
+                    <LogOut className="w-3 h-3 text-blue-400" /> Pulang: {schoolSettings?.jadwalPresensi?.jamPulang || localJadwal.jamPulang} WIB
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowJadwalModal(true)}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md shadow-blue-600/30 shrink-0"
+              >
+                <Clock className="w-3.5 h-3.5" /> Atur Jam Masuk & Pulang
+              </button>
             </div>
 
             {/* Live Camera Barcode & QR Scanner */}
@@ -1306,6 +1443,234 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* MODAL PENGATURAN JADWAL MASUK & PULANG */}
+      {showJadwalModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#121212] border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                <Clock className="w-4 h-4 text-blue-400" /> Atur Jam Masuk & Jam Pulang Sekolah
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowJadwalModal(false)}
+                className="text-slate-400 hover:text-white font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-emerald-400 block">Jam Masuk Utama (WIB) *</label>
+                  <input
+                    type="time"
+                    value={localJadwal.jamMasuk}
+                    onChange={e => setLocalJadwal(prev => ({ ...prev, jamMasuk: e.target.value }))}
+                    className="w-full p-2.5 bg-[#181818] border border-slate-700 rounded-xl text-xs font-mono font-bold text-white focus:border-blue-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-500">Scan sebelum jam ini: Hadir Tepat Waktu</p>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-amber-400 block">Batas Toleransi (WIB) *</label>
+                  <input
+                    type="time"
+                    value={localJadwal.jamToleransi}
+                    onChange={e => setLocalJadwal(prev => ({ ...prev, jamToleransi: e.target.value }))}
+                    className="w-full p-2.5 bg-[#181818] border border-slate-700 rounded-xl text-xs font-mono font-bold text-amber-300 focus:border-amber-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-500">Scan setelah jam ini: Terlambat</p>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-blue-400 block">Jam Pulang Sekolah (WIB) *</label>
+                <input
+                  type="time"
+                  value={localJadwal.jamPulang}
+                  onChange={e => setLocalJadwal(prev => ({ ...prev, jamPulang: e.target.value }))}
+                  className="w-full p-2.5 bg-[#181818] border border-slate-700 rounded-xl text-xs font-mono font-bold text-blue-300 focus:border-blue-500 focus:outline-none"
+                />
+                <p className="text-[10px] text-slate-500">Scan sebelum jam ini: Pulang Cepat</p>
+              </div>
+
+              {/* Hari Operasional */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300 block">Hari Operasional Sekolah</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'].map(hari => {
+                    const isSelected = localJadwal.hariKerja?.includes(hari);
+                    return (
+                      <button
+                        type="button"
+                        key={hari}
+                        onClick={() => {
+                          const currentDays = localJadwal.hariKerja || [];
+                          const nextDays = isSelected
+                            ? currentDays.filter(d => d !== hari)
+                            : [...currentDays, hari];
+                          setLocalJadwal(prev => ({ ...prev, hariKerja: nextDays }));
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                          isSelected
+                            ? 'bg-purple-600 text-white shadow-md'
+                            : 'bg-[#181818] text-slate-500 border border-slate-800'
+                        }`}
+                      >
+                        {hari}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Auto Switch Mode Toggle */}
+              <div className="flex items-center justify-between p-3 bg-[#181818] rounded-xl border border-slate-800">
+                <div>
+                  <h5 className="text-xs font-bold text-white">Otomatis Switch Mode Scan</h5>
+                  <p className="text-[10px] text-slate-400">Pagi otomatis mode Masuk, Siang/Sore otomatis mode Pulang</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={localJadwal.autoSwitchScanMode ?? true}
+                  onChange={e => setLocalJadwal(prev => ({ ...prev, autoSwitchScanMode: e.target.checked }))}
+                  className="w-4 h-4 rounded accent-blue-600 bg-slate-900 border-slate-700"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowJadwalModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-all"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (setSchoolSettings) {
+                    setSchoolSettings(prev => ({
+                      ...prev,
+                      jadwalPresensi: localJadwal
+                    }));
+                  }
+                  setShowJadwalModal(false);
+                  alert('Jadwal Masuk & Pulang sekolah berhasil diperbarui!');
+                }}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-lg shadow-blue-600/30"
+              >
+                Simpan Jadwal Presensi
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+      {showFonnteModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#121212] border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-emerald-400" /> Token Fonnte WhatsApp Gateway Presensi
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowFonnteModal(false)}
+                className="text-slate-400 hover:text-white font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300 block">Token API Fonnte Active</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={localFonnteToken}
+                    onChange={e => setLocalFonnteToken(e.target.value)}
+                    placeholder="Masukkan Token Fonnte..."
+                    className="w-full p-2.5 bg-[#181818] border border-slate-700 rounded-xl text-xs font-mono font-bold text-emerald-300 focus:border-emerald-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    disabled={isCheckingToken}
+                    onClick={async () => {
+                      setIsCheckingToken(true);
+                      const status = await getFonnteDeviceStatus(localFonnteToken);
+                      setFonnteStatusInfo(status);
+                      setIsCheckingToken(false);
+                    }}
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs shrink-0 flex items-center gap-1 border border-slate-700"
+                  >
+                    {isCheckingToken ? 'Mengecek...' : 'Cek Status'}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Token ini digunakan untuk mengirimkan notifikasi WA otomatis saat barcode siswa discan.
+                </p>
+              </div>
+
+              {fonnteStatusInfo && (
+                <div className="p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-xl text-xs space-y-1">
+                  <div className="flex items-center justify-between text-emerald-300 font-bold">
+                    <span>Device: {fonnteStatusInfo.device}</span>
+                    <span className="text-[10px] bg-emerald-500/20 px-2 py-0.5 rounded text-emerald-400">ONLINE</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">Pengirim (WA): <span className="font-mono font-bold text-white">{fonnteStatusInfo.sender}</span></p>
+                  <p className="text-[11px] text-slate-400">Sisa Kuota: <span className="text-amber-400 font-bold">{fonnteStatusInfo.quota}</span></p>
+                </div>
+              )}
+
+              <div className="p-3 bg-[#181818] rounded-xl border border-slate-800 text-xs space-y-1 text-slate-300">
+                <span className="font-bold text-white text-[11px] block">Pratinjau Pesan WA Presensi:</span>
+                <p className="font-mono text-[10px] text-slate-400 leading-relaxed bg-[#121212] p-2 rounded-lg border border-slate-800">
+                  *PRESENSI SEKOLAH - NOTIFIKASI MASUK*<br />
+                  Yth. Wali dari *Ahmad Rizky* (*Kelas X-IPA-1*),<br />
+                  Siswa telah HADIR & SCAN MASUK pada 07:15:00 WIB.<br />
+                  _{schoolSettings?.namaSekolah || 'SMP Modern Al Fakhir'}_
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowFonnteModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-all"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (setSchoolSettings) {
+                    setSchoolSettings(prev => ({
+                      ...prev,
+                      fonnteToken: localFonnteToken,
+                      fonnteConfig: {
+                        ...(prev.fonnteConfig || { apiKey: '', senderName: '', templateReminder: '', templateReceipt: '', enabled: true }),
+                        apiKey: localFonnteToken
+                      }
+                    }));
+                  }
+                  setShowFonnteModal(false);
+                  alert('Token Fonnte berhasil diperbarui untuk Presensi Barcode!');
+                }}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-lg shadow-emerald-600/30"
+              >
+                Simpan Token Presensi
+              </button>
+            </div>
+
+          </div>
         </div>
       )}
 

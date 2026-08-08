@@ -709,9 +709,35 @@ export const INITIAL_TAGIHAN: TagihanKeuangan[] = [];
 export const INITIAL_TRANSAKSI: TransaksiKeuangan[] = [];
 
 export const INITIAL_FONNTE_CONFIG: FonnteConfig = {
-  apiKey: 'fonnte_demo_key_2026_sec_99182',
-  senderName: 'SMA Permata Bangsa',
+  apiKey: 'FONNTE_EDU_TOKEN_2026_SMP_MODERN_AL_FAKHIR',
+  senderName: 'SMP Modern Al Fakhir',
   enabled: true,
+  autoSendAbsensi: true,
+  autoSendKeuangan: true,
+  templateAbsensiMasuk: `*PRESENSI SEKOLAH - NOTIFIKASI MASUK*
+
+Yth. Bapak/Ibu Wali dari *{NAMA_SISWA}* (*Kelas {KELAS}*),
+
+Kami menginformasikan bahwa siswa/i atas nama *{NAMA_SISWA}* telah *HADIR & MELAKUKAN PRESENSI MASUK* di sekolah pada:
+🗓 Tanggal: *{TANGGAL}*
+⏰ Jam Scan: *{JAM_SCAN} WIB*
+📍 Status: *Hadir Tepat Waktu*
+
+Terima kasih atas perhatian dan kerja sama Bapak/Ibu Wali Murid.
+
+_{NAMA_SEKOLAH}_`,
+  templateAbsensiPulang: `*PRESENSI SEKOLAH - NOTIFIKASI PULANG*
+
+Yth. Bapak/Ibu Wali dari *{NAMA_SISWA}* (*Kelas {KELAS}*),
+
+Kami menginformasikan bahwa siswa/i atas nama *{NAMA_SISWA}* telah *SELESAI KBM & PRESENSI PULANG* dari sekolah pada:
+🗓 Tanggal: *{TANGGAL}*
+⏰ Jam Scan: *{JAM_SCAN} WIB*
+📍 Status: *Sudah Pulang*
+
+Terima kasih dan selamat beristirahat.
+
+_{NAMA_SEKOLAH}_`,
   templateReminder: `Yth. Bapak/Ibu Wali dari {NAMA_SISWA} ({KELAS}),
 
 Menginformasikan tagihan {TAGIHAN} sebesar Rp {NOMINAL} akan jatuh tempo pada {JATUH_TEMPO}.
@@ -719,7 +745,7 @@ Status saat ini: {STATUS}.
 Mohon dapat melakukan pembayaran melalui Rekening Kasir Sekolah / QRIS / Transfer Bank.
 
 Terima kasih atas perhatian Bapak/Ibu.
-- Bendahara SMA Permata Bangsa`,
+- Bendahara {NAMA_SEKOLAH}`,
   templateReceipt: `Yth. Bapak/Ibu Wali dari {NAMA_SISWA} ({KELAS}),
 
 Terima kasih, pembayaran {TAGIHAN} sebesar Rp {NOMINAL} telah KAMI TERIMA dengan baik pada {TANGGAL_BAYAR}.
@@ -727,13 +753,13 @@ No. Bukti / Transaksi: {NO_TRANSAKSI}
 Metode: {METODE_BAYAR}
 
 Status Tagihan: LUNAS.
-- Bendahara SMA Permata Bangsa`
+- Bendahara {NAMA_SEKOLAH}`
 };
 
 export const INITIAL_SCHOOL_SETTINGS: SchoolSettings = {
-  namaSekolah: 'SMA PERMATA BANGSA',
-  npsn: '20109876',
-  bentukPendidikan: 'SMA',
+  namaSekolah: 'SMP Modern Al Fakhir',
+  npsn: '70048660',
+  bentukPendidikan: 'SMP',
   statusSekolah: 'Swasta',
   akreditasi: 'A (Unggul)',
   alamat: 'Jl. Education No. 123, Kebayoran Baru',
@@ -744,13 +770,22 @@ export const INITIAL_SCHOOL_SETTINGS: SchoolSettings = {
   provinsi: 'DKI Jakarta',
   kodePos: '12110',
   telepon: '(021) 555-0199',
-  email: 'info@permatabangsa.sch.id',
-  website: 'https://permatabangsa.sch.id',
+  email: 'info@smpmodernalfakhir.sch.id',
+  website: 'https://smpmodernalfakhir.sch.id',
   kepalaSekolah: 'Dr. H. Ahmad Dahlan, M.Pd.',
   nipKepalaSekolah: '197501152000031001',
   tahunAjaran: '2026/2027',
   semesterAktif: 'Ganjil',
   logoUrl: 'https://images.unsplash.com/photo-1599305445671-ac291c95aaa9?w=120&auto=format&fit=crop&q=80',
+  fonnteToken: 'FONNTE_EDU_TOKEN_2026_SMP_MODERN_AL_FAKHIR',
+  fonnteConfig: INITIAL_FONNTE_CONFIG,
+  jadwalPresensi: {
+    jamMasuk: '07:00',
+    jamToleransi: '07:15',
+    jamPulang: '14:30',
+    hariKerja: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'],
+    autoSwitchScanMode: true
+  },
   googleSyncEmail: '',
   googleSyncEnabled: false,
   googleSyncSpreadsheetId: '',

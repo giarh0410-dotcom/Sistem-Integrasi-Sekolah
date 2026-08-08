@@ -399,6 +399,8 @@ export default function App() {
               stafList={stafList}
               subTab={absensiSubTab}
               setSubTab={setAbsensiSubTab}
+              schoolSettings={schoolSettings}
+              setSchoolSettings={setSchoolSettings}
             />
           )}
 

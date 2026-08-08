@@ -13,6 +13,7 @@ import { LoginView } from './components/LoginView';
 import { 
   Role, 
   SubTab,
+  AbsensiSubTab,
   CbtSubTab,
   KeuanganSubTab,
   TarifBiaya,
@@ -76,6 +77,7 @@ export default function App() {
   const [currentRole, setCurrentRole] = useState<Role>('admin');
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [databaseSubTab, setDatabaseSubTab] = useState<SubTab>('siswa');
+  const [absensiSubTab, setAbsensiSubTab] = useState<AbsensiSubTab>('scan_barcode');
   const [cbtSubTab, setCbtSubTab] = useState<CbtSubTab>('bank_soal');
   const [keuanganSubTab, setKeuanganSubTab] = useState<KeuanganSubTab>('pembayaran');
 
@@ -327,6 +329,8 @@ export default function App() {
           currentRole={currentRole}
           databaseSubTab={databaseSubTab}
           setDatabaseSubTab={setDatabaseSubTab}
+          absensiSubTab={absensiSubTab}
+          setAbsensiSubTab={setAbsensiSubTab}
           cbtSubTab={cbtSubTab}
           setCbtSubTab={setCbtSubTab}
           keuanganSubTab={keuanganSubTab}
@@ -393,6 +397,8 @@ export default function App() {
               rombelList={rombelList}
               mapelList={mapelList}
               stafList={stafList}
+              subTab={absensiSubTab}
+              setSubTab={setAbsensiSubTab}
             />
           )}
 

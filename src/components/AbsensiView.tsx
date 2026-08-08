@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { CameraScanner } from './CameraScanner';
 import { 
   CalendarCheck, 
@@ -17,7 +17,13 @@ import {
   QrCode,
   ScanLine,
   Volume2,
-  CheckCheck
+  CheckCheck,
+  MessageSquare,
+  Phone,
+  LogIn,
+  LogOut,
+  Smartphone,
+  Share2
 } from 'lucide-react';
 import { 
   Siswa, 
@@ -47,6 +53,8 @@ interface AbsensiViewProps {
   rombelList?: RombelKelas[];
   mapelList?: MataPelajaranItem[];
   stafList?: Staf[];
+  subTab?: SubTabAbsensi;
+  setSubTab?: (subTab: SubTabAbsensi) => void;
 }
 
 type SubTabAbsensi = 'scan_barcode' | 'harian_siswa' | 'kelas_mapel' | 'absensi_guru';
@@ -64,9 +72,17 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   userGoogleToken = 'demo_workspace_token_active',
   rombelList = [],
   mapelList = [],
-  stafList = []
+  stafList = [],
+  subTab: controlledSubTab,
+  setSubTab: setControlledSubTab
 }) => {
-  const [subTab, setSubTab] = useState<SubTabAbsensi>(currentRole === 'guru' ? 'kelas_mapel' : 'scan_barcode');
+  const [internalSubTab, setInternalSubTab] = useState<SubTabAbsensi>(currentRole === 'guru' ? 'kelas_mapel' : 'scan_barcode');
+
+  const subTab = controlledSubTab ?? internalSubTab;
+  const setSubTab = (val: SubTabAbsensi) => {
+    setInternalSubTab(val);
+    if (setControlledSubTab) setControlledSubTab(val);
+  };
 
   useEffect(() => {
     if (currentRole === 'guru') {
@@ -80,19 +96,72 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   // --- Subtab Barcode Scanner State ---
   const [barcodeInput, setBarcodeInput] = useState('');
   const [scanTargetType, setScanTargetType] = useState<'siswa' | 'guru'>('siswa');
+  const [scanMode, setScanMode] = useState<'Masuk' | 'Pulang'>('Masuk');
+  const [autoSendWA, setAutoSendWA] = useState<boolean>(true);
+
   const [lastScannedResult, setLastScannedResult] = useState<{
     nama: string;
     role: string;
     kode: string;
     waktu: string;
     detail: string;
+    teleponWali?: string;
+    namaWali?: string;
+    tipeAbsensi?: 'Masuk' | 'Pulang';
+    siswaObj?: Siswa;
   } | null>(null);
+
   const [scanHistory, setScanHistory] = useState<Array<{
     nama: string;
     role: string;
     kode: string;
     waktu: string;
+    tipeAbsensi?: 'Masuk' | 'Pulang';
+    teleponWali?: string;
+    namaWali?: string;
+    siswaObj?: Siswa;
   }>>([]);
+
+  // Helper to send WhatsApp Notification
+  const sendWhatsAppNotif = (siswa: Siswa, waktu: string, tipe: 'Masuk' | 'Pulang') => {
+    if (!siswa.teleponWali || !siswa.teleponWali.trim()) {
+      alert(`Nomor WhatsApp/Telepon wali untuk ${siswa.nama} belum terdaftar di database.`);
+      return;
+    }
+    let formattedPhone = siswa.teleponWali.trim().replace(/\D/g, '');
+    if (formattedPhone.startsWith('0')) formattedPhone = '62' + formattedPhone.slice(1);
+    else if (formattedPhone.startsWith('8')) formattedPhone = '62' + formattedPhone;
+
+    const tanggalIndo = new Date().toLocaleDateString('id-ID', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    let message = '';
+    if (tipe === 'Masuk') {
+      message = `*PRESENSI SEKOLAH - NOTIFIKASI HADIR MASUK*\n\n` +
+        `Yth. Bapak/Ibu Wali dari *${siswa.nama}* (*Kelas ${siswa.kelas}*),\n\n` +
+        `Kami menginformasikan bahwa siswa/i atas nama *${siswa.nama}* telah *PRESENSI HADIR MASUK* di sekolah pada:\n` +
+        `🗓 Tanggal: *${tanggalIndo}*\n` +
+        `⏰ Jam Scan: *${waktu} WIB*\n` +
+        `📍 Status: *Hadir Tepat Waktu*\n\n` +
+        `Terima kasih atas perhatian dan kerja sama Bapak/Ibu Wali Murid.\n\n` +
+        `_Sistem Informasi Presensi SMP Modern Al Fakhir_`;
+    } else {
+      message = `*PRESENSI SEKOLAH - NOTIFIKASI PULANG*\n\n` +
+        `Yth. Bapak/Ibu Wali dari *${siswa.nama}* (*Kelas ${siswa.kelas}*),\n\n` +
+        `Kami menginformasikan bahwa siswa/i atas nama *${siswa.nama}* telah *SELESAI KBM & PRESENSI PULANG* dari sekolah pada:\n` +
+        `🗓 Tanggal: *${tanggalIndo}*\n` +
+        `⏰ Jam Scan: *${waktu} WIB*\n` +
+        `📍 Status: *Sudah Pulang*\n\n` +
+        `Terima kasih dan selamat beristirahat.\n\n` +
+        `_Sistem Informasi Presensi SMP Modern Al Fakhir_`;
+    }
+
+    window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, '_blank');
+  };
 
   // Synthesize Web Audio Beep Sound
   const playBeepSound = () => {
@@ -132,6 +201,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
 
       if (foundSiswa) {
         setAbsensiHarian(prev => {
+          const existing = prev.find(a => a.siswaId === foundSiswa.id && a.tanggal === today);
           const filtered = prev.filter(a => !(a.siswaId === foundSiswa.id && a.tanggal === today));
           return [
             {
@@ -140,6 +210,9 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
               tanggal: today,
               status: 'Hadir',
               jamScan: timeNow,
+              jamMasuk: scanMode === 'Masuk' ? timeNow : (existing?.jamMasuk || timeNow),
+              jamPulang: scanMode === 'Pulang' ? timeNow : existing?.jamPulang,
+              tipeScan: scanMode,
               metodeScan: 'Barcode / QR'
             },
             ...filtered
@@ -151,10 +224,18 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
           role: `Siswa Kelas ${foundSiswa.kelas}`,
           kode: foundSiswa.kodeBarcode || `SIS-${foundSiswa.nisn}`,
           waktu: timeNow,
-          detail: `NISN: ${foundSiswa.nisn} | Wali: ${foundSiswa.namaWali}`
+          detail: `NISN: ${foundSiswa.nisn} | Wali: ${foundSiswa.namaWali || '-'} (${foundSiswa.teleponWali || '-'})`,
+          teleponWali: foundSiswa.teleponWali,
+          namaWali: foundSiswa.namaWali,
+          tipeAbsensi: scanMode,
+          siswaObj: foundSiswa
         };
         setLastScannedResult(res);
         setScanHistory(prev => [res, ...prev]);
+
+        if (autoSendWA && foundSiswa.teleponWali) {
+          sendWhatsAppNotif(foundSiswa, timeNow, scanMode);
+        }
       } else {
         alert(`Barcode / ID "${code}" tidak ditemukan pada Database Siswa!`);
       }
@@ -171,9 +252,14 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
           const existingIndex = prev.findIndex(g => g.guruId === foundGuru.id && g.tanggal === today);
           if (existingIndex >= 0) {
             const updated = [...prev];
-            updated[existingIndex].jamMasuk = timeNow;
-            updated[existingIndex].status = 'Hadir';
-            updated[existingIndex].metodeIn = 'Barcode / QR';
+            if (scanMode === 'Pulang') {
+              updated[existingIndex].jamPulang = timeNow;
+              updated[existingIndex].metodeOut = 'Barcode / QR';
+            } else {
+              updated[existingIndex].jamMasuk = timeNow;
+              updated[existingIndex].status = 'Hadir';
+              updated[existingIndex].metodeIn = 'Barcode / QR';
+            }
             return updated;
           } else {
             return [
@@ -182,7 +268,8 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                 guruId: foundGuru.id,
                 guruNama: foundGuru.nama,
                 tanggal: today,
-                jamMasuk: timeNow,
+                jamMasuk: scanMode === 'Masuk' ? timeNow : undefined,
+                jamPulang: scanMode === 'Pulang' ? timeNow : undefined,
                 status: 'Hadir',
                 statusIzin: 'Disetujui',
                 lokasiIn: 'Mesin Scan Barcode Utama',
@@ -210,36 +297,71 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     setBarcodeInput('');
   };
 
+  // Dynamic list of available classes from rombelList and siswaList
+  const availableKelasOptions = useMemo(() => {
+    const set = new Set<string>();
+    rombelList.forEach(r => { if (r.namaRombel && r.namaRombel.trim()) set.add(r.namaRombel.trim()); });
+    siswaList.forEach(s => { if (s.kelas && s.kelas.trim()) set.add(s.kelas.trim()); });
+    if (set.size === 0) {
+      ['X-IPA-1', 'XI-IPA-2', 'XI-IPS-1', 'XII-IPA-1'].forEach(k => set.add(k));
+    }
+    return Array.from(set);
+  }, [rombelList, siswaList]);
+
   // --- Subtab 1: Absensi Siswa Harian State ---
-  const [selectedKelas, setSelectedKelas] = useState('X-IPA-1');
-  const [selectedTanggal, setSelectedTanggal] = useState('2026-07-31');
-  
+  const todayDateStr = new Date().toISOString().split('T')[0];
+  const [selectedKelas, setSelectedKelas] = useState(() => availableKelasOptions[0] || 'X-IPA-1');
+  const [selectedTanggal, setSelectedTanggal] = useState(todayDateStr);
+
+  // Auto ensure selectedKelas is valid if available options change
+  useEffect(() => {
+    if (availableKelasOptions.length > 0 && !availableKelasOptions.includes(selectedKelas)) {
+      setSelectedKelas(availableKelasOptions[0]);
+    }
+  }, [availableKelasOptions, selectedKelas]);
+
+  // Memoized student list for Subtab 1 (Absensi Harian)
+  const classSiswaList = useMemo(() => {
+    if (!selectedKelas) return [];
+    const target = selectedKelas.trim().toLowerCase();
+    return siswaList.filter(s => s.kelas && s.kelas.trim().toLowerCase() === target);
+  }, [siswaList, selectedKelas]);
+
   // Local state for batch editing daily attendance
-  const [localHarianState, setLocalHarianState] = useState<Record<string, StatusAbsensi>>(() => {
+  const [localHarianState, setLocalHarianState] = useState<Record<string, StatusAbsensi>>({});
+
+  // Sync localHarianState whenever selectedKelas or selectedTanggal changes
+  useEffect(() => {
     const map: Record<string, StatusAbsensi> = {};
-    siswaList.forEach(s => {
-      const existing = absensiHarian.find(a => a.siswaId === s.id && a.tanggal === '2026-07-31');
+    classSiswaList.forEach(s => {
+      const existing = absensiHarian.find(a => a.siswaId === s.id && a.tanggal === selectedTanggal);
       map[s.id] = existing ? existing.status : 'Hadir';
     });
-    return map;
-  });
+    setLocalHarianState(map);
+  }, [selectedKelas, selectedTanggal, classSiswaList, absensiHarian]);
 
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const handleSaveHarian = () => {
+    if (classSiswaList.length === 0) {
+      alert(`Tidak ada data siswa di kelas ${selectedKelas} untuk disimpan.`);
+      return;
+    }
+
     const newRecords: AbsensiSiswaHarian[] = [];
-    Object.entries(localHarianState).forEach(([siswaId, status]) => {
+    classSiswaList.forEach(s => {
+      const status = localHarianState[s.id] || 'Hadir';
       newRecords.push({
-        id: `abh-${siswaId}-${selectedTanggal}`,
-        siswaId,
+        id: `abh-${s.id}-${selectedTanggal}`,
+        siswaId: s.id,
         tanggal: selectedTanggal,
-        status: status as StatusAbsensi
+        status: status
       });
     });
 
-    // Replace or update
     setAbsensiHarian(prev => {
-      const filtered = prev.filter(a => a.tanggal !== selectedTanggal);
+      const currentSiswaIds = new Set(classSiswaList.map(s => s.id));
+      const filtered = prev.filter(a => !(a.tanggal === selectedTanggal && currentSiswaIds.has(a.siswaId)));
       return [...filtered, ...newRecords];
     });
 
@@ -248,11 +370,25 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   };
 
   // --- Subtab 2: Absensi Kelas Per Mapel State ---
-  const [mapelKelas, setMapelKelas] = useState('X-IPA-1');
+  const [mapelKelas, setMapelKelas] = useState(() => availableKelasOptions[0] || 'X-IPA-1');
   const [mapelNama, setMapelNama] = useState('Fisika & Informatika');
   const [mapelGuru, setMapelGuru] = useState('Siti Rahmawati, S.Si., M.Sc.');
   const [mapelJam, setMapelJam] = useState('1 - 2 (07:00 - 08:30)');
   const [mapelMateri, setMapelMateri] = useState('Eksperimen Praktikum Vektor & Simulasi Komputer');
+
+  // Auto ensure mapelKelas is valid if available options change
+  useEffect(() => {
+    if (availableKelasOptions.length > 0 && !availableKelasOptions.includes(mapelKelas)) {
+      setMapelKelas(availableKelasOptions[0]);
+    }
+  }, [availableKelasOptions, mapelKelas]);
+
+  // Memoized student list for Subtab 2 (Absensi Mapel)
+  const classSiswaMapelList = useMemo(() => {
+    if (!mapelKelas) return [];
+    const target = mapelKelas.trim().toLowerCase();
+    return siswaList.filter(s => s.kelas && s.kelas.trim().toLowerCase() === target);
+  }, [siswaList, mapelKelas]);
   
   const [localMapelState, setLocalMapelState] = useState<Record<string, StatusAbsensi>>({});
   const [savingToDrive, setSavingToDrive] = useState(false);
@@ -307,7 +443,6 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   const handleSaveAbsensiMapel = async () => {
     // Fill in default 'Hadir' status for all students in the class who don't have a status yet
     const finalKehadiranMap: Record<string, StatusAbsensi> = {};
-    const classSiswaMapelList = siswaList.filter(s => s.kelas === mapelKelas);
     classSiswaMapelList.forEach(s => {
       finalKehadiranMap[s.id] = localMapelState[s.id] || 'Hadir';
     });
@@ -436,9 +571,6 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     setAbsensiGuruList(prev => prev.map(a => a.id === id ? { ...a, statusIzin: newStatus } : a));
   };
 
-  // Filtered Siswa by Class for Attendance
-  const classSiswaList = siswaList.filter(s => s.kelas === selectedKelas);
-
   return (
     <div className="space-y-6">
       
@@ -453,46 +585,15 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1 bg-[#181818] p-1 rounded-xl border border-slate-800">
-          <button
-            onClick={() => setSubTab('scan_barcode')}
-            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-              subTab === 'scan_barcode' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <QrCode className="w-4 h-4" /> Scan Barcode / QR
-          </button>
-          
-          {currentRole !== 'guru' && (
-            <button
-              onClick={() => setSubTab('harian_siswa')}
-              className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-                subTab === 'harian_siswa' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Absensi Harian Siswa
-            </button>
-          )}
-
-          <button
-            onClick={() => setSubTab('kelas_mapel')}
-            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-              subTab === 'kelas_mapel' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Absensi Kelas Per Mapel
-          </button>
-
-          {currentRole !== 'guru' && (
-            <button
-              onClick={() => setSubTab('absensi_guru')}
-              className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-                subTab === 'absensi_guru' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Presensi Guru
-            </button>
-          )}
+        {/* Current Active Subtab Badge */}
+        <div className="flex items-center gap-2 bg-[#181818] px-3.5 py-2 rounded-xl border border-slate-800">
+          <span className="text-xs text-slate-400 font-semibold">Submenu:</span>
+          <span className="px-3 py-1 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-sm">
+            {subTab === 'scan_barcode' && <><QrCode className="w-3.5 h-3.5" /> Scan Barcode / QR</>}
+            {subTab === 'harian_siswa' && <><CalendarCheck className="w-3.5 h-3.5" /> Absensi Harian Siswa</>}
+            {subTab === 'kelas_mapel' && <><BookOpen className="w-3.5 h-3.5" /> Absensi Kelas Per Mapel</>}
+            {subTab === 'absensi_guru' && <><UserCheck className="w-3.5 h-3.5" /> Presensi Guru</>}
+          </span>
         </div>
       </div>
 
@@ -502,7 +603,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
           
           {/* Left Column: Barcode Scanner Interface */}
           <div className="lg:col-span-2 bg-[#121212] rounded-2xl p-6 border border-slate-800 shadow-xl space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
               <div>
                 <h3 className="font-bold text-white text-base flex items-center gap-2">
                   <ScanLine className="w-5 h-5 text-blue-400" /> Scanner Barcode & QR Code Presensi
@@ -512,29 +613,77 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                 </p>
               </div>
 
-              {currentRole !== 'guru' ? (
-                <div className="flex items-center gap-1 bg-[#181818] p-1 rounded-lg border border-slate-800">
-                  <button
-                    onClick={() => setScanTargetType('siswa')}
-                    className={`px-3 py-1 rounded text-xs font-bold ${
-                      scanTargetType === 'siswa' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
+              {/* Mode Tipe Presensi (Masuk vs Pulang) */}
+              <div className="flex items-center gap-1.5 bg-[#181818] p-1 rounded-xl border border-slate-800 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setScanMode('Masuk')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    scanMode === 'Masuk'
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <LogIn className="w-3.5 h-3.5" /> Masuk
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScanMode('Pulang')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    scanMode === 'Pulang'
+                      ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <LogOut className="w-3.5 h-3.5" /> Pulang
+                </button>
+              </div>
+            </div>
+
+            {/* Target Selector & WA Config Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-[#181818] p-3 rounded-xl border border-slate-800 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 font-bold">Target Scan:</span>
+                {currentRole !== 'guru' ? (
+                  <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setScanTargetType('siswa')}
+                      className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
+                        scanTargetType === 'siswa' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Siswa
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScanTargetType('guru')}
+                      className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
+                        scanTargetType === 'guru' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Guru
+                    </button>
+                  </div>
+                ) : (
+                  <span className="px-2.5 py-1 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-bold">
                     Siswa
-                  </button>
-                  <button
-                    onClick={() => setScanTargetType('guru')}
-                    className={`px-3 py-1 rounded text-xs font-bold ${
-                      scanTargetType === 'guru' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    Guru
-                  </button>
-                </div>
-              ) : (
-                <div className="px-3 py-1 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-bold">
-                  Mode Scan: Siswa
-                </div>
+                  </span>
+                )}
+              </div>
+
+              {/* WhatsApp Notification Auto-send Toggle */}
+              {scanTargetType === 'siswa' && (
+                <label className="flex items-center gap-2 cursor-pointer bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-emerald-300 font-semibold transition-all">
+                  <input
+                    type="checkbox"
+                    checked={autoSendWA}
+                    onChange={e => setAutoSendWA(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded accent-emerald-500 bg-slate-900 border-slate-700"
+                  />
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Kirim WA Notif Ke Orang Tua ({scanMode})</span>
+                </label>
               )}
             </div>
 
@@ -610,15 +759,28 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
             
             {/* Last Scanned Box */}
             <div className="bg-[#121212] rounded-2xl p-5 border border-slate-800 shadow-xl space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <CheckCheck className="w-4 h-4 text-emerald-400" /> Hasil Scan Terakhir
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <CheckCheck className="w-4 h-4 text-emerald-400" /> Hasil Scan Terakhir
+                </span>
+                {lastScannedResult?.tipeAbsensi && (
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                    lastScannedResult.tipeAbsensi === 'Masuk' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  }`}>
+                    {lastScannedResult.tipeAbsensi.toUpperCase()}
+                  </span>
+                )}
               </h4>
 
               {lastScannedResult ? (
-                <div className="p-4 bg-emerald-950/40 border border-emerald-500/40 rounded-xl space-y-2">
+                <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 font-bold text-[10px] rounded border border-emerald-500/30">
-                      BERHASIL PRESENSI
+                    <span className={`px-2 py-0.5 font-bold text-[10px] rounded border ${
+                      lastScannedResult.tipeAbsensi === 'Pulang'
+                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                    }`}>
+                      PRESENSI {lastScannedResult.tipeAbsensi ? lastScannedResult.tipeAbsensi.toUpperCase() : 'BERHASIL'}
                     </span>
                     <span className="text-[10px] font-mono text-slate-400">{lastScannedResult.waktu}</span>
                   </div>
@@ -627,6 +789,24 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                     <p className="text-xs font-semibold text-blue-400">{lastScannedResult.role}</p>
                     <p className="text-[10px] font-mono text-slate-400 mt-1">{lastScannedResult.detail}</p>
                   </div>
+
+                  {/* Send WhatsApp Notification Button */}
+                  {lastScannedResult.siswaObj && (
+                    <div className="pt-2 border-t border-slate-800/80">
+                      <div className="text-[10px] text-slate-400 mb-1.5 flex items-center justify-between">
+                        <span>Kontak Orang Tua / Wali:</span>
+                        <span className="font-mono text-emerald-400 font-bold">{lastScannedResult.teleponWali || 'Tidak Ada No. HP'}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => lastScannedResult.siswaObj && sendWhatsAppNotif(lastScannedResult.siswaObj, lastScannedResult.waktu, lastScannedResult.tipeAbsensi || 'Masuk')}
+                        className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 fill-white/20" />
+                        Kirim WA Notif {lastScannedResult.tipeAbsensi || 'Presensi'} ke Orang Tua
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-6 bg-[#181818] rounded-xl text-center text-slate-500 text-xs border border-slate-800">
@@ -643,14 +823,36 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                   <p className="text-xs text-slate-500 text-center py-4">Belum ada riwayat scan.</p>
                 ) : (
                   scanHistory.map((item, idx) => (
-                    <div key={idx} className="p-2.5 bg-[#181818] rounded-lg border border-slate-800/80 flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-bold text-white">{item.nama}</div>
+                    <div key={idx} className="p-2.5 bg-[#181818] rounded-lg border border-slate-800/80 flex items-center justify-between text-xs gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-white truncate">{item.nama}</span>
+                          {item.tipeAbsensi && (
+                            <span className={`px-1.5 py-0.2 text-[9px] font-extrabold rounded ${
+                              item.tipeAbsensi === 'Pulang' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            }`}>
+                              {item.tipeAbsensi}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[10px] text-slate-400">{item.role}</div>
                       </div>
-                      <div className="text-right">
-                        <div className="font-mono text-emerald-400 font-bold text-[11px]">{item.waktu}</div>
-                        <div className="text-[9px] text-slate-500 font-mono">{item.kode}</div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-right">
+                          <div className="font-mono text-emerald-400 font-bold text-[11px]">{item.waktu}</div>
+                          <div className="text-[9px] text-slate-500 font-mono">{item.kode}</div>
+                        </div>
+
+                        {item.siswaObj && item.teleponWali && (
+                          <button
+                            type="button"
+                            onClick={() => sendWhatsAppNotif(item.siswaObj!, item.waktu, item.tipeAbsensi || 'Masuk')}
+                            title="Kirim Notifikasi WA Orang Tua"
+                            className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg transition-all"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))
@@ -675,12 +877,11 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                 <select
                   value={selectedKelas}
                   onChange={e => setSelectedKelas(e.target.value)}
-                  className="bg-[#181818] border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-200 focus:outline-none focus:border-blue-500"
+                  className="bg-[#181818] border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
                 >
-                  <option value="X-IPA-1">X-IPA-1</option>
-                  <option value="XI-IPA-2">XI-IPA-2</option>
-                  <option value="XI-IPS-1">XI-IPS-1</option>
-                  <option value="XII-IPA-1">XII-IPA-1</option>
+                  {availableKelasOptions.map(k => (
+                    <option key={k} value={k}>{k}</option>
+                  ))}
                 </select>
               </div>
 
@@ -782,12 +983,9 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                 <select 
                   value={mapelKelas} 
                   onChange={e => setMapelKelas(e.target.value)}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
                 >
-                  {Array.from(new Set([
-                    ...rombelList.map(r => r.namaRombel),
-                    'X-IPA-1', 'XI-IPA-2', 'XI-IPS-1', 'XII-IPA-1'
-                  ])).map(k => (
+                  {availableKelasOptions.map(k => (
                     <option key={k} value={k}>{k}</option>
                   ))}
                 </select>
@@ -845,52 +1043,47 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
 
             {/* Checklist Attendance in Mapel */}
             <div className="pt-2">
-              {/* Filter students list matching mapelKelas */}
-              {(() => {
-                const classSiswaMapelList = siswaList.filter(s => s.kelas === mapelKelas);
-                return (
-                  <>
-                    <h4 className="font-bold text-xs uppercase text-slate-500 mb-2">
-                      Checklist Kehadiran Siswa di Jam Mapel Ini ({classSiswaMapelList.length} Siswa):
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto p-2 border rounded-xl bg-slate-50">
-                      {classSiswaMapelList.length === 0 ? (
-                        <p className="text-xs text-slate-500 text-center py-4 col-span-2">
-                          Tidak ada data siswa untuk kelas {mapelKelas}. Silakan tambahkan siswa di kelas ini melalui Menu Database.
-                        </p>
-                      ) : (
-                        classSiswaMapelList.map(s => {
-                          const status = localMapelState[s.id] || 'Hadir';
-                          return (
-                            <div key={s.id} className="p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-800">{s.nama}</span>
-                              <div className="flex items-center gap-1">
-                                {(['Hadir', 'Sakit', 'Izin', 'Alpha'] as StatusAbsensi[]).map(st => (
-                                  <button
-                                    key={st}
-                                    type="button"
-                                    onClick={() => setLocalMapelState(prev => ({ ...prev, [s.id]: st }))}
-                                    className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${
-                                      status === st 
-                                        ? st === 'Hadir' ? 'bg-emerald-500 text-slate-950 font-extrabold'
-                                          : st === 'Sakit' ? 'bg-amber-500 text-slate-950 font-extrabold'
-                                          : st === 'Izin' ? 'bg-blue-500 text-white font-extrabold'
-                                          : 'bg-rose-500 text-white font-extrabold'
-                                        : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                    }`}
-                                  >
-                                    {st}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
+              <h4 className="font-bold text-xs uppercase text-slate-500 mb-2">
+                Checklist Kehadiran Siswa di Jam Mapel Ini ({classSiswaMapelList.length} Siswa):
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto p-2 border rounded-xl bg-slate-50">
+                {classSiswaMapelList.length === 0 ? (
+                  <p className="text-xs text-slate-500 text-center py-4 col-span-2">
+                    Tidak ada data siswa untuk kelas <span className="font-bold text-slate-700">{mapelKelas}</span>. Silakan tambahkan siswa di kelas ini melalui Menu Database Siswa.
+                  </p>
+                ) : (
+                  classSiswaMapelList.map(s => {
+                    const status = localMapelState[s.id] || 'Hadir';
+                    return (
+                      <div key={s.id} className="p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-xs shadow-xs hover:border-slate-300 transition-all">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-800">{s.nama}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">NISN: {s.nisn}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {(['Hadir', 'Sakit', 'Izin', 'Alpha'] as StatusAbsensi[]).map(st => (
+                            <button
+                              key={st}
+                              type="button"
+                              onClick={() => setLocalMapelState(prev => ({ ...prev, [s.id]: st }))}
+                              className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                                status === st 
+                                  ? st === 'Hadir' ? 'bg-emerald-500 text-slate-950 font-black shadow-xs'
+                                    : st === 'Sakit' ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                                    : st === 'Izin' ? 'bg-blue-600 text-white font-black shadow-xs'
+                                    : 'bg-rose-600 text-white font-black shadow-xs'
+                                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                              }`}
+                            >
+                              {st}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
 
             <div className="flex flex-col sm:flex-row items-center justify-between pt-3 gap-3 border-t">

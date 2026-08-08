@@ -151,16 +151,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           cameraConfig,
           {
             fps: 15,
-            qrbox: (viewfinderWidth, viewfinderHeight) => {
-              const minDimension = Math.min(viewfinderWidth, viewfinderHeight);
-              const w = Math.max(50, Math.floor(minDimension * 0.8));
-              const h = Math.max(50, Math.floor(minDimension * 0.55));
-              return {
-                width: w,
-                height: h
-              };
-            },
-            aspectRatio: 1.777778
+            aspectRatio: 1.333333
           },
           (decodedText) => {
             if (!isMounted) return;
@@ -373,30 +364,30 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           )}
 
           {/* Camera Viewport Box */}
-          <div className="relative min-h-[280px] bg-slate-950 rounded-2xl border-2 border-slate-800 overflow-hidden flex flex-col items-center justify-center group shadow-2xl">
+          <div className="relative w-full max-w-xl mx-auto h-[280px] sm:h-[320px] bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden flex flex-col items-center justify-center group shadow-2xl">
             {/* HTML5 QR Code Video Target */}
             <div 
               id={readerElementId} 
-              className={`w-full h-full text-white [&_video]:object-cover [&_video]:w-full [&_video]:max-h-[360px] [&_video]:rounded-xl ${
+              className={`w-full h-full text-white [&_video]:w-full [&_video]:h-full [&_video]:object-cover [&_video]:rounded-xl [&_img]:hidden [&_canvas]:hidden [&_a]:hidden [&_button]:hidden [&_span]:hidden [&_div]:!border-none ${
                 !isCameraActive || cameraError ? 'hidden' : 'block'
               }`}
             />
 
             {/* Custom Scanning Laser Overlay (Shown when active) */}
             {isCameraActive && !cameraError && (
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center p-4">
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center p-4 z-10">
                 {/* Frame Guide Box */}
-                <div className="relative w-72 h-44 border-2 border-blue-400/80 rounded-2xl shadow-[0_0_20px_rgba(59,130,246,0.3)] bg-blue-500/5 flex flex-col items-center justify-center overflow-hidden">
+                <div className="relative w-64 sm:w-72 h-36 sm:h-40 border border-blue-400/60 rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.25)] bg-blue-500/5 flex items-center justify-center overflow-hidden">
                   {/* Laser Beam Animation */}
-                  <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse shadow-[0_0_15px_#60a5fa] top-1/2 -translate-y-1/2" />
+                  <div className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse shadow-[0_0_10px_#60a5fa] top-1/2 -translate-y-1/2" />
 
                   {/* Corner Markers */}
-                  <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-blue-400" />
-                  <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-blue-400" />
-                  <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-blue-400" />
-                  <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-blue-400" />
+                  <div className="absolute top-1 left-1 w-3 h-3 border-t-2 border-l-2 border-blue-400 rounded-tl-sm" />
+                  <div className="absolute top-1 right-1 w-3 h-3 border-t-2 border-r-2 border-blue-400 rounded-tr-sm" />
+                  <div className="absolute bottom-1 left-1 w-3 h-3 border-b-2 border-l-2 border-blue-400 rounded-bl-sm" />
+                  <div className="absolute bottom-1 right-1 w-3 h-3 border-b-2 border-r-2 border-blue-400 rounded-br-sm" />
 
-                  <span className="text-[10px] font-bold text-blue-200 bg-slate-950/80 px-2.5 py-1 rounded-full border border-blue-500/30 backdrop-blur-sm shadow-md">
+                  <span className="text-[10px] font-bold text-blue-200 bg-slate-950/80 px-3 py-1 rounded-full border border-blue-500/30 backdrop-blur-md shadow-md">
                     Posisikan Barcode / QR di Sini
                   </span>
                 </div>
@@ -412,10 +403,28 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                         : 'bg-slate-900/80 text-amber-400 border-amber-500/40 hover:bg-amber-500/20'
                     }`}
                   >
-                    {isTorchOn ? <ZapOff className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+                    {isTorchOn ? <ZapOff className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
                     {isTorchOn ? 'Senter ON' : 'Senter OFF'}
                   </button>
                 )}
+              </div>
+            )}
+
+            {/* Inactive Camera Placeholder */}
+            {!isCameraActive && !cameraError && (
+              <div className="p-6 text-center space-y-3">
+                <div className="p-3 bg-slate-900 text-slate-400 rounded-2xl border border-slate-800 inline-block shadow-inner">
+                  <CameraOff className="w-8 h-8" />
+                </div>
+                <h4 className="text-sm font-bold text-white">Kamera Nonaktif</h4>
+                <p className="text-xs text-slate-400 max-w-xs mx-auto">Klik tombol di bawah untuk mengaktifkan kembali lensa kamera.</p>
+                <button
+                  type="button"
+                  onClick={() => setIsCameraActive(true)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all inline-flex items-center gap-1.5 shadow-md"
+                >
+                  <Camera className="w-3.5 h-3.5" /> Nyalakan Kamera
+                </button>
               </div>
             )}
 

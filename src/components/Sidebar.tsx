@@ -18,9 +18,10 @@ import {
   Play,
   CreditCard,
   Sliders,
-  FileSpreadsheet
+  FileSpreadsheet,
+  QrCode
 } from 'lucide-react';
-import { Role, SubTab, CbtSubTab, KeuanganSubTab } from '../types/school';
+import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab } from '../types/school';
 
 export type TabType = 'dashboard' | 'database' | 'absensi' | 'cbt' | 'administrasi' | 'keuangan' | 'pengaturan';
 
@@ -31,6 +32,8 @@ interface SidebarProps {
   currentRole?: Role;
   databaseSubTab: SubTab;
   setDatabaseSubTab: (subTab: SubTab) => void;
+  absensiSubTab?: AbsensiSubTab;
+  setAbsensiSubTab?: (subTab: AbsensiSubTab) => void;
   cbtSubTab?: CbtSubTab;
   setCbtSubTab?: (subTab: CbtSubTab) => void;
   keuanganSubTab?: KeuanganSubTab;
@@ -50,6 +53,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentRole = 'admin',
   databaseSubTab,
   setDatabaseSubTab,
+  absensiSubTab = 'scan_barcode',
+  setAbsensiSubTab,
   cbtSubTab = 'bank_soal',
   setCbtSubTab,
   keuanganSubTab = 'pembayaran',
@@ -271,6 +276,121 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           {mapelCount}
                         </span>
                       </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            if (item.id === 'absensi') {
+              return (
+                <div key={item.id} className="space-y-1">
+                  <button
+                    onClick={() => {
+                      setActiveTab('absensi');
+                    }}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-between group ${
+                      isActive
+                        ? 'bg-slate-800/90 text-blue-400 font-bold border border-slate-700/80 shadow-md ring-1 ring-blue-500/20'
+                        : 'hover:bg-slate-800/50 hover:text-white text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`${isActive ? 'text-blue-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                        {item.icon}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold leading-none">{item.label}</div>
+                        <div className={`text-[10px] mt-1 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                          {item.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-transform duration-300 ${isActive ? 'transform rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Dropdown nested items for Absensi */}
+                  {isActive && (
+                    <div className="pl-3 pr-1 py-1 space-y-1 border-l border-slate-800 ml-6 mt-1 transition-all">
+                      {/* 1. Scan Barcode / QR */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('absensi');
+                          if (setAbsensiSubTab) setAbsensiSubTab('scan_barcode');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          absensiSubTab === 'scan_barcode'
+                            ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <QrCode className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Scan Barcode / QR</span>
+                        </div>
+                        <span className="text-[9px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1 py-0.5 rounded font-bold">
+                          Kamera
+                        </span>
+                      </button>
+
+                      {/* 2. Absensi Harian Siswa */}
+                      {currentRole !== 'guru' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('absensi');
+                            if (setAbsensiSubTab) setAbsensiSubTab('harian_siswa');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            absensiSubTab === 'harian_siswa'
+                              ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <CalendarCheck className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Absensi Harian Siswa</span>
+                          </div>
+                        </button>
+                      )}
+
+                      {/* 3. Absensi Kelas Per Mapel */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('absensi');
+                          if (setAbsensiSubTab) setAbsensiSubTab('kelas_mapel');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          absensiSubTab === 'kelas_mapel'
+                            ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Absensi Kelas Per Mapel</span>
+                        </div>
+                      </button>
+
+                      {/* 4. Presensi Guru */}
+                      {currentRole !== 'guru' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('absensi');
+                            if (setAbsensiSubTab) setAbsensiSubTab('absensi_guru');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            absensiSubTab === 'absensi_guru'
+                              ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <UserCheck className="w-3.5 h-3.5 text-purple-400" />
+                            <span>Presensi Guru</span>
+                          </div>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

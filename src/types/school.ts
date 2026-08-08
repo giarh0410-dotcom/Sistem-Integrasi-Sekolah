@@ -15,6 +15,7 @@ export interface RombelKelas {
 
 export type Role = 'admin' | 'guru' | 'siswa' | 'staf';
 export type SubTab = 'siswa' | 'guru' | 'staf' | 'rombel' | 'mapel';
+export type AbsensiSubTab = 'scan_barcode' | 'harian_siswa' | 'kelas_mapel' | 'absensi_guru';
 export type CbtSubTab = 'bank_soal' | 'jadwal_kartu' | 'ai_generator' | 'simulasi_ujian';
 export type KeuanganSubTab = 'pembayaran' | 'pengaturan_biaya' | 'rekap';
 
@@ -137,6 +138,9 @@ export interface AbsensiSiswaHarian {
   status: StatusAbsensi;
   keterangan?: string;
   jamScan?: string;
+  jamMasuk?: string;
+  jamPulang?: string;
+  tipeScan?: 'Masuk' | 'Pulang';
   metodeScan?: 'Manual' | 'Barcode / QR';
 }
 

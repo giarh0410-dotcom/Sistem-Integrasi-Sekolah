@@ -289,7 +289,7 @@ export default function App() {
         setActiveTab('absensi');
       }
     } else if (currentRole === 'staf') {
-      if (activeTab !== 'keuangan' && activeTab !== 'database') {
+      if (activeTab !== 'keuangan') {
         setActiveTab('keuangan');
       }
     } else if (currentRole === 'siswa') {

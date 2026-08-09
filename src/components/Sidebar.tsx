@@ -120,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return item.id === 'absensi' || item.id === 'administrasi' || item.id === 'cbt';
     }
     if (currentRole === 'staf') {
-      return item.id === 'keuangan' || item.id === 'database';
+      return item.id === 'keuangan';
     }
     if (currentRole === 'siswa') {
       return item.id === 'dashboard' || item.id === 'absensi' || item.id === 'cbt' || item.id === 'keuangan';
@@ -546,17 +546,63 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {/* Dropdown nested items for Keuangan */}
                   {isActive && (
                     <div className="pl-3 pr-1 py-1 space-y-1 border-l border-slate-800 ml-6 mt-1 transition-all">
-                      {/* Data Siswa */}
+                      {/* 1. Pembayaran Siswa */}
                       <button
                         onClick={() => {
-                          setActiveTab('database');
-                          if (setDatabaseSubTab) setDatabaseSubTab('siswa');
+                          setActiveTab('keuangan');
+                          if (setKeuanganSubTab) setKeuanganSubTab('pembayaran');
                         }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all hover:bg-slate-800/30 text-slate-400 hover:text-white`}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          keuanganSubTab === 'pembayaran'
+                            ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
                       >
                         <div className="flex items-center gap-2">
-                          <GraduationCap className="w-3.5 h-3.5" />
-                          <span>Data Siswa</span>
+                          <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Pembayaran Siswa</span>
+                        </div>
+                        <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1 py-0.5 rounded font-bold">
+                          Kasir
+                        </span>
+                      </button>
+
+                      {/* 2. Pengaturan Biaya UKT, SPP, Ekskul */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('keuangan');
+                          if (setKeuanganSubTab) setKeuanganSubTab('pengaturan_biaya');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          keuanganSubTab === 'pengaturan_biaya'
+                            ? 'bg-amber-600/10 text-amber-400 border border-amber-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Pengaturan Tarif Biaya</span>
+                        </div>
+                        <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1 py-0.5 rounded font-bold">
+                          UKT/SPP
+                        </span>
+                      </button>
+
+                      {/* 3. Rekap & Google Sheets */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('keuangan');
+                          if (setKeuanganSubTab) setKeuanganSubTab('rekap');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          keuanganSubTab === 'rekap'
+                            ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Rekap & Fonnte WA</span>
                         </div>
                       </button>
                     </div>

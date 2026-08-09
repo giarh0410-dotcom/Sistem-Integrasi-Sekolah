@@ -444,7 +444,7 @@ export const INITIAL_SCHOOL_SETTINGS: SchoolSettings = {
   nipKepalaSekolah: '197501152000031001',
   tahunAjaran: '2026/2027',
   semesterAktif: 'Ganjil',
-  logoUrl: 'https://images.unsplash.com/photo-1599305445671-ac291c95aaa9?w=120&auto=format&fit=crop&q=80',
+  logoUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%231e3a8a" stroke="%23fbbf24" stroke-width="4"/><path d="M50 20 L75 35 L75 65 C75 75 50 85 50 85 C50 85 25 75 25 65 L25 35 Z" fill="%23ffffff" opacity="0.9"/><path d="M50 32 L65 42 L50 52 L35 42 Z" fill="%232563eb"/><path d="M38 56 C42 59 58 59 62 56 L62 68 C58 71 42 71 38 68 Z" fill="%23d97706"/></svg>',
   fonnteToken: 'FONNTE_EDU_TOKEN_2026_SMP_MODERN_AL_FAKHIR',
   fonnteConfig: INITIAL_FONNTE_CONFIG,
   jadwalPresensi: {

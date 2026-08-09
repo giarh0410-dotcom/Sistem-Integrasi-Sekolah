@@ -59,6 +59,7 @@ interface DatabaseViewProps {
   userEmail?: string;
   absensiHarian?: any[];
   absensiKelasList?: any[];
+  currentRole?: string;
 }
 
 export const DatabaseView: React.FC<DatabaseViewProps> = ({
@@ -77,7 +78,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
   userGoogleToken = 'demo_workspace_token_active',
   userEmail = '',
   absensiHarian = [],
-  absensiKelasList = []
+  absensiKelasList = [],
+  currentRole = 'admin'
 }) => {
   const [localSubTab, setLocalSubTab] = useState<SubTab>('siswa');
   const subTab = propsSubTab || localSubTab;
@@ -1340,40 +1342,44 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                           >
                             <CreditCard className="w-4 h-4" />
                           </button>
-                          <button 
-                            onClick={() => {
-                              setEditingId(s.id);
-                              setFormSiswa({
-                                ...s,
-                                email: s.email || '',
-                                asalSekolah: s.asalSekolah || '',
-                                anakKe: s.anakKe !== undefined ? s.anakKe : 1,
-                                jumlahSaudara: s.jumlahSaudara !== undefined ? s.jumlahSaudara : 0,
-                                beratBadan: s.beratBadan !== undefined ? s.beratBadan : 0,
-                                tinggiBadan: s.tinggiBadan !== undefined ? s.tinggiBadan : 0,
-                                namaAyah: s.namaAyah || '',
-                                namaIbu: s.namaIbu || '',
-                                tempatLahirOrtu: s.tempatLahirOrtu || '',
-                                tanggalLahirOrtu: s.tanggalLahirOrtu || '',
-                                pendidikanOrtu: s.pendidikanOrtu || '',
-                                pekerjaanOrtu: s.pekerjaanOrtu || '',
-                                nikOrtu: s.nikOrtu || ''
-                              });
-                              setModalMode('edit');
-                              setIsModalOpen(true);
-                            }}
-                            title="Ubah Biodata Siswa"
-                            className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleDelete(s.id, s.nama, 'siswa')}
-                            title="Hapus Data Siswa"
-                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {currentRole !== 'staf' && (
+                            <>
+                              <button 
+                                onClick={() => {
+                                  setEditingId(s.id);
+                                  setFormSiswa({
+                                    ...s,
+                                    email: s.email || '',
+                                    asalSekolah: s.asalSekolah || '',
+                                    anakKe: s.anakKe !== undefined ? s.anakKe : 1,
+                                    jumlahSaudara: s.jumlahSaudara !== undefined ? s.jumlahSaudara : 0,
+                                    beratBadan: s.beratBadan !== undefined ? s.beratBadan : 0,
+                                    tinggiBadan: s.tinggiBadan !== undefined ? s.tinggiBadan : 0,
+                                    namaAyah: s.namaAyah || '',
+                                    namaIbu: s.namaIbu || '',
+                                    tempatLahirOrtu: s.tempatLahirOrtu || '',
+                                    tanggalLahirOrtu: s.tanggalLahirOrtu || '',
+                                    pendidikanOrtu: s.pendidikanOrtu || '',
+                                    pekerjaanOrtu: s.pekerjaanOrtu || '',
+                                    nikOrtu: s.nikOrtu || ''
+                                  });
+                                  setModalMode('edit');
+                                  setIsModalOpen(true);
+                                }}
+                                title="Ubah Biodata Siswa"
+                                className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => handleDelete(s.id, s.nama, 'siswa')}
+                                title="Hapus Data Siswa"
+                                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -120,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return item.id === 'absensi' || item.id === 'administrasi' || item.id === 'cbt';
     }
     if (currentRole === 'staf') {
-      return item.id === 'keuangan';
+      return item.id === 'keuangan' || item.id === 'database';
     }
     if (currentRole === 'siswa') {
       return item.id === 'dashboard' || item.id === 'absensi' || item.id === 'cbt' || item.id === 'keuangan';
@@ -159,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         
         <div className="space-y-1.5">
           {menuItems.map((item) => {
-            const isActive = activeTab === item.id;
+            const isActive = activeTab === item.id || (item.id === 'keuangan' && currentRole === 'staf' && activeTab === 'database');
             
             if (item.id === 'database') {
               return (

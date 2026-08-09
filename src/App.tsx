@@ -289,7 +289,7 @@ export default function App() {
         setActiveTab('absensi');
       }
     } else if (currentRole === 'staf') {
-      if (activeTab !== 'keuangan') {
+      if (activeTab !== 'keuangan' && activeTab !== 'database') {
         setActiveTab('keuangan');
       }
     } else if (currentRole === 'siswa') {
@@ -401,6 +401,7 @@ export default function App() {
               userEmail={userEmail}
               absensiHarian={absensiHarian}
               absensiKelasList={absensiKelasList}
+              currentRole={currentRole}
             />
           )}
 

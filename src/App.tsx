@@ -65,7 +65,11 @@ function getSavedData<T>(key: string, initial: T): T {
         return saved as unknown as T;
       }
     }
-    return JSON.parse(saved);
+    const parsed = JSON.parse(saved);
+    if (Array.isArray(parsed) && parsed.length === 0 && Array.isArray(initial) && initial.length > 0) {
+      return initial;
+    }
+    return parsed;
   } catch (e) {
     console.error(`Error loading ${key} from localStorage:`, e);
     return initial;

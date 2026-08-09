@@ -927,79 +927,83 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
       {/* MODAL ADD MANUAL QUESTION */}
       {showAddSoalModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <h3 className="font-bold text-slate-900 text-base border-b pb-2">Input Soal Baru Manual</h3>
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+            <h3 className="font-extrabold text-slate-900 text-lg border-b border-slate-200 pb-3">Input Soal Baru Manual</h3>
 
-            <form onSubmit={handleAddSoal} className="space-y-3">
+            <form onSubmit={handleAddSoal} className="space-y-4">
               <div>
-                <label className="text-[11px] font-bold text-slate-700">Tipe Soal</label>
+                <label className="text-xs font-extrabold text-slate-800 mb-1 block">Tipe Soal</label>
                 <select
                   value={newTipe}
                   onChange={e => setNewTipe(e.target.value as TipeSoal)}
-                  className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 >
-                  <option value="pg">Pilihan Ganda (1 Jawaban Benar)</option>
-                  <option value="multiple_choice">Pilihan Ganda Kompleks (&gt;1 Jawaban)</option>
-                  <option value="isian">Isian Singkat</option>
-                  <option value="esai">Esai Uraian</option>
+                  <option value="pg" className="text-slate-900 bg-white font-medium">Pilihan Ganda (1 Jawaban Benar)</option>
+                  <option value="multiple_choice" className="text-slate-900 bg-white font-medium">Pilihan Ganda Kompleks (&gt;1 Jawaban)</option>
+                  <option value="isian" className="text-slate-900 bg-white font-medium">Isian Singkat</option>
+                  <option value="esai" className="text-slate-900 bg-white font-medium">Esai Uraian</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-slate-700">Teks Pertanyaan Soal</label>
+                <label className="text-xs font-extrabold text-slate-800 mb-1 block">Teks Pertanyaan Soal</label>
                 <textarea
                   required
-                  rows={2}
+                  rows={3}
                   value={newPertanyaan}
                   onChange={e => setNewPertanyaan(e.target.value)}
-                  className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-medium"
+                  placeholder="Ketikkan teks pertanyaan soal secara lengkap..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-500 placeholder:font-normal focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 />
               </div>
 
               {(newTipe === 'pg' || newTipe === 'multiple_choice') && (
-                <div className="grid grid-cols-2 gap-2">
-                  <input type="text" placeholder="Opsi A" value={newOpsiA} onChange={e => setNewOpsiA(e.target.value)} className="p-2 border rounded text-xs" />
-                  <input type="text" placeholder="Opsi B" value={newOpsiB} onChange={e => setNewOpsiB(e.target.value)} className="p-2 border rounded text-xs" />
-                  <input type="text" placeholder="Opsi C" value={newOpsiC} onChange={e => setNewOpsiC(e.target.value)} className="p-2 border rounded text-xs" />
-                  <input type="text" placeholder="Opsi D" value={newOpsiD} onChange={e => setNewOpsiD(e.target.value)} className="p-2 border rounded text-xs" />
+                <div>
+                  <label className="text-xs font-extrabold text-slate-800 mb-1 block">Pilihan Opsi Jawaban</label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <input type="text" placeholder="Opsi A" value={newOpsiA} onChange={e => setNewOpsiA(e.target.value)} className="p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-500 placeholder:font-normal focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+                    <input type="text" placeholder="Opsi B" value={newOpsiB} onChange={e => setNewOpsiB(e.target.value)} className="p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-500 placeholder:font-normal focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+                    <input type="text" placeholder="Opsi C" value={newOpsiC} onChange={e => setNewOpsiC(e.target.value)} className="p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-500 placeholder:font-normal focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+                    <input type="text" placeholder="Opsi D" value={newOpsiD} onChange={e => setNewOpsiD(e.target.value)} className="p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-500 placeholder:font-normal focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+                  </div>
                 </div>
               )}
 
               {newTipe === 'pg' && (
                 <div>
-                  <label className="text-[11px] font-bold text-slate-700">Kunci Jawaban PG</label>
-                  <select value={newKunciPg} onChange={e => setNewKunciPg(e.target.value)} className="w-full p-2 border rounded text-xs font-bold">
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                    <option value="D">D</option>
+                  <label className="text-xs font-extrabold text-slate-800 mb-1 block">Kunci Jawaban PG</label>
+                  <select value={newKunciPg} onChange={e => setNewKunciPg(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                    <option value="A" className="text-slate-900 bg-white font-medium">A</option>
+                    <option value="B" className="text-slate-900 bg-white font-medium">B</option>
+                    <option value="C" className="text-slate-900 bg-white font-medium">C</option>
+                    <option value="D" className="text-slate-900 bg-white font-medium">D</option>
                   </select>
                 </div>
               )}
 
               {newTipe === 'isian' && (
                 <div>
-                  <label className="text-[11px] font-bold text-slate-700">Kunci Jawaban Isian Singkat</label>
-                  <input type="text" required value={newKunciIsian} onChange={e => setNewKunciIsian(e.target.value)} className="w-full p-2 border rounded text-xs" />
+                  <label className="text-xs font-extrabold text-slate-800 mb-1 block">Kunci Jawaban Isian Singkat</label>
+                  <input type="text" required value={newKunciIsian} onChange={e => setNewKunciIsian(e.target.value)} placeholder="Contoh: Jakarta" className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-500 placeholder:font-normal focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
                 </div>
               )}
 
               {newTipe === 'esai' && (
                 <div>
-                  <label className="text-[11px] font-bold text-slate-700">Pedoman Kunci Esai</label>
-                  <input type="text" required value={newKunciEsai} onChange={e => setNewKunciEsai(e.target.value)} className="w-full p-2 border rounded text-xs" />
+                  <label className="text-xs font-extrabold text-slate-800 mb-1 block">Pedoman Kunci Esai</label>
+                  <input type="text" required value={newKunciEsai} onChange={e => setNewKunciEsai(e.target.value)} placeholder="Masukkan kata kunci/pedoman jawaban..." className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-500 placeholder:font-normal focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
                 </div>
               )}
 
               <div>
-                <label className="text-[11px] font-bold text-slate-700">Bobot Poin Soal</label>
-                <input type="number" value={newBobot} onChange={e => setNewBobot(Number(e.target.value))} className="w-full p-2 border rounded text-xs font-bold" />
+                <label className="text-xs font-extrabold text-slate-800 mb-1 block">Bobot Poin Soal</label>
+                <input type="number" value={newBobot} onChange={e => setNewBobot(Number(e.target.value))} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-500 placeholder:font-normal focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <button type="button" onClick={() => setShowAddSoalModal(false)} className="px-3 py-1.5 rounded text-xs font-semibold bg-slate-100">Batal</button>
-                <button type="submit" className="px-4 py-1.5 rounded text-xs font-bold bg-emerald-500 text-slate-950">Simpan Soal</button>
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+                <button type="button" onClick={() => setShowAddSoalModal(false)} className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">Batal</button>
+                <button type="submit" className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/30 transition-all">Simpan Soal</button>
               </div>
             </form>
           </div>

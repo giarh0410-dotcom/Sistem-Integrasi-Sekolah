@@ -373,6 +373,7 @@ export interface SchoolSettings {
   fonnteConfig?: FonnteConfig;
   jadwalPresensi?: JadwalPresensi;
   googleSyncEmail?: string;
+  adminEmails?: string[];
   googleSyncEnabled?: boolean;
   googleSyncSpreadsheetId?: string;
   googleSyncSpreadsheetUrl?: string;

@@ -83,7 +83,7 @@ export default function App() {
 
   // Google OAuth Auth State
   const [userGoogleToken, setUserGoogleToken] = useState<string>('');
-  const [userEmail, setUserEmail] = useState<string>('giar.hermawan4@guru.smp.belajar.id');
+  const [userEmail, setUserEmail] = useState<string>('giarh0410@gmail.com');
 
   // Main School Master Data
   const [rombelList, setRombelList] = useState<RombelKelas[]>(() => getSavedData('edu_rombelList', INITIAL_ROMBEL));
@@ -241,7 +241,7 @@ export default function App() {
     initAuth(
       (user, token) => {
         setUserGoogleToken(token || '');
-        setUserEmail(user.email || 'giar.hermawan4@guru.smp.belajar.id');
+        setUserEmail(user.email || 'giarh0410@gmail.com');
         setIsLoggedIn(true);
       },
       () => {
@@ -297,6 +297,9 @@ export default function App() {
       <LoginView
         onLoginSuccess={handleLoginSuccess}
         schoolSettings={schoolSettings}
+        guruList={guruList}
+        stafList={stafList}
+        siswaList={siswaList}
       />
     );
   }

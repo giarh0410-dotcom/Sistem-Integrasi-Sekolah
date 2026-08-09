@@ -45,7 +45,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
   if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes('Dummy') || firebaseConfig.apiKey.includes('AIzaSyDummy')) {
     const mockUser = {
       uid: 'demo_user_123',
-      email: 'giar.hermawan4@guru.smp.belajar.id',
+      email: 'giarh0410@gmail.com',
       displayName: 'Giar Hermawan (Admin)',
       photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
     } as unknown as User;
@@ -73,7 +73,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
       console.warn('Firebase API key is placeholder. Fallback to Google Workspace preview mode.');
       const mockUser = {
         uid: 'demo_user_123',
-        email: 'giar.hermawan4@guru.smp.belajar.id',
+        email: 'giarh0410@gmail.com',
         displayName: 'Giar Hermawan (Admin)',
         photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
       } as unknown as User;

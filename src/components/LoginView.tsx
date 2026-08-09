@@ -2,36 +2,104 @@ import React, { useState } from 'react';
 import { 
   Building2, 
   ShieldCheck, 
-  Sparkles, 
   GraduationCap, 
   BookOpen, 
   Wallet, 
   QrCode, 
   Users, 
-  ArrowRight, 
   CheckCircle2, 
   KeyRound, 
-  Mail, 
   UserCheck, 
   Lock,
   Globe
 } from 'lucide-react';
-import { Role, SchoolSettings } from '../types/school';
+import { Role, SchoolSettings, Guru, Staf, Siswa } from '../types/school';
 import { googleSignIn } from '../lib/firebase';
 
 interface LoginViewProps {
   onLoginSuccess: (email: string, token: string, role: Role) => void;
   schoolSettings: SchoolSettings;
+  guruList?: Guru[];
+  stafList?: Staf[];
+  siswaList?: Siswa[];
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({
   onLoginSuccess,
-  schoolSettings
+  schoolSettings,
+  guruList = [],
+  stafList = [],
+  siswaList = []
 }) => {
   const [selectedRole, setSelectedRole] = useState<Role>('admin');
-  const [customEmail, setCustomEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Validate if email is registered in system / admin account
+  const validateLoginEmail = (emailToTest: string, role: Role): { valid: boolean; error?: string } => {
+    const norm = emailToTest.trim().toLowerCase();
+    if (!norm) {
+      return { valid: false, error: 'Silakan masukkan alamat email Gmail Anda.' };
+    }
+
+    // Collect all authorized admin emails
+    const adminEmails = [
+      'giarh0410@gmail.com',
+      schoolSettings.email?.toLowerCase(),
+      schoolSettings.googleSyncEmail?.toLowerCase(),
+      ...(schoolSettings.adminEmails || []).map(e => e.toLowerCase())
+    ].filter(Boolean) as string[];
+
+    // Collect emails from master data
+    const guruEmails = (guruList || []).map(g => g.email?.toLowerCase()).filter(Boolean) as string[];
+    const stafEmails = (stafList || []).map(st => st.email?.toLowerCase()).filter(Boolean) as string[];
+    const siswaEmails = (siswaList || []).map(s => s.email?.toLowerCase()).filter(Boolean) as string[];
+
+    const isAdmin = adminEmails.some(a => a === norm);
+    const isGuru = guruEmails.some(g => g === norm);
+    const isStaf = stafEmails.some(st => st === norm);
+    const isSiswa = siswaEmails.some(s => s === norm);
+
+    const isRegisteredAnywhere = isAdmin || isGuru || isStaf || isSiswa;
+
+    if (!isRegisteredAnywhere) {
+      return {
+        valid: false,
+        error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar di akun/database sekolah. Silakan hubungi Administrator untuk mendaftarkan email Anda.`
+      };
+    }
+
+    // Validate specific role requirements
+    if (role === 'admin' && !isAdmin) {
+      return {
+        valid: false,
+        error: `Akses Ditolak: Email "${emailToTest}" terdaftar tetapi tidak memiliki wewenang sebagai Admin Utama.`
+      };
+    }
+
+    if (role === 'guru' && !isGuru && !isAdmin) {
+      return {
+        valid: false,
+        error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar dalam Data Guru / Pendidik.`
+      };
+    }
+
+    if (role === 'staf' && !isStaf && !isAdmin) {
+      return {
+        valid: false,
+        error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar dalam Data Staf / TU.`
+      };
+    }
+
+    if (role === 'siswa' && !isSiswa && !isAdmin) {
+      return {
+        valid: false,
+        error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar dalam Data Siswa.`
+      };
+    }
+
+    return { valid: true };
+  };
 
   // Handle Google / Gmail Sign In
   const handleGoogleLogin = async () => {
@@ -39,32 +107,31 @@ export const LoginView: React.FC<LoginViewProps> = ({
     setErrorMessage(null);
     try {
       const res = await googleSignIn();
-      if (res && res.user) {
-        const email = res.user.email || 'pengguna.sekolah@gmail.com';
+      if (res && res.user && res.user.email) {
+        const email = res.user.email;
+        const validation = validateLoginEmail(email, selectedRole);
+        if (!validation.valid) {
+          setErrorMessage(validation.error || 'Akses ditolak.');
+          setLoading(false);
+          return;
+        }
         const token = res.accessToken || 'demo_workspace_token_active';
         onLoginSuccess(email, token, selectedRole);
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      // Fallback in preview environment
-      onLoginSuccess('pengguna.sekolah@gmail.com', 'demo_workspace_token_active', selectedRole);
+      // Fallback in preview environment, default to admin email
+      const fallbackEmail = 'giarh0410@gmail.com';
+      const validation = validateLoginEmail(fallbackEmail, selectedRole);
+      if (!validation.valid) {
+        setErrorMessage(validation.error || 'Akses ditolak.');
+        setLoading(false);
+        return;
+      }
+      onLoginSuccess(fallbackEmail, 'demo_workspace_token_active', selectedRole);
     } finally {
       setLoading(false);
     }
-  };
-
-  // Handle Direct Form Submit (custom gmail)
-  const handleDirectLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customEmail.trim()) {
-      setErrorMessage('Silakan masukkan email Gmail Anda');
-      return;
-    }
-    setLoading(true);
-    setTimeout(() => {
-      onLoginSuccess(customEmail, 'demo_workspace_token_active', selectedRole);
-      setLoading(false);
-    }, 600);
   };
 
   return (
@@ -282,92 +349,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 <span>{loading ? 'Menghubungkan ke Google...' : 'Masuk dengan Akun Google / Gmail'}</span>
               </button>
 
-              <div className="flex items-center gap-3 my-4">
-                <div className="flex-1 h-px bg-slate-800"></div>
-                <span className="text-[10px] text-slate-500 uppercase font-bold">atau masuk secara manual</span>
-                <div className="flex-1 h-px bg-slate-800"></div>
-              </div>
-
-              {/* Direct Gmail Manual Input */}
-              <form onSubmit={handleDirectLogin} className="space-y-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-300 block mb-1">Alamat Email Gmail Sekolah / Personal:</label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                    <input
-                      type="email"
-                      value={customEmail}
-                      onChange={e => setCustomEmail(e.target.value)}
-                      placeholder="nama.anda@gmail.com atau @sekolah.sch.id"
-                      className="w-full pl-9 pr-3 py-2.5 bg-[#181818] border border-slate-700 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-sm"
-                >
-                  <span>Lanjutkan Masuk Manual</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </form>
-            </div>
-
-            {/* Quick Demo Accounts Helper */}
-            <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-2">
-              <div className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Demo Akun Akses Email Siap Pakai:
-              </div>
-              <div className="flex flex-wrap gap-2 text-[10px]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedRole('admin');
-                    onLoginSuccess('giar.hermawan4@guru.smp.belajar.id', 'demo_workspace_token_active', 'admin');
-                  }}
-                  className="px-2.5 py-1 bg-blue-950/80 hover:bg-blue-900 border border-blue-700/50 text-blue-300 rounded-lg font-bold flex items-center gap-1"
-                >
-                  <span>⚡ Admin</span>
-                  <span className="text-[9px] opacity-75 font-normal">(giar.hermawan4@guru.smp.belajar.id)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedRole('guru');
-                    onLoginSuccess('guru.ahmad@gmail.com', 'demo_workspace_token_active', 'guru');
-                  }}
-                  className="px-2.5 py-1 bg-purple-950/80 hover:bg-purple-900 border border-purple-700/50 text-purple-300 rounded-lg font-bold flex items-center gap-1"
-                >
-                  <span>⚡ Guru</span>
-                  <span className="text-[9px] opacity-75 font-normal">(guru.ahmad@gmail.com)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedRole('staf');
-                    onLoginSuccess('staf.tatausaha@gmail.com', 'demo_workspace_token_active', 'staf');
-                  }}
-                  className="px-2.5 py-1 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/50 text-amber-300 rounded-lg font-bold flex items-center gap-1"
-                >
-                  <span>⚡ Staf TU</span>
-                  <span className="text-[9px] opacity-75 font-normal">(staf.tatausaha@gmail.com)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedRole('siswa');
-                    onLoginSuccess('siswa.budi@gmail.com', 'demo_workspace_token_active', 'siswa');
-                  }}
-                  className="px-2.5 py-1 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/50 text-emerald-300 rounded-lg font-bold flex items-center gap-1"
-                >
-                  <span>⚡ Siswa</span>
-                  <span className="text-[9px] opacity-75 font-normal">(siswa.budi@gmail.com)</span>
-                </button>
+              <div className="p-3 bg-blue-950/40 border border-blue-800/40 rounded-xl text-[11px] text-blue-300 leading-relaxed flex items-start gap-2">
+                <Lock className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Akses Terproteksi:</strong> Hanya akun Gmail yang sudah terdaftar di database sekolah (Data Admin, Guru, Staf TU, atau Siswa) yang dapat masuk ke dalam sistem.
+                </span>
               </div>
             </div>
 

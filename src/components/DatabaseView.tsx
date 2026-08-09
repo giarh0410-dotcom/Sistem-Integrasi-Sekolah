@@ -2672,13 +2672,20 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[11px] font-bold text-slate-400">Bagian / Divisi</label>
-                      <input 
-                        type="text" 
-                        required 
+                      <select 
                         value={formStaf.bagian} 
                         onChange={e => setFormStaf({ ...formStaf, bagian: e.target.value })}
-                        className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white" 
-                      />
+                        className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold"
+                      >
+                        <option value="Bendahara / Keuangan">Bendahara / Keuangan</option>
+                        <option value="Tata Usaha">Tata Usaha</option>
+                        <option value="Perpustakaan">Perpustakaan</option>
+                        <option value="Sarana & Prasarana (TUK)">Sarana & Prasarana (TUK)</option>
+                        <option value="Kebersihan & Keamanan">Kebersihan & Keamanan</option>
+                        <option value="Teknologi Informasi (IT)">Teknologi Informasi (IT)</option>
+                        <option value="Administrasi Akademik">Administrasi Akademik</option>
+                        <option value="Humas & Layanan Siswa">Humas & Layanan Siswa</option>
+                      </select>
                     </div>
                     <div>
                       <label className="text-[11px] font-bold text-slate-400">Jenis Kelamin</label>

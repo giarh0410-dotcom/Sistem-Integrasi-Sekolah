@@ -1358,14 +1358,30 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
 
       {/* TOP HEADER & NAVIGATION SUBTABS */}
       <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
-            <Wallet className="w-6 h-6 text-emerald-400" />
-            Manajemen Keuangan Sekolah & Kasir
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Modul transaksi kasir SPP, iuran UKT/Uang Masuk, setting tarif biaya, kwitansi, dan ekspor rekap ke Google Drive.
-          </p>
+        <div className="flex items-center gap-3.5">
+          {schoolSettings?.logoUrl ? (
+            <div className="w-12 h-12 rounded-xl p-1 bg-white/10 border border-slate-700 flex items-center justify-center shrink-0 shadow-md">
+              <img src={schoolSettings.logoUrl} alt="Logo Sekolah" className="w-full h-full object-contain" />
+            </div>
+          ) : (
+            <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center font-bold text-white shadow-md shadow-emerald-600/30">
+              <Wallet className="w-6 h-6 text-white" />
+            </div>
+          )}
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-extrabold text-white">
+                {schoolSettings?.namaSekolah || 'Manajemen Keuangan Sekolah & Kasir'}
+              </h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                {schoolSettings?.npsn ? `NPSN: ${schoolSettings.npsn}` : 'Keuangan'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
+              <span>{schoolSettings?.namaSekolah ? `Dashboard Keuangan • ${schoolSettings.namaSekolah}` : 'Modul transaksi kasir SPP, iuran UKT/Uang Masuk, setting tarif biaya, kwitansi.'}</span>
+              {schoolSettings?.akreditasi && <span>• Akreditasi {schoolSettings.akreditasi}</span>}
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -2676,11 +2692,16 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
             <div id="printable-receipt" className="space-y-4 p-2">
               {/* School Header */}
               <div className="text-center border-b-2 border-slate-900 pb-3 space-y-1">
+                {schoolSettings?.logoUrl && (
+                  <div className="flex justify-center mb-1">
+                    <img src={schoolSettings.logoUrl} alt="Logo" className="w-10 h-10 object-contain" />
+                  </div>
+                )}
                 <h2 className="font-extrabold text-base tracking-wide uppercase text-slate-900">
                   {schoolSettings?.namaSekolah || 'SEKOLAH MENENGAH ATAS WORKSPACE 2026'}
                 </h2>
                 <p className="text-[10px] text-slate-600">
-                  {schoolSettings?.alamat || 'Jl. Pendidikan No. 45, Kebayoran Baru, Jakarta Selatan'} • Telp: {schoolSettings?.telepon || '(021) 7891234'}
+                  NPSN: {schoolSettings?.npsn || '-'} • Akreditasi: {schoolSettings?.akreditasi || '-'} • {schoolSettings?.alamat || 'Jl. Pendidikan No. 45'} • Telp: {schoolSettings?.telepon || '-'}
                 </p>
                 <div className="text-[11px] font-bold text-slate-800 uppercase tracking-widest pt-1">
                   KWITANSI BUKTI PEMBAYARAN RESMI

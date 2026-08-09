@@ -33,7 +33,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
 }) => {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [emailInput, setEmailInput] = useState('');
 
   // Automatically determine role and validate email against database
   const determineRoleAndValidate = (emailToTest: string): { valid: boolean; role?: Role; error?: string } => {
@@ -42,7 +41,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
       return { valid: false, error: 'Silakan masukkan alamat email Gmail Anda.' };
     }
 
-    const adminEmails = (schoolSettings.adminEmails || ['admin@sekolah.sch.id']).map(e => e.toLowerCase());
+    const adminEmails = (schoolSettings.adminEmails || []).map(e => e.toLowerCase());
 
     // 1. Admin Role Access Control
     if (adminEmails.includes(norm) || norm.includes('admin')) {
@@ -70,26 +69,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     return {
       valid: false,
-      error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar di database sekolah (Data Guru, Staf TU, atau Siswa). Silakan hubungi Admin.`
+      error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar di database sekolah. Silakan hubungi Admin.`
     };
-  };
-
-  // Handle Manual Email Login
-  const handleManualLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setErrorMessage(null);
-
-    setTimeout(() => {
-      const result = determineRoleAndValidate(emailInput);
-      if (!result.valid || !result.role) {
-        setErrorMessage(result.error || 'Akses ditolak.');
-        setLoading(false);
-        return;
-      }
-      onLoginSuccess(emailInput.trim(), 'manual_token_active', result.role);
-      setLoading(false);
-    }, 400);
   };
 
   // Handle Google / Gmail Sign In
@@ -111,15 +92,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      // Fallback in preview environment, default to admin email
-      const fallbackEmail = 'admin@sekolah.sch.id';
-      const result = determineRoleAndValidate(fallbackEmail);
-      if (!result.valid || !result.role) {
-        setErrorMessage(result.error || 'Akses ditolak.');
-        setLoading(false);
-        return;
-      }
-      onLoginSuccess(fallbackEmail, 'demo_workspace_token_active', result.role);
+      setErrorMessage('Autentikasi Google gagal atau dibatalkan.');
     } finally {
       setLoading(false);
     }
@@ -246,7 +219,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 type="button"
                 onClick={handleGoogleLogin}
                 disabled={loading}
-                className="w-full py-3.5 px-4 bg-white hover:bg-slate-100 text-slate-900 font-bold rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-3 shadow-xl hover:shadow-2xl border border-slate-200 active:scale-[0.99] disabled:opacity-50"
+                className="w-full py-4 px-4 bg-white hover:bg-slate-100 text-slate-900 font-bold rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-3 shadow-xl hover:shadow-2xl border border-slate-200 active:scale-[0.99] disabled:opacity-50"
               >
                 {/* Official Google Icon SVG */}
                 <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
@@ -269,81 +242,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 </svg>
                 <span>{loading ? 'Menghubungkan ke Google...' : 'Masuk dengan Akun Google / Gmail'}</span>
               </button>
-
-              <div className="relative flex py-1 items-center">
-                <div className="flex-grow border-t border-slate-800"></div>
-                <span className="flex-shrink mx-4 text-slate-500 text-[10px] uppercase tracking-wider font-bold">atau masukkan email terdaftar</span>
-                <div className="flex-grow border-t border-slate-800"></div>
-              </div>
-
-              {/* Manual Email Input Form */}
-              <form onSubmit={handleManualLogin} className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Alamat Email Gmail (Admin / Guru / Staf / Siswa):
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="email"
-                      value={emailInput}
-                      onChange={(e) => setEmailInput(e.target.value)}
-                      placeholder="contoh: admin@sekolah.sch.id / guru@sekolah.sch.id"
-                      className="w-full bg-[#181818] border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading || !emailInput.trim()}
-                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs sm:text-sm transition-all shadow-lg active:scale-[0.99] disabled:opacity-50"
-                >
-                  {loading ? 'Memvalidasi Akses...' : 'Masuk ke Dashboard'}
-                </button>
-              </form>
-
-              {/* Quick Demo Test Buttons */}
-              <div className="pt-2 space-y-1.5">
-                <span className="text-[10px] font-semibold text-slate-400 block">Pintasan Cepat Akun Terdaftar:</span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmailInput('admin@sekolah.sch.id');
-                    }}
-                    className="px-2 py-1.5 bg-blue-950/60 hover:bg-blue-900/60 border border-blue-800/60 rounded-lg text-[10px] text-blue-300 font-medium text-left truncate"
-                  >
-                    👑 Admin Utama
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmailInput('guru.ahmad@sekolah.sch.id');
-                    }}
-                    className="px-2 py-1.5 bg-purple-950/60 hover:bg-purple-900/60 border border-purple-800/60 rounded-lg text-[10px] text-purple-300 font-medium text-left truncate"
-                  >
-                    📚 Guru / Pendidik
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmailInput('staf.keuangan@sekolah.sch.id');
-                    }}
-                    className="px-2 py-1.5 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-800/60 rounded-lg text-[10px] text-amber-300 font-medium text-left truncate"
-                  >
-                    💼 Staf TU
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmailInput('siswa.budi@sekolah.sch.id');
-                    }}
-                    className="px-2 py-1.5 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-800/60 rounded-lg text-[10px] text-emerald-300 font-medium text-left truncate"
-                  >
-                    🎓 Siswa / Wali
-                  </button>
-                </div>
-              </div>
 
               <div className="p-3 bg-blue-950/40 border border-blue-800/40 rounded-xl text-[11px] text-blue-300 leading-relaxed flex items-start gap-2">
                 <Lock className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />

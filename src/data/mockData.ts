@@ -425,7 +425,7 @@ Status Tagihan: LUNAS.
 };
 
 export const INITIAL_SCHOOL_SETTINGS: SchoolSettings = {
-  namaSekolah: 'SMP Modern Al Fakhir',
+  namaSekolah: 'SMP Islam Modern Al Fakhír',
   npsn: '70048660',
   bentukPendidikan: 'SMP',
   statusSekolah: 'Swasta',
@@ -438,14 +438,14 @@ export const INITIAL_SCHOOL_SETTINGS: SchoolSettings = {
   provinsi: 'DKI Jakarta',
   kodePos: '12110',
   telepon: '(021) 555-0199',
-  email: 'info@smpmodernalfakhir.sch.id',
-  website: 'https://smpmodernalfakhir.sch.id',
+  email: 'info@smpislammodernalfakhir.sch.id',
+  website: 'https://smpislammodernalfakhir.sch.id',
   kepalaSekolah: 'Dr. H. Ahmad Dahlan, M.Pd.',
   nipKepalaSekolah: '197501152000031001',
   tahunAjaran: '2026/2027',
   semesterAktif: 'Ganjil',
-  logoUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%231e3a8a" stroke="%23fbbf24" stroke-width="4"/><path d="M50 20 L75 35 L75 65 C75 75 50 85 50 85 C50 85 25 75 25 65 L25 35 Z" fill="%23ffffff" opacity="0.9"/><path d="M50 32 L65 42 L50 52 L35 42 Z" fill="%232563eb"/><path d="M38 56 C42 59 58 59 62 56 L62 68 C58 71 42 71 38 68 Z" fill="%23d97706"/></svg>',
-  fonnteToken: 'FONNTE_EDU_TOKEN_2026_SMP_MODERN_AL_FAKHIR',
+  logoUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g transform="translate(100,100)"><polygon points="0,-85 24,-60 60,-60 60,-24 85,0 60,24 60,60 24,60 0,85 -24,60 -60,60 -60,24 -85,0 -60,-24 -60,-60 -24,-60" fill="%23ffffff" stroke="%230f766e" stroke-width="8"/><circle cx="0" cy="0" r="55" fill="%230f766e"/><path d="M-30 10 Q0 -25 30 10 L20 20 Q0 -5 -20 20 Z" fill="%23fbbf24"/><circle cx="0" cy="-8" r="4" fill="%23fbbf24"/><path d="M-35 22 Q0 35 35 22 L35 28 Q0 42 -35 28 Z" fill="%23ffffff"/><text x="0" y="42" font-size="9" font-family="sans-serif" font-weight="bold" fill="%23ffffff" text-anchor="middle">SMP ISLAM MODERN</text><text x="0" y="55" font-size="13" font-family="sans-serif" font-weight="extrabold" fill="%23fbbf24" text-anchor="middle">AL FAKHİR</text></g></svg>',
+  fonnteToken: 'FONNTE_EDU_TOKEN_2026_SMP_ISLAM_MODERN_AL_FAKHIR',
   fonnteConfig: INITIAL_FONNTE_CONFIG,
   jadwalPresensi: {
     jamMasuk: '07:00',

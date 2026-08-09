@@ -116,16 +116,16 @@ export default function App() {
   // School Identity & Settings State
   const [schoolSettings, setSchoolSettings] = useState<SchoolSettings>(() => {
     const saved = getSavedData('edu_schoolSettings', INITIAL_SCHOOL_SETTINGS);
-    if (!saved || !saved.namaSekolah || saved.namaSekolah === 'SEKOLAH MENENGAH ATAS WORKSPACE 2026' || saved.namaSekolah === 'My App' || saved.namaSekolah === 'Untitled') {
+    if (!saved || !saved.namaSekolah || saved.namaSekolah === 'SEKOLAH MENENGAH ATAS WORKSPACE 2026' || saved.namaSekolah === 'My App' || saved.namaSekolah === 'Untitled' || saved.namaSekolah === 'SMP Modern Al Fakhir') {
       return INITIAL_SCHOOL_SETTINGS;
     }
     return {
       ...INITIAL_SCHOOL_SETTINGS,
       ...saved,
-      namaSekolah: saved.namaSekolah || INITIAL_SCHOOL_SETTINGS.namaSekolah,
+      namaSekolah: saved.namaSekolah === 'SMP Modern Al Fakhir' ? INITIAL_SCHOOL_SETTINGS.namaSekolah : (saved.namaSekolah || INITIAL_SCHOOL_SETTINGS.namaSekolah),
       npsn: saved.npsn || INITIAL_SCHOOL_SETTINGS.npsn,
       akreditasi: saved.akreditasi || INITIAL_SCHOOL_SETTINGS.akreditasi,
-      logoUrl: saved.logoUrl || INITIAL_SCHOOL_SETTINGS.logoUrl,
+      logoUrl: saved.logoUrl && !saved.logoUrl.includes('unsplash') ? saved.logoUrl : INITIAL_SCHOOL_SETTINGS.logoUrl,
     };
   });
   const [theme, setTheme] = useState<'dark' | 'light'>(() => getSavedData('edu_theme', 'dark'));

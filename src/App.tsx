@@ -273,8 +273,8 @@ export default function App() {
         setActiveTab('absensi');
       }
     } else if (currentRole === 'staf') {
-      if (activeTab === 'cbt' || activeTab === 'administrasi' || activeTab === 'pengaturan') {
-        setActiveTab('dashboard');
+      if (activeTab !== 'dashboard' && activeTab !== 'keuangan') {
+        setActiveTab('keuangan');
       }
     } else if (currentRole === 'siswa') {
       if (activeTab === 'database' || activeTab === 'administrasi' || activeTab === 'pengaturan') {

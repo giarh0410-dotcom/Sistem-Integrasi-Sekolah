@@ -1393,42 +1393,6 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Main 3 Navigation Subtabs */}
-          <div className="bg-[#181818] p-1 rounded-xl border border-slate-800 flex items-center">
-            <button
-              onClick={() => handleTabChange('pembayaran')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                activeTab === 'pembayaran' 
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30' 
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <CreditCard className="w-3.5 h-3.5" /> Pembayaran Siswa
-            </button>
-
-            <button
-              onClick={() => handleTabChange('pengaturan_biaya')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                activeTab === 'pengaturan_biaya' 
-                  ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30' 
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5 text-amber-300" /> Pengaturan Tarif Biaya
-            </button>
-
-            <button
-              onClick={() => handleTabChange('rekap')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                activeTab === 'rekap' 
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30' 
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" /> Rekap & Fonnte WA
-            </button>
-          </div>
-
           <button
             onClick={() => setShowFonnteConfigModal(true)}
             className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700/60 transition-colors"

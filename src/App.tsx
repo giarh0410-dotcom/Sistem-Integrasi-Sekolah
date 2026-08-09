@@ -263,8 +263,11 @@ export default function App() {
     }
   };
 
-  // Auto switch tab if current activeTab is not allowed for current role
+  // Auto switch tab if current activeTab is not allowed for current role & enforce admin email restriction
   useEffect(() => {
+    if (currentRole === 'admin' && (userEmail || '').trim().toLowerCase() !== 'giarh0410@gmail.com') {
+      setCurrentRole('guru');
+    }
     if (currentRole === 'guru') {
       if (activeTab !== 'absensi' && activeTab !== 'administrasi' && activeTab !== 'cbt') {
         setActiveTab('absensi');
@@ -278,7 +281,7 @@ export default function App() {
         setActiveTab('dashboard');
       }
     }
-  }, [currentRole]);
+  }, [currentRole, userEmail]);
 
   const handleLogout = async () => {
     try {

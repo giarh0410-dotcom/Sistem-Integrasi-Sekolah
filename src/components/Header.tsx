@@ -129,16 +129,24 @@ export const Header: React.FC<HeaderProps> = ({
                 role === 'staf' ? 'bg-amber-600 text-white font-bold' :
                 'bg-emerald-600 text-white font-bold';
 
+              const isPrimaryAdmin = (userEmail || '').trim().toLowerCase() === 'giarh0410@gmail.com';
+
               return (
                 <button
                   key={role}
-                  onClick={() => setCurrentRole(role)}
+                  onClick={() => {
+                    if (role === 'admin' && !isPrimaryAdmin) {
+                      alert('Akses Admin Utama khusus & hanya dapat diakses oleh akun email giarh0410@gmail.com.');
+                      return;
+                    }
+                    setCurrentRole(role);
+                  }}
                   className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all uppercase ${
                     currentRole === role
                       ? activeColor + ' shadow-sm'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                  }`}
-                  title={`Ganti Akses Peran ke ${role.toUpperCase()}`}
+                  } ${role === 'admin' && !isPrimaryAdmin ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  title={role === 'admin' && !isPrimaryAdmin ? 'Admin hanya untuk giarh0410@gmail.com' : `Ganti Akses Peran ke ${role.toUpperCase()}`}
                 >
                   {role}
                 </button>

@@ -792,7 +792,7 @@ export const INITIAL_SCHOOL_SETTINGS: SchoolSettings = {
     autoSwitchScanMode: true
   },
   googleSyncEmail: '',
-  adminEmails: ['giarh0410@gmail.com', 'info@smpmodernalfakhir.sch.id'],
+  adminEmails: ['giarh0410@gmail.com'],
   googleSyncEnabled: false,
   googleSyncSpreadsheetId: '',
   googleSyncSpreadsheetUrl: '',

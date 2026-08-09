@@ -42,20 +42,26 @@ export const LoginView: React.FC<LoginViewProps> = ({
       return { valid: false, error: 'Silakan masukkan alamat email Gmail Anda.' };
     }
 
-    // Collect all authorized admin emails
-    const adminEmails = [
-      'giarh0410@gmail.com',
-      schoolSettings.email?.toLowerCase(),
-      schoolSettings.googleSyncEmail?.toLowerCase(),
-      ...(schoolSettings.adminEmails || []).map(e => e.toLowerCase())
-    ].filter(Boolean) as string[];
+    const primaryAdminEmail = 'giarh0410@gmail.com';
+
+    // Strict Admin Role Access Control: ONLY giarh0410@gmail.com is allowed as Admin
+    if (role === 'admin') {
+      if (norm !== primaryAdminEmail) {
+        return {
+          valid: false,
+          error: `Akses Ditolak: Peran Admin Utama khusus & hanya dapat diakses oleh akun email ${primaryAdminEmail}. Email "${emailToTest}" tidak diizinkan masuk sebagai Admin.`
+        };
+      }
+      return { valid: true };
+    }
+
+    const isAdmin = norm === primaryAdminEmail;
 
     // Collect emails from master data
     const guruEmails = (guruList || []).map(g => g.email?.toLowerCase()).filter(Boolean) as string[];
     const stafEmails = (stafList || []).map(st => st.email?.toLowerCase()).filter(Boolean) as string[];
     const siswaEmails = (siswaList || []).map(s => s.email?.toLowerCase()).filter(Boolean) as string[];
 
-    const isAdmin = adminEmails.some(a => a === norm);
     const isGuru = guruEmails.some(g => g === norm);
     const isStaf = stafEmails.some(st => st === norm);
     const isSiswa = siswaEmails.some(s => s === norm);
@@ -65,18 +71,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
     if (!isRegisteredAnywhere) {
       return {
         valid: false,
-        error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar di akun/database sekolah. Silakan hubungi Administrator untuk mendaftarkan email Anda.`
+        error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar di database sekolah. Silakan hubungi Admin (${primaryAdminEmail}) untuk mendaftarkan email Anda.`
       };
     }
 
     // Validate specific role requirements
-    if (role === 'admin' && !isAdmin) {
-      return {
-        valid: false,
-        error: `Akses Ditolak: Email "${emailToTest}" terdaftar tetapi tidak memiliki wewenang sebagai Admin Utama.`
-      };
-    }
-
     if (role === 'guru' && !isGuru && !isAdmin) {
       return {
         valid: false,

@@ -73,11 +73,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             }`}>
               Akses: {currentRole}
             </span>
-            {userEmail && (
-              <span className="text-xs text-slate-400 font-mono bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                ✉️ {userEmail}
-              </span>
-            )}
           </div>
           <h2 className="text-2xl font-black tracking-tight text-white">
             Selamat Datang, {currentRole === 'admin' ? 'Administrator Sekolah' : currentRole === 'guru' ? 'Bapak/Ibu Guru Pendidik' : currentRole === 'staf' ? 'Staf Tata Usaha & Keuangan' : 'Siswa / Wali Murid'}

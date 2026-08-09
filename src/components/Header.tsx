@@ -121,21 +121,6 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Google Workspace Sign-In / User Status */}
           <div className="flex items-center gap-2">
-            {userEmail && (
-              <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 bg-[#121212] border border-slate-800 rounded-lg text-xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-slate-300 font-medium truncate max-w-[180px]">{userEmail}</span>
-                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                  currentRole === 'admin' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
-                  currentRole === 'guru' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
-                  currentRole === 'staf' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
-                  'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                }`}>
-                  {currentRole}
-                </span>
-              </div>
-            )}
-
             <button
               onClick={handleGoogleAuth}
               disabled={loadingAuth}

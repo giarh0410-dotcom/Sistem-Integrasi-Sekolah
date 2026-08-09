@@ -83,7 +83,7 @@ export default function App() {
 
   // Google OAuth Auth State
   const [userGoogleToken, setUserGoogleToken] = useState<string>('');
-  const [userEmail, setUserEmail] = useState<string>('giarh0410@gmail.com');
+  const [userEmail, setUserEmail] = useState<string>('admin@sekolah.sch.id');
 
   // Main School Master Data
   const [rombelList, setRombelList] = useState<RombelKelas[]>(() => getSavedData('edu_rombelList', INITIAL_ROMBEL));
@@ -241,7 +241,7 @@ export default function App() {
     initAuth(
       (user, token) => {
         setUserGoogleToken(token || '');
-        setUserEmail(user.email || 'giarh0410@gmail.com');
+        setUserEmail(user.email || 'admin@sekolah.sch.id');
         setIsLoggedIn(true);
       },
       () => {
@@ -267,7 +267,7 @@ export default function App() {
 
   // Auto switch tab if current activeTab is not allowed for current role & enforce admin email restriction
   useEffect(() => {
-    if (currentRole === 'admin' && (userEmail || '').trim().toLowerCase() !== 'giarh0410@gmail.com') {
+    if (currentRole === 'admin' && !(userEmail || '').trim().toLowerCase().includes('admin') && (userEmail || '').trim().toLowerCase() !== 'admin@sekolah.sch.id') {
       setCurrentRole('guru');
     }
     if (currentRole === 'guru') {

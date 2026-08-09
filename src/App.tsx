@@ -114,7 +114,20 @@ export default function App() {
   const [tarifBiayaList, setTarifBiayaList] = useState<TarifBiaya[]>(() => getSavedData('edu_tarifBiayaList', INITIAL_TARIF_BIAYA));
 
   // School Identity & Settings State
-  const [schoolSettings, setSchoolSettings] = useState<SchoolSettings>(() => getSavedData('edu_schoolSettings', INITIAL_SCHOOL_SETTINGS));
+  const [schoolSettings, setSchoolSettings] = useState<SchoolSettings>(() => {
+    const saved = getSavedData('edu_schoolSettings', INITIAL_SCHOOL_SETTINGS);
+    if (!saved || !saved.namaSekolah || saved.namaSekolah === 'SEKOLAH MENENGAH ATAS WORKSPACE 2026' || saved.namaSekolah === 'My App' || saved.namaSekolah === 'Untitled') {
+      return INITIAL_SCHOOL_SETTINGS;
+    }
+    return {
+      ...INITIAL_SCHOOL_SETTINGS,
+      ...saved,
+      namaSekolah: saved.namaSekolah || INITIAL_SCHOOL_SETTINGS.namaSekolah,
+      npsn: saved.npsn || INITIAL_SCHOOL_SETTINGS.npsn,
+      akreditasi: saved.akreditasi || INITIAL_SCHOOL_SETTINGS.akreditasi,
+      logoUrl: saved.logoUrl || INITIAL_SCHOOL_SETTINGS.logoUrl,
+    };
+  });
   const [theme, setTheme] = useState<'dark' | 'light'>(() => getSavedData('edu_theme', 'dark'));
 
   // Sync state to localStorage on changes

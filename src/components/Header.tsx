@@ -78,8 +78,16 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Brand */}
         <div className="flex items-center gap-3">
           {schoolSettings?.logoUrl ? (
-            <div className={`w-9 h-9 rounded-lg p-1 border flex items-center justify-center shrink-0 shadow-md ${theme === 'light' ? 'bg-slate-100 border-slate-300' : 'bg-white/10 border-slate-700'}`}>
-              <img src={schoolSettings.logoUrl} alt="Logo Sekolah" className="w-full h-full object-contain" />
+            <div className={`w-9 h-9 rounded-lg p-1 border flex items-center justify-center shrink-0 shadow-md overflow-hidden ${theme === 'light' ? 'bg-slate-100 border-slate-300' : 'bg-white/10 border-slate-700'}`}>
+              <img 
+                src={schoolSettings.logoUrl} 
+                alt="Logo Sekolah" 
+                className="w-full h-full object-contain" 
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%232563eb"/><text x="50" y="58" font-size="45" fill="white" text-anchor="middle" font-weight="bold">S</text></svg>';
+                }}
+              />
             </div>
           ) : (
             <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white shadow-md shadow-blue-600/30">

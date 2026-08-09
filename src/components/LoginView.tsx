@@ -179,11 +179,15 @@ export const LoginView: React.FC<LoginViewProps> = ({
           <div className="space-y-6">
             {/* School Logo & Name */}
             <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-white/10 border border-slate-700 p-2 flex items-center justify-center shrink-0 shadow-lg">
+              <div className="w-12 h-12 rounded-2xl bg-white/10 border border-slate-700 p-2 flex items-center justify-center shrink-0 shadow-lg overflow-hidden">
                 <img 
-                  src={schoolSettings.logoUrl} 
+                  src={schoolSettings.logoUrl || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%231e3a8a"/></svg>'} 
                   alt={schoolSettings.namaSekolah} 
                   className="w-full h-full object-contain"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%232563eb"/><text x="50" y="58" font-size="45" fill="white" text-anchor="middle" font-weight="bold">S</text></svg>';
+                  }}
                 />
               </div>
               <div>

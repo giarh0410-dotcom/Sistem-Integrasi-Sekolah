@@ -1360,8 +1360,16 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
           {schoolSettings?.logoUrl ? (
-            <div className="w-12 h-12 rounded-xl p-1 bg-white/10 border border-slate-700 flex items-center justify-center shrink-0 shadow-md">
-              <img src={schoolSettings.logoUrl} alt="Logo Sekolah" className="w-full h-full object-contain" />
+            <div className="w-12 h-12 rounded-xl p-1 bg-white/10 border border-slate-700 flex items-center justify-center shrink-0 shadow-md overflow-hidden">
+              <img 
+                src={schoolSettings.logoUrl} 
+                alt="Logo Sekolah" 
+                className="w-full h-full object-contain" 
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%232563eb"/><text x="50" y="58" font-size="45" fill="white" text-anchor="middle" font-weight="bold">S</text></svg>';
+                }}
+              />
             </div>
           ) : (
             <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center font-bold text-white shadow-md shadow-emerald-600/30">

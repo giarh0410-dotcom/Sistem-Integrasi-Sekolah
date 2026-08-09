@@ -83,8 +83,16 @@ app.post('/api/export-sheets', async (req, res) => {
 
 // 2. Gemini AI Assistant Endpoint for CBT Question Generator
 app.post('/api/ai/generate-questions', async (req, res) => {
+  let mataPelajaran = '';
+  let kelas = '';
+  let topik = '';
+  let jumlahSoal = 4;
   try {
-    const { mataPelajaran, kelas, topik, jumlahSoal } = req.body;
+    const body = req.body || {};
+    mataPelajaran = body.mataPelajaran;
+    kelas = body.kelas;
+    topik = body.topik;
+    jumlahSoal = body.jumlahSoal;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -149,14 +157,67 @@ Kembalikan respon DALAM FORMAT JSON SAJA yang valid sesuai struktur array ini (t
     return res.json({ success: true, soalList: parsed });
   } catch (error: any) {
     console.error('Error generating AI questions:', error);
-    return res.status(500).json({ success: false, message: error.message });
+    // If quota exceeded or API error, provide smart fallback mock questions
+    const fallbackSoal = [
+      {
+        tipe: 'pg',
+        pertanyaan: `[Mode Fallback Pintar Quota/API] Berdasarkan materi ${mataPelajaran || 'Pelajaran'} untuk kelas ${kelas || '7'}, manakah pernyataan yang paling tepat mengenai konsep dasar pembelajaran mendalam?`,
+        opsi: [
+          { id: 'A', teks: 'Pembelajaran yang berpusat pada pemahaman bermakna dan kritis' },
+          { id: 'B', teks: 'Hafalan teori tanpa praktik' },
+          { id: 'C', teks: 'Ujian tertulis tanpa refleksi' },
+          { id: 'D', teks: 'Pembelajaran satu arah dari guru' }
+        ],
+        kunciJawaban: 'A',
+        pembahasan: 'Pembelajaran mendalam (deep learning) menekankan pemahaman konseptual dan keterkaitan materi dengan kehidupan nyata.',
+        bobot: 25
+      },
+      {
+        tipe: 'multiple_choice',
+        pertanyaan: 'Pilih dua prinsip utama Kurikulum Merdeka yang berfokus pada pengembangan karakter peserta didik:',
+        opsi: [
+          { id: 'A', teks: 'Profil Pelajar Pancasila' },
+          { id: 'B', teks: 'Sistem ranking ketat' },
+          { id: 'C', teks: 'Penguatan Profil Rahmatan Lil Alamin' },
+          { id: 'D', teks: 'Penghafalan rumus cepat' }
+        ],
+        kunciJawaban: ['A', 'C'],
+        pembahasan: 'Profil Pelajar Pancasila dan Rahmatan Lil Alamin adalah fondasi penguatan karakter dalam Kurikulum Merdeka.',
+        bobot: 25
+      },
+      {
+        tipe: 'isian',
+        pertanyaan: 'Sistem manajemen terpadu yang mencakup absensi QR Code, CBT, dan keuangan sekolah ini dinamakan ...',
+        kunciJawaban: 'EduSmart Pro',
+        pembahasan: 'EduSmart Pro adalah platform digital manajemen sekolah terintegrasi Google Workspace.',
+        bobot: 25
+      },
+      {
+        tipe: 'esai',
+        pertanyaan: 'Jelaskan bagaimana integrasi teknologi Google Workspace dapat meningkatkan transparansi keuangan dan absensi sekolah!',
+        kunciJawaban: 'Integrasi Google Drive & Sheets memungkinkan rekapitulasi data kehadiran dan pembayaran SPP tersinkronisasi secara real-time dan aman.',
+        pembahasan: 'Transparansi data memastikan akuntabilitas laporan kepada yayasan dan orang tua siswa.',
+        bobot: 25
+      }
+    ];
+    return res.json({ success: true, soalList: fallbackSoal, isFallback: true });
   }
 });
 
 // 3. Gemini AI Endpoint for Administrasi Guru (Modul Ajar Deep Learning & Inklusi / ATP / Jurnal / Prota / Prosem)
 app.post('/api/ai/generate-administrasi', async (req, res) => {
+  let tipe = '';
+  let mataPelajaran = '';
+  let kelas = '';
+  let topik = '';
+  let tahunAjaran = '';
   try {
-    const { tipe, mataPelajaran, kelas, topik, tahunAjaran } = req.body;
+    const body = req.body || {};
+    tipe = body.tipe;
+    mataPelajaran = body.mataPelajaran;
+    kelas = body.kelas;
+    topik = body.topik;
+    tahunAjaran = body.tahunAjaran;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -209,7 +270,41 @@ Format output lengkap dalam Bahasa Indonesia yang sangat rapi, jelas, dan siap p
     return res.json({ success: true, content: response.text });
   } catch (error: any) {
     console.error('Error generating administrasi:', error);
-    return res.status(500).json({ success: false, message: error.message });
+    const fallbackContent = `# DOKUMEN ADMINISTRASI GURU (MODE FALLBACK PINTAR)
+**Mata Pelajaran:** ${mataPelajaran || 'Umum'}
+**Kelas:** ${kelas || '7'}
+**Tahun Ajaran:** ${tahunAjaran || '2026/2027'}
+**Topik:** ${topik || 'Kurikulum Merdeka Deep Learning & Inklusif'}
+
+---
+
+### A. IDENTITAS MODUL
+- **Nama Penyusun:** Dewan Guru / Staf Akademik
+- **Satuan Pendidikan:** SMP Islam Modern Al Fakhír
+- **Fase / Kelas:** D / ${kelas || '7'}
+- **Alokasi Waktu:** 2 JP (2 x 40 Menit)
+
+### B. KARAKTERISTIK PESERTA DIDIK
+1. **Reguler:** Peserta didik memiliki antusiasme tinggi dalam pembelajaran interaktif berbasis digital dan kolaboratif.
+2. **Inklusif:** Menyediakan pendekatan diferensiasi proses dan produk untuk mendukung peserta didik dengan kebutuhan khusus ringan (slow learner / gaya belajar visual & kinestetik).
+
+### C. TUJUAN PEMBELAJARAN
+- Peserta didik mampu memahami konsep esensial materi secara mendalam.
+- Mengintegrasikan nilai-nilai keimanan, ketakwaan, serta profil pelajar Rahmatan Lil Alamin.
+
+### D. LANGKAH PEMBELAJARAN (DEEP LEARNING)
+1. **Mindful (Berkesadaran - 10 Menit):** Apersepsi, doa bersama, dan penyelarasan fokus belajar.
+2. **Meaningful (Bermakna - 40 Menit):** Eksplorasi konsep, diskusi kelompok terbimbing, dan studi kasus nyata.
+3. **Joyful (Menyenangkan - 10 Menit):** Presentasi interaktif, kuis gamifikasi, dan refleksi pemahaman.
+
+### E. ASESMEN & PENILAIAN
+- **Diagnostik:** Tanya jawab awal pembelajaran.
+- **Formatif:** Penilaian proses diskusi dan tugas kelompok.
+- **Sumatif:** Tes tertulis pilihan ganda dan esai.
+
+*(Catatan: Draf ini dibuat otomatis secara instan untuk memastikan kelancaran administrasi guru meskipun kuota API sedang padat.)*`;
+
+    return res.json({ success: true, content: fallbackContent, isFallback: true });
   }
 });
 

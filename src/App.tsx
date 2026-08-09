@@ -73,7 +73,7 @@ function getSavedData<T>(key: string, initial: T): T {
 }
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true); // Default logged in with demo account
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentRole, setCurrentRole] = useState<Role>('admin');
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [databaseSubTab, setDatabaseSubTab] = useState<SubTab>('siswa');
@@ -83,7 +83,7 @@ export default function App() {
 
   // Google OAuth Auth State
   const [userGoogleToken, setUserGoogleToken] = useState<string>('');
-  const [userEmail, setUserEmail] = useState<string>('admin@sekolah.sch.id');
+  const [userEmail, setUserEmail] = useState<string>('');
 
   // Main School Master Data
   const [rombelList, setRombelList] = useState<RombelKelas[]>(() => getSavedData('edu_rombelList', INITIAL_ROMBEL));

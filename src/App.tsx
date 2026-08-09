@@ -258,6 +258,8 @@ export default function App() {
     // Guru default tab is 'absensi'
     if (role === 'guru') {
       setActiveTab('absensi');
+    } else if (role === 'staf') {
+      setActiveTab('keuangan');
     } else {
       setActiveTab('dashboard');
     }
@@ -273,7 +275,7 @@ export default function App() {
         setActiveTab('absensi');
       }
     } else if (currentRole === 'staf') {
-      if (activeTab !== 'dashboard' && activeTab !== 'keuangan') {
+      if (activeTab !== 'keuangan') {
         setActiveTab('keuangan');
       }
     } else if (currentRole === 'siswa') {

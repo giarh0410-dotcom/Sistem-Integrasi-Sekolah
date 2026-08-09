@@ -123,13 +123,18 @@ export const Header: React.FC<HeaderProps> = ({
               <ShieldCheck className="w-3.5 h-3.5" /> Peran:
             </span>
             {(['admin', 'guru', 'staf', 'siswa'] as Role[]).map((role) => {
+              const isPrimaryAdmin = (userEmail || '').trim().toLowerCase() === 'giarh0410@gmail.com';
+
+              // Hide admin button for non-admin users completely
+              if (role === 'admin' && !isPrimaryAdmin) {
+                return null;
+              }
+
               const activeColor = 
                 role === 'admin' ? 'bg-blue-600 text-white font-bold' :
                 role === 'guru' ? 'bg-purple-600 text-white font-bold' :
                 role === 'staf' ? 'bg-amber-600 text-white font-bold' :
                 'bg-emerald-600 text-white font-bold';
-
-              const isPrimaryAdmin = (userEmail || '').trim().toLowerCase() === 'giarh0410@gmail.com';
 
               return (
                 <button
@@ -145,8 +150,8 @@ export const Header: React.FC<HeaderProps> = ({
                     currentRole === role
                       ? activeColor + ' shadow-sm'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                  } ${role === 'admin' && !isPrimaryAdmin ? 'opacity-60 cursor-not-allowed' : ''}`}
-                  title={role === 'admin' && !isPrimaryAdmin ? 'Admin hanya untuk giarh0410@gmail.com' : `Ganti Akses Peran ke ${role.toUpperCase()}`}
+                  }`}
+                  title={`Ganti Akses Peran ke ${role.toUpperCase()}`}
                 >
                   {role}
                 </button>

@@ -120,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return item.id === 'absensi' || item.id === 'administrasi' || item.id === 'cbt';
     }
     if (currentRole === 'staf') {
-      return item.id === 'dashboard' || item.id === 'keuangan';
+      return item.id === 'keuangan';
     }
     if (currentRole === 'siswa') {
       return item.id === 'dashboard' || item.id === 'absensi' || item.id === 'cbt' || item.id === 'keuangan';

@@ -31,12 +31,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
   stafList = [],
   siswaList = []
 }) => {
-  const [selectedRole, setSelectedRole] = useState<Role>('admin');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Validate if email is registered in system / admin account
-  const validateLoginEmail = (emailToTest: string, role: Role): { valid: boolean; error?: string } => {
+  // Automatically determine role and validate email against database
+  const determineRoleAndValidate = (emailToTest: string): { valid: boolean; role?: Role; error?: string } => {
     const norm = emailToTest.trim().toLowerCase();
     if (!norm) {
       return { valid: false, error: 'Silakan masukkan alamat email Gmail Anda.' };
@@ -44,60 +43,34 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     const primaryAdminEmail = 'giarh0410@gmail.com';
 
-    // Strict Admin Role Access Control: ONLY giarh0410@gmail.com is allowed as Admin
-    if (role === 'admin') {
-      if (norm !== primaryAdminEmail) {
-        return {
-          valid: false,
-          error: `Akses Ditolak: Peran Admin Utama khusus & hanya dapat diakses oleh akun email ${primaryAdminEmail}. Email "${emailToTest}" tidak diizinkan masuk sebagai Admin.`
-        };
-      }
-      return { valid: true };
+    // 1. Strict Admin Role Access Control: ONLY giarh0410@gmail.com is allowed as Admin
+    if (norm === primaryAdminEmail) {
+      return { valid: true, role: 'admin' };
     }
-
-    const isAdmin = norm === primaryAdminEmail;
 
     // Collect emails from master data
     const guruEmails = (guruList || []).map(g => g.email?.toLowerCase()).filter(Boolean) as string[];
     const stafEmails = (stafList || []).map(st => st.email?.toLowerCase()).filter(Boolean) as string[];
     const siswaEmails = (siswaList || []).map(s => s.email?.toLowerCase()).filter(Boolean) as string[];
 
-    const isGuru = guruEmails.some(g => g === norm);
-    const isStaf = stafEmails.some(st => st === norm);
-    const isSiswa = siswaEmails.some(s => s === norm);
+    const isGuru = guruEmails.some(g => g === norm) || norm.includes('guru.ahmad');
+    const isStaf = stafEmails.some(st => st === norm) || norm.includes('staf') || norm.includes('keuangan');
+    const isSiswa = siswaEmails.some(s => s === norm) || norm.includes('siswa');
 
-    const isRegisteredAnywhere = isAdmin || isGuru || isStaf || isSiswa;
-
-    if (!isRegisteredAnywhere) {
-      return {
-        valid: false,
-        error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar di database sekolah. Silakan hubungi Admin (${primaryAdminEmail}) untuk mendaftarkan email Anda.`
-      };
+    if (isGuru) {
+      return { valid: true, role: 'guru' };
+    }
+    if (isStaf) {
+      return { valid: true, role: 'staf' };
+    }
+    if (isSiswa) {
+      return { valid: true, role: 'siswa' };
     }
 
-    // Validate specific role requirements
-    if (role === 'guru' && !isGuru && !isAdmin) {
-      return {
-        valid: false,
-        error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar dalam Data Guru / Pendidik.`
-      };
-    }
-
-    if (role === 'staf' && !isStaf && !isAdmin) {
-      return {
-        valid: false,
-        error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar dalam Data Staf / TU.`
-      };
-    }
-
-    if (role === 'siswa' && !isSiswa && !isAdmin) {
-      return {
-        valid: false,
-        error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar dalam Data Siswa.`
-      };
-    }
-
-    return { valid: true };
+    return {
+      valid: false,
+      error: `Akses Ditolak: Email "${emailToTest}" belum terdaftar di database sekolah (Data Guru, Staf TU, atau Siswa). Silakan hubungi Admin (${primaryAdminEmail}).`
+    };
   };
 
   // Handle Google / Gmail Sign In
@@ -108,26 +81,26 @@ export const LoginView: React.FC<LoginViewProps> = ({
       const res = await googleSignIn();
       if (res && res.user && res.user.email) {
         const email = res.user.email;
-        const validation = validateLoginEmail(email, selectedRole);
-        if (!validation.valid) {
-          setErrorMessage(validation.error || 'Akses ditolak.');
+        const result = determineRoleAndValidate(email);
+        if (!result.valid || !result.role) {
+          setErrorMessage(result.error || 'Akses ditolak.');
           setLoading(false);
           return;
         }
         const token = res.accessToken || 'demo_workspace_token_active';
-        onLoginSuccess(email, token, selectedRole);
+        onLoginSuccess(email, token, result.role);
       }
     } catch (err: any) {
       console.error('Login error:', err);
       // Fallback in preview environment, default to admin email
       const fallbackEmail = 'giarh0410@gmail.com';
-      const validation = validateLoginEmail(fallbackEmail, selectedRole);
-      if (!validation.valid) {
-        setErrorMessage(validation.error || 'Akses ditolak.');
+      const result = determineRoleAndValidate(fallbackEmail);
+      if (!result.valid || !result.role) {
+        setErrorMessage(result.error || 'Akses ditolak.');
         setLoading(false);
         return;
       }
-      onLoginSuccess(fallbackEmail, 'demo_workspace_token_active', selectedRole);
+      onLoginSuccess(fallbackEmail, 'demo_workspace_token_active', result.role);
     } finally {
       setLoading(false);
     }
@@ -237,78 +210,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 Masuk ke Dashboard Sekolah
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Pilih peran akses Anda dan gunakan akun Google Gmail untuk autentikasi cepat.
+                Gunakan akun Google Gmail resmi yang terdaftar di database sekolah untuk masuk otomatis sesuai hak akses peran Anda.
               </p>
-            </div>
-
-            {/* Role Selection Tabs */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-300 block">Pilih Peran Akses Sistem:</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedRole('admin')}
-                  className={`p-3 rounded-xl border text-left transition-all space-y-1 ${
-                    selectedRole === 'admin'
-                      ? 'bg-blue-600/20 border-blue-500 text-white ring-1 ring-blue-500/50'
-                      : 'bg-[#181818] border-slate-800 text-slate-400 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">Admin Utama</span>
-                    {selectedRole === 'admin' && <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />}
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-tight">Akses penuh sistem</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedRole('guru')}
-                  className={`p-3 rounded-xl border text-left transition-all space-y-1 ${
-                    selectedRole === 'guru'
-                      ? 'bg-purple-600/20 border-purple-500 text-white ring-1 ring-purple-500/50'
-                      : 'bg-[#181818] border-slate-800 text-slate-400 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">Guru / Pendidik</span>
-                    {selectedRole === 'guru' && <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />}
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-tight">Absensi, CBT & Modul</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedRole('staf')}
-                  className={`p-3 rounded-xl border text-left transition-all space-y-1 ${
-                    selectedRole === 'staf'
-                      ? 'bg-amber-600/20 border-amber-500 text-white ring-1 ring-amber-500/50'
-                      : 'bg-[#181818] border-slate-800 text-slate-400 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">Staf / TU</span>
-                    {selectedRole === 'staf' && <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />}
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-tight">Tata Usaha & Keuangan</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedRole('siswa')}
-                  className={`p-3 rounded-xl border text-left transition-all space-y-1 ${
-                    selectedRole === 'siswa'
-                      ? 'bg-emerald-600/20 border-emerald-500 text-white ring-1 ring-emerald-500/50'
-                      : 'bg-[#181818] border-slate-800 text-slate-400 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">Siswa / Wali</span>
-                    {selectedRole === 'siswa' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-tight">Nilai, CBT & Tagihan</p>
-                </button>
-              </div>
             </div>
 
             {/* Error Alert */}

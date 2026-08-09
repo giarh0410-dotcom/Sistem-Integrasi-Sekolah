@@ -989,58 +989,60 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
         </div>
 
         {/* Template & Add Controls */}
-        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
-          {subTab === 'mapel' && (
+        {currentRole !== 'staf' && (
+          <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
+            {subTab === 'mapel' && (
+              <button
+                onClick={handleExportMapelCsv}
+                className="px-3 py-2 bg-[#181818] hover:bg-slate-800 text-amber-300 border border-amber-500/30 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
+                title="Ekspor Database Mata Pelajaran ke CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-amber-400" /> Ekspor Mapel CSV
+              </button>
+            )}
+
+            {subTab !== 'rombel' && subTab !== 'mapel' && (
+              <>
+                <button
+                  onClick={() => handleDownloadTemplate(subTab as 'siswa' | 'guru' | 'staf')}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
+                  title={`Unduh Template CSV Data ${subTab.toUpperCase()}`}
+                >
+                  <Download className="w-3.5 h-3.5 text-blue-400" /> Template CSV
+                </button>
+
+                <button
+                  onClick={() => handleTriggerImport(subTab as 'siswa' | 'guru' | 'staf')}
+                  className="px-3 py-2 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/50 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
+                  title={`Import File Template ke Database ${subTab.toUpperCase()}`}
+                >
+                  <Upload className="w-3.5 h-3.5 text-emerald-400" /> Import File
+                </button>
+
+                <button
+                  onClick={() => setShowTemplateHubModal(true)}
+                  className="px-3 py-2 bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-700/50 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <FolderDown className="w-3.5 h-3.5 text-purple-400" /> Pusat Template
+                </button>
+              </>
+            )}
+
             <button
-              onClick={handleExportMapelCsv}
-              className="px-3 py-2 bg-[#181818] hover:bg-slate-800 text-amber-300 border border-amber-500/30 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
-              title="Ekspor Database Mata Pelajaran ke CSV"
+              onClick={handleOpenAdd}
+              className={`px-4 py-2 font-semibold rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm ${
+                subTab === 'rombel' 
+                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white ring-1 ring-indigo-400/50' 
+                  : subTab === 'mapel'
+                  ? 'bg-amber-600 hover:bg-amber-500 text-white ring-1 ring-amber-400/50'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white'
+              }`}
             >
-              <Download className="w-3.5 h-3.5 text-amber-400" /> Ekspor Mapel CSV
+              <Plus className="w-4 h-4" />
+              Tambah {subTab === 'siswa' ? 'Siswa' : subTab === 'guru' ? 'Guru' : subTab === 'staf' ? 'Staf' : subTab === 'mapel' ? 'Mata Pelajaran' : 'Rombel'} Baru
             </button>
-          )}
-
-          {subTab !== 'rombel' && subTab !== 'mapel' && (
-            <>
-              <button
-                onClick={() => handleDownloadTemplate(subTab as 'siswa' | 'guru' | 'staf')}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
-                title={`Unduh Template CSV Data ${subTab.toUpperCase()}`}
-              >
-                <Download className="w-3.5 h-3.5 text-blue-400" /> Template CSV
-              </button>
-
-              <button
-                onClick={() => handleTriggerImport(subTab as 'siswa' | 'guru' | 'staf')}
-                className="px-3 py-2 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/50 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
-                title={`Import File Template ke Database ${subTab.toUpperCase()}`}
-              >
-                <Upload className="w-3.5 h-3.5 text-emerald-400" /> Import File
-              </button>
-
-              <button
-                onClick={() => setShowTemplateHubModal(true)}
-                className="px-3 py-2 bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-700/50 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
-              >
-                <FolderDown className="w-3.5 h-3.5 text-purple-400" /> Pusat Template
-              </button>
-            </>
-          )}
-
-          <button
-            onClick={handleOpenAdd}
-            className={`px-4 py-2 font-semibold rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm ${
-              subTab === 'rombel' 
-                ? 'bg-indigo-600 hover:bg-indigo-500 text-white ring-1 ring-indigo-400/50' 
-                : subTab === 'mapel'
-                ? 'bg-amber-600 hover:bg-amber-500 text-white ring-1 ring-amber-400/50'
-                : 'bg-blue-600 hover:bg-blue-500 text-white'
-            }`}
-          >
-            <Plus className="w-4 h-4" />
-            Tambah {subTab === 'siswa' ? 'Siswa' : subTab === 'guru' ? 'Guru' : subTab === 'staf' ? 'Staf' : subTab === 'mapel' ? 'Mata Pelajaran' : 'Rombel'} Baru
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* STATS OVERVIEW FOR ACTIVE SUBTAB */}

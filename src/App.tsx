@@ -265,11 +265,8 @@ export default function App() {
     }
   };
 
-  // Auto switch tab if current activeTab is not allowed for current role & enforce admin email restriction
+  // Auto switch tab if current activeTab is not allowed for current role
   useEffect(() => {
-    if (currentRole === 'admin' && !(userEmail || '').trim().toLowerCase().includes('admin') && (userEmail || '').trim().toLowerCase() !== 'admin@sekolah.sch.id') {
-      setCurrentRole('guru');
-    }
     if (currentRole === 'guru') {
       if (activeTab !== 'absensi' && activeTab !== 'administrasi' && activeTab !== 'cbt') {
         setActiveTab('absensi');

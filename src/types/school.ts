@@ -50,6 +50,8 @@ export interface Siswa {
   kodeBarcode?: string; // e.g. SIS-0081234561
   golonganDarah?: string;
   email?: string;
+  username?: string;
+  password?: string;
   asalSekolah?: string;
   anakKe?: number;
   jumlahSaudara?: number;
@@ -74,6 +76,8 @@ export interface Guru {
   mataPelajaran: string;
   jabatan: string;
   email: string;
+  username?: string;
+  password?: string;
   telepon: string;
   jenisKelamin?: 'L' | 'P';
   tempatLahir?: string;
@@ -93,6 +97,8 @@ export interface Staf {
   nama: string;
   bagian: string; // TUK, Perpus, Keuangan, Kebersihan, IT
   email: string;
+  username?: string;
+  password?: string;
   telepon: string;
   jenisKelamin?: 'L' | 'P';
   tempatLahir?: string;

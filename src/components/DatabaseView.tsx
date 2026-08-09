@@ -599,6 +599,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
         kodeBarcode: '',
         fotoUrl: '',
         email: '',
+        username: '',
+        password: '',
         asalSekolah: '',
         anakKe: 1,
         jumlahSaudara: 0,
@@ -622,6 +624,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
         mataPelajaran: '',
         jabatan: 'Guru Mata Pelajaran',
         email: '',
+        username: '',
+        password: '',
         telepon: '',
         jenisKelamin: 'L',
         tempatLahir: 'Jakarta',
@@ -640,6 +644,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
         nama: '',
         bagian: 'Tata Usaha',
         email: '',
+        username: '',
+        password: '',
         telepon: '',
         jenisKelamin: 'L',
         tempatLahir: 'Jakarta',
@@ -2148,6 +2154,29 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                       </div>
                     </div>
 
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-400">Username Akun</label>
+                        <input 
+                          type="text" 
+                          placeholder="username_siswa"
+                          value={formSiswa.username || ''} 
+                          onChange={e => setFormSiswa({ ...formSiswa, username: e.target.value })}
+                          className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-400">Password Akun</label>
+                        <input 
+                          type="text" 
+                          placeholder="password"
+                          value={formSiswa.password || ''} 
+                          onChange={e => setFormSiswa({ ...formSiswa, password: e.target.value })}
+                          className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
+                        />
+                      </div>
+                    </div>
+
                     <div>
                       <label className="text-[11px] font-bold text-slate-400">Nama Lengkap Siswa</label>
                       <input 
@@ -2579,6 +2608,28 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         />
                       </div>
                     </div>
+                    <div className="grid grid-cols-2 gap-3 mt-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-400">Username Akun</label>
+                        <input 
+                          type="text" 
+                          placeholder="username_guru"
+                          value={formGuru.username || ''} 
+                          onChange={e => setFormGuru({ ...formGuru, username: e.target.value })}
+                          className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white" 
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-400">Password Akun</label>
+                        <input 
+                          type="text" 
+                          placeholder="password"
+                          value={formGuru.password || ''} 
+                          onChange={e => setFormGuru({ ...formGuru, password: e.target.value })}
+                          className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white" 
+                        />
+                      </div>
+                    </div>
                   </>
                 );
               })()}
@@ -2659,6 +2710,28 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         required 
                         value={formStaf.telepon} 
                         onChange={e => setFormStaf({ ...formStaf, telepon: e.target.value })}
+                        className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white" 
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-400">Username Akun</label>
+                      <input 
+                        type="text" 
+                        placeholder="username_staf"
+                        value={formStaf.username || ''} 
+                        onChange={e => setFormStaf({ ...formStaf, username: e.target.value })}
+                        className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-400">Password Akun</label>
+                      <input 
+                        type="text" 
+                        placeholder="password"
+                        value={formStaf.password || ''} 
+                        onChange={e => setFormStaf({ ...formStaf, password: e.target.value })}
                         className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white" 
                       />
                     </div>

@@ -35,7 +35,7 @@ export const exportAllToGoogleSheets = async (
 
     if (!spreadsheetId) {
       // 1. Create New Spreadsheet
-      const createResponse = await fetch('https://sheets.googleapis.com/v1/spreadsheets', {
+      const createResponse = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -143,7 +143,7 @@ export const exportAllToGoogleSheets = async (
     });
 
     // 3. Batch Update Spreadsheet Values
-    const updateResponse = await fetch(`https://sheets.googleapis.com/v1/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
+    const updateResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,

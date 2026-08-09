@@ -117,47 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline">{theme === 'dark' ? 'Terang' : 'Gelap'}</span>
           </button>
 
-          {/* Role Switcher */}
-          <div className={`hidden md:flex items-center p-1 rounded-lg border ${theme === 'light' ? 'bg-slate-100 border-slate-200' : 'bg-[#121212] border-slate-800'}`}>
-            <span className={`text-xs font-semibold px-2 flex items-center gap-1 ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>
-              <ShieldCheck className="w-3.5 h-3.5" /> Peran:
-            </span>
-            {(['admin', 'guru', 'staf', 'siswa'] as Role[]).map((role) => {
-              const isPrimaryAdmin = (userEmail || '').trim().toLowerCase() === 'giarh0410@gmail.com';
 
-              // Hide admin button for non-admin users completely
-              if (role === 'admin' && !isPrimaryAdmin) {
-                return null;
-              }
-
-              const activeColor = 
-                role === 'admin' ? 'bg-blue-600 text-white font-bold' :
-                role === 'guru' ? 'bg-purple-600 text-white font-bold' :
-                role === 'staf' ? 'bg-amber-600 text-white font-bold' :
-                'bg-emerald-600 text-white font-bold';
-
-              return (
-                <button
-                  key={role}
-                  onClick={() => {
-                    if (role === 'admin' && !isPrimaryAdmin) {
-                      alert('Akses Admin Utama khusus & hanya dapat diakses oleh akun email giarh0410@gmail.com.');
-                      return;
-                    }
-                    setCurrentRole(role);
-                  }}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all uppercase ${
-                    currentRole === role
-                      ? activeColor + ' shadow-sm'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                  }`}
-                  title={`Ganti Akses Peran ke ${role.toUpperCase()}`}
-                >
-                  {role}
-                </button>
-              );
-            })}
-          </div>
 
           {/* Google Workspace Sign-In / User Status */}
           <div className="flex items-center gap-2">

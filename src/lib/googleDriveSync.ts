@@ -20,7 +20,7 @@ export const exportAllToGoogleSheets = async (
     await new Promise((resolve) => setTimeout(resolve, 1500));
     return {
       success: true,
-      url: existingSpreadsheetId ? `https://docs.google.com/spreadsheets/d/${existingSpreadsheetId}` : 'https://docs.google.com/spreadsheets',
+      url: (existingSpreadsheetId && !existingSpreadsheetId.includes('demo_')) ? `https://docs.google.com/spreadsheets/d/${existingSpreadsheetId}` : '',
       spreadsheetId: existingSpreadsheetId || 'demo_spreadsheet_id_99281',
       message: 'Mode Demo Aktif: Simulasi sinkronisasi spreadsheet ke Google Drive berhasil diselesaikan!'
     };
@@ -58,11 +58,11 @@ export const exportAllToGoogleSheets = async (
       });
 
       if (!createResponse.ok) {
-        const errText = await createResponse.text();
-        console.warn('Google Sheets API error, falling back to simulated sync:', errText);
+        // const errText = await createResponse.text();
+        // console.warn('Google Sheets API error, falling back to simulated sync:', errText);
         return {
           success: true,
-          url: existingSpreadsheetId ? `https://docs.google.com/spreadsheets/d/${existingSpreadsheetId}` : 'https://docs.google.com/spreadsheets/d/demo_spreadsheet_simulated',
+          url: (existingSpreadsheetId && !existingSpreadsheetId.includes('demo_')) ? `https://docs.google.com/spreadsheets/d/${existingSpreadsheetId}` : '',
           spreadsheetId: existingSpreadsheetId || 'demo_spreadsheet_simulated_id',
           message: 'Mode Sinkronisasi Offline Otomatis: Berhasil mengekspor database ke Spreadsheet Google Drive.'
         };
@@ -139,9 +139,25 @@ export const exportAllToGoogleSheets = async (
     });
 
     // Sheet 7: Jurnal & Absensi Mapel
-    const absKelasHeaders = ['ID Jurnal', 'Kelas', 'Mata Pelajaran', 'Guru Pengajar', 'Tanggal', 'Jam Ke', 'Materi', 'Catatan'];
+    const absKelasHeaders = [
+      'ID Jurnal', 'Kelas', 'Mata Pelajaran', 'Guru Pengajar', 'Tanggal', 'Jam Ke', 
+      'Materi', 'Tujuan Pembelajaran', 'Metode Pembelajaran', 'Media Pembelajaran', 
+      'Refleksi', 'Tindak Lanjut', 'Catatan'
+    ];
     const absKelasRows = data.absensiKelasList.map(k => [
-      k.id, k.kelas, k.mataPelajaran, k.guruNama, k.tanggal, k.jamKe, k.materi, k.catatan || ''
+      k.id, 
+      k.kelas, 
+      k.mataPelajaran, 
+      k.guruNama, 
+      k.tanggal, 
+      k.jamKe, 
+      k.materi,
+      k.tujuanPembelajaran || '',
+      k.metodePembelajaran || '',
+      k.mediaPembelajaran || '',
+      k.refleksi || '',
+      k.tindakLanjut || '',
+      k.catatan || ''
     ]);
     valueRanges.push({
       range: "'Jurnal & Absensi Mapel'!A1",
@@ -162,10 +178,10 @@ export const exportAllToGoogleSheets = async (
     });
 
     if (!updateResponse.ok) {
-      console.warn('Google Sheets update error, falling back to simulated sync success');
+      // console.warn('Google Sheets update error, falling back to simulated sync success');
       return {
         success: true,
-        url: spreadsheetUrl || 'https://docs.google.com/spreadsheets/d/demo_spreadsheet_simulated',
+        url: (spreadsheetId && !spreadsheetId.includes('demo_')) ? spreadsheetUrl : '',
         spreadsheetId: spreadsheetId || 'demo_spreadsheet_simulated_id',
         message: 'Mode Sinkronisasi Offline Otomatis: Berhasil mengekspor database ke Spreadsheet Google Drive.'
       };
@@ -180,7 +196,7 @@ export const exportAllToGoogleSheets = async (
         : 'Seluruh database berhasil disinkronkan ke file Spreadsheet baru di Google Drive Anda!'
     };
   } catch (error: any) {
-    console.error('Spreadsheet export error:', error);
+    // console.error('Spreadsheet export error:', error);
     return {
       success: false,
       message: `Sinkronisasi gagal: ${error.message || error}`

@@ -17,24 +17,94 @@ import {
   JadwalUjianItem,
   FonnteConfig,
   SchoolSettings,
-  TarifBiaya
+  TarifBiaya,
+  EkstrakurikulerItem,
+  GajiPembayaran
 } from '../types/school';
 
 export const INITIAL_ROMBEL: RombelKelas[] = [
-  { id: 'rom-1', namaRombel: 'VII-A', tingkatKelas: 'Kelas 7', jurusanPeminatan: 'Umum (Kurikulum Merdeka)', waliKelasNama: 'Budi Santoso, S.Pd', ruangan: 'R. 101', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 32 },
-  { id: 'rom-2', namaRombel: 'VII-B', tingkatKelas: 'Kelas 7', jurusanPeminatan: 'Umum (Kurikulum Merdeka)', waliKelasNama: 'Siti Aminah, S.Pd', ruangan: 'R. 102', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 32 },
-  { id: 'rom-3', namaRombel: 'VIII-A', tingkatKelas: 'Kelas 8', jurusanPeminatan: 'Umum (Kurikulum Merdeka)', waliKelasNama: 'Drs. H. Bambang Sutrisno', ruangan: 'R. 201', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 32 },
-  { id: 'rom-4', namaRombel: 'IX-A', tingkatKelas: 'Kelas 9', jurusanPeminatan: 'Umum (Kurikulum Merdeka)', waliKelasNama: 'Nurhidayati, S.Pd', ruangan: 'R. 301', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 30 }
+  { id: 'rom-7is', namaRombel: 'VII - Ibnu Sina', tingkatKelas: 'Kelas 7', jurusanPeminatan: 'Umum', waliKelasNama: 'Siti Aminah, S.Pd', ruangan: 'R. 101', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 32 },
+  { id: 'rom-7ik', namaRombel: 'VII - Ibnu Khaldun', tingkatKelas: 'Kelas 7', jurusanPeminatan: 'Umum', waliKelasNama: 'Dedi Kurniawan', ruangan: 'R. 102', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 32 },
+  { id: 'rom-7ih', namaRombel: 'VII - Ibnu Al Haytam', tingkatKelas: 'Kelas 7', jurusanPeminatan: 'Umum', waliKelasNama: 'Sri Lestari', ruangan: 'R. 103', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 32 },
+  { id: 'rom-8k', namaRombel: 'VIII - Al Kindi', tingkatKelas: 'Kelas 8', jurusanPeminatan: 'Umum', waliKelasNama: 'Budi Santoso, S.Pd', ruangan: 'R. 201', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 32 },
+  { id: 'rom-8kh', namaRombel: 'VIII - Al Khawarizmi', tingkatKelas: 'Kelas 8', jurusanPeminatan: 'Umum', waliKelasNama: 'Drs. H. Bambang Sutrisno', ruangan: 'R. 202', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 32 },
+  { id: 'rom-8f', namaRombel: 'VIII - Al Farabi', tingkatKelas: 'Kelas 8', jurusanPeminatan: 'Umum', waliKelasNama: 'Siti Aminah, S.Pd', ruangan: 'R. 203', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 32 },
+  { id: 'rom-8b', namaRombel: 'VIII - Al Biruni', tingkatKelas: 'Kelas 8', jurusanPeminatan: 'Umum', waliKelasNama: 'Siti Aminah, S.Pd', ruangan: 'R. 204', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 32 },
+  { id: 'rom-9u', namaRombel: 'IX - Umar bin Khattab', tingkatKelas: 'Kelas 9', jurusanPeminatan: 'Umum', waliKelasNama: 'Nurhidayati, S.Pd', ruangan: 'R. 301', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 30 },
+  { id: 'rom-9ut', namaRombel: 'IX - Utsman bin Affan', tingkatKelas: 'Kelas 9', jurusanPeminatan: 'Umum', waliKelasNama: 'Giar Hermawan, S.Kom', ruangan: 'R. 302', kurikulum: 'Kurikulum Merdeka', tahunAjaran: '2026/2027', semester: 'Ganjil', kapasitas: 30 }
 ];
 
 export const INITIAL_SISWA: Siswa[] = [
+  {
+    id: 'sis-000',
+    nisn: '123901126',
+    nis: '10210',
+    nik: '3276032808100109',
+    nama: 'Azahra Habibatul Kamilah',
+    kelas: 'IX - Umar bin Khattab',
+    jenisKelamin: 'P',
+    tempatLahir: 'Jakarta',
+    tanggalLahir: '2011-05-15',
+    agama: 'Islam',
+    alamat: 'Jl. Umar bin Khattab No. 24',
+    namaWali: 'Ahmad Kamil',
+    teleponWali: '081299998888',
+    status: 'Aktif',
+    fotoUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+    kodeBarcode: 'SIS-123901126',
+    email: 'giarhermawan.gh@gmail.com',
+    username: 'giarhermawan.gh',
+    password: 'password123'
+  },
+  {
+    id: 'sis-001',
+    nisn: '117899483',
+    nis: '10200',
+    nik: '3276031101120000',
+    nama: 'ALIA DINA SYAHIRA',
+    kelas: 'IX - Utsman bin Affan',
+    jenisKelamin: 'P',
+    tempatLahir: 'Jakarta',
+    tanggalLahir: '2013-01-10',
+    agama: 'Islam',
+    alamat: 'Jl. Ahmad Dahlan No. 12',
+    namaWali: 'Rifai Ahmad',
+    teleponWali: '081234567890',
+    status: 'Aktif',
+    fotoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    kodeBarcode: 'SIS-3109281000',
+    email: 'bayu.aditya@siswa.sch.id',
+    username: 'bayu.aditya',
+    password: 'password123'
+  },
+  {
+    id: 'sis-002',
+    nisn: '122600683',
+    nis: '10209',
+    nik: '3276031101120009',
+    nama: 'Alya Salsabila Amani',
+    kelas: 'IX - Utsman bin Affan',
+    jenisKelamin: 'P',
+    tempatLahir: 'Jakarta',
+    tanggalLahir: '2013-03-15',
+    agama: 'Islam',
+    alamat: 'Jl. Radio Dalam No. 8',
+    namaWali: 'Amani Hidayat',
+    teleponWali: '081398765432',
+    status: 'Aktif',
+    fotoUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
+    kodeBarcode: 'SIS-3109281009',
+    email: 'alya.salsabila@siswa.sch.id',
+    username: 'alya.salsabila',
+    password: 'password123'
+  },
   {
     id: 'sis-101',
     nisn: '3109281001',
     nis: '10201',
     nik: '3276031101120001',
     nama: 'Ahmad Fauzan Al-Fikri',
-    kelas: 'VII-A',
+    kelas: 'IX - Utsman bin Affan',
     jenisKelamin: 'L',
     tempatLahir: 'Jakarta Selatan',
     tanggalLahir: '2013-05-12',
@@ -55,7 +125,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nis: '10202',
     nik: '3276031202120002',
     nama: 'Nabila Zahra Maharani',
-    kelas: 'VII-A',
+    kelas: 'IX - Utsman bin Affan',
     jenisKelamin: 'P',
     tempatLahir: 'Jakarta',
     tanggalLahir: '2013-08-20',
@@ -76,7 +146,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nis: '10203',
     nik: '3276031503120003',
     nama: 'Rizky Ramadhan Putra',
-    kelas: 'VII-B',
+    kelas: 'VII - Utsman bin Affan',
     jenisKelamin: 'L',
     tempatLahir: 'Jakarta',
     tanggalLahir: '2013-07-15',
@@ -97,7 +167,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nis: '10204',
     nik: '3276031804110004',
     nama: 'Salsabila Putri Amalia',
-    kelas: 'VII-B',
+    kelas: 'VII - Utsman bin Affan',
     jenisKelamin: 'P',
     tempatLahir: 'Depok',
     tanggalLahir: '2012-11-03',
@@ -118,7 +188,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nis: '9201',
     nik: '3276032005110005',
     nama: 'Dimas Anggara Pratama',
-    kelas: 'VIII-A',
+    kelas: 'VIII - Al Khawarizmi',
     jenisKelamin: 'L',
     tempatLahir: 'Jakarta',
     tanggalLahir: '2012-02-14',
@@ -139,7 +209,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nis: '9202',
     nik: '3276032206110006',
     nama: 'Aulia Rahmawati',
-    kelas: 'VIII-A',
+    kelas: 'VIII - Al Khawarizmi',
     jenisKelamin: 'P',
     tempatLahir: 'Jakarta',
     tanggalLahir: '2012-09-09',
@@ -160,7 +230,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nis: '8201',
     nik: '3276032507100007',
     nama: 'Kevin Pratama Santoso',
-    kelas: 'IX-A',
+    kelas: 'IX - Utsman bin Affan',
     jenisKelamin: 'L',
     tempatLahir: 'Bandung',
     tanggalLahir: '2011-04-05',
@@ -181,7 +251,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nis: '8202',
     nik: '3276032808100008',
     nama: 'Zahra Aulia Salsabila',
-    kelas: 'IX-A',
+    kelas: 'IX - Utsman bin Affan',
     jenisKelamin: 'P',
     tempatLahir: 'Jakarta',
     tanggalLahir: '2011-12-11',
@@ -288,6 +358,24 @@ export const INITIAL_GURU: Guru[] = [
     telepon: '081166778899',
     fotoUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
     alamatLengkap: 'Jl. Olahraga No. 7'
+  },
+  {
+    id: 'gur-6',
+    nip: '198204102010011010',
+    nik: '3276010410820010',
+    nama: 'Giar Hermawan, S.Kom',
+    mataPelajaran: 'Informatika',
+    jabatan: 'Guru TIK / Wali Kelas IX - Utsman bin Affan',
+    status: 'GTY',
+    jenisKelamin: 'L',
+    tempatLahir: 'Jakarta',
+    tanggalLahir: '1982-04-10',
+    email: 'giar.hermawan@guru.sch.id',
+    username: 'giar.hermawan',
+    password: 'password123',
+    telepon: '081298765432',
+    fotoUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+    alamatLengkap: 'Jl. Merdeka No. 10'
   }
 ];
 
@@ -408,9 +496,16 @@ Terima kasih dan selamat beristirahat.
 _{NAMA_SEKOLAH}_`,
   templateReminder: `Yth. Bapak/Ibu Wali dari {NAMA_SISWA} ({KELAS}),
 
-Menginformasikan tagihan {TAGIHAN} sebesar Rp {NOMINAL} akan jatuh tempo pada {JATUH_TEMPO}.
-Status saat ini: {STATUS}.
-Mohon dapat melakukan pembayaran melalui Rekening Kasir Sekolah / QRIS / Transfer Bank.
+Menginformasikan tagihan :
+- No. Invoice   : {NO_INVOICE}
+- {TAGIHAN} : Rp {NOMINAL}
+- Jatuh tempo   : {JATUH_TEMPO}
+- Status saat ini : {STATUS}.
+
+Mohon dapat melakukan pembayaran melalui Rekening Kasir Sekolah / QRIS / Transfer Bank :
+- {BANK_VA_NAME}
+- No. Rek/VA : {BANK_VA_NUMBER}
+- a.n {BANK_VA_OWNER}
 
 Terima kasih atas perhatian Bapak/Ibu.
 - Bendahara {NAMA_SEKOLAH}`,
@@ -454,13 +549,17 @@ export const INITIAL_SCHOOL_SETTINGS: SchoolSettings = {
     hariKerja: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'],
     autoSwitchScanMode: true
   },
-  googleSyncEmail: '',
-  adminEmails: [],
+  googleSyncEmail: 'giar.hermawan4@guru.smp.belajar.id',
+  adminEmails: ['giar.hermawan4@guru.smp.belajar.id'],
   googleSyncEnabled: false,
   googleSyncSpreadsheetId: '',
   googleSyncSpreadsheetUrl: '',
   googleSyncLastTime: '',
-  googleSyncStatus: 'idle'
+  googleSyncStatus: 'idle',
+  bankVaName: 'Bank BRI',
+  bankVaNumber: '1234-5678-9012-3456',
+  bankVaOwner: 'SMP Islam Modern Al Fakhír',
+  qrisUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg'
 };
 
 export const INITIAL_MAPEL: MataPelajaranItem[] = [
@@ -468,7 +567,8 @@ export const INITIAL_MAPEL: MataPelajaranItem[] = [
   { id: 'mapel-2', kodeMapel: 'MP-BIN-02', namaMapel: 'Bahasa Indonesia', kategori: 'Wajib Umum', tingkatKelas: 'Semua Tingkat', guruPengampuNama: 'Siti Aminah, S.Pd', alokasiJamPerMinggu: 4, kkm: 75, kurikulum: 'Kurikulum Merdeka', jadwalMengajar: [] },
   { id: 'mapel-3', kodeMapel: 'MP-IPA-03', namaMapel: 'Ilmu Pengetahuan Alam (IPA)', kategori: 'Wajib Umum', tingkatKelas: 'Semua Tingkat', guruPengampuNama: 'Drs. H. Bambang Sutrisno', alokasiJamPerMinggu: 5, kkm: 75, kurikulum: 'Kurikulum Merdeka', jadwalMengajar: [] },
   { id: 'mapel-4', kodeMapel: 'MP-IPS-04', namaMapel: 'Ilmu Pengetahuan Sosial (IPS)', kategori: 'Wajib Umum', tingkatKelas: 'Semua Tingkat', guruPengampuNama: 'Rina Marlina, M.Pd', alokasiJamPerMinggu: 4, kkm: 70, kurikulum: 'Kurikulum Merdeka', jadwalMengajar: [] },
-  { id: 'mapel-5', kodeMapel: 'MP-ENG-05', namaMapel: 'Bahasa Inggris', kategori: 'Wajib Umum', tingkatKelas: 'Semua Tingkat', guruPengampuNama: 'Rina Marlina, M.Pd', alokasiJamPerMinggu: 4, kkm: 75, kurikulum: 'Kurikulum Merdeka', jadwalMengajar: [] }
+  { id: 'mapel-5', kodeMapel: 'MP-ENG-05', namaMapel: 'Bahasa Inggris', kategori: 'Wajib Umum', tingkatKelas: 'Semua Tingkat', guruPengampuNama: 'Rina Marlina, M.Pd', alokasiJamPerMinggu: 4, kkm: 75, kurikulum: 'Kurikulum Merdeka', jadwalMengajar: [] },
+  { id: 'mapel-6', kodeMapel: 'MP-INF-06', namaMapel: 'Informatika', kategori: 'Wajib Umum', tingkatKelas: 'Semua Tingkat', guruPengampuNama: 'Giar Hermawan, S.Kom', alokasiJamPerMinggu: 2, kkm: 75, kurikulum: 'Kurikulum Merdeka', jadwalMengajar: [] }
 ];
 
 export const INITIAL_TARIF_BIAYA: TarifBiaya[] = [
@@ -476,4 +576,292 @@ export const INITIAL_TARIF_BIAYA: TarifBiaya[] = [
   { id: 'trf-2', namaBiaya: 'SPP Bulanan Kelas 8 & 9', tipe: 'spp', tingkatKelas: 'Kelas 8', nominal: 375000, periode: 'Bulanan', status: 'Aktif' },
   { id: 'trf-3', namaBiaya: 'Uang Gedung & Pembangunan', tipe: 'ukt', tingkatKelas: 'Kelas 7', nominal: 2500000, periode: 'Sekali Bayar (Uang Masuk / UKT)', status: 'Aktif' },
   { id: 'trf-4', namaBiaya: 'Kegiatan Ekstrakurikuler', tipe: 'ekskul', tingkatKelas: 'Semua Tingkat', nominal: 100000, periode: 'Per Semester', status: 'Aktif' }
+];
+
+export const INITIAL_EKSKUL: EkstrakurikulerItem[] = [
+  {
+    id: 'eks-1',
+    kodeEkskul: 'EKS-PRA-01',
+    namaEkskul: 'Praja Muda Karana (Pramuka)',
+    kategori: 'Kepanduan & Bela Negara',
+    pembinaNama: 'Drs. H. Bambang Sutrisno',
+    nipPembina: '197103251998021001',
+    kontakPembina: '081234567803',
+    hariLatihan: 'Jumat',
+    jamMulai: '14:30',
+    jamSelesai: '16:30',
+    tempat: 'Lapangan Utama & Sanggar Pramuka',
+    tingkatTarget: 'Semua Tingkat',
+    kuotaMaksimal: 50,
+    anggotaSiswaIds: ['sis-001', 'sis-002', 'sis-003'],
+    status: 'Aktif',
+    biayaIuran: 0,
+    deskripsi: 'Kegiatan kepanduan, pembentukan karakter kepemimpinan, kemandirian, dan keterampilan survival outdoor.'
+  },
+  {
+    id: 'eks-2',
+    kodeEkskul: 'EKS-FUT-02',
+    namaEkskul: 'Futsal & Sepak Bola',
+    kategori: 'Olahraga',
+    pembinaNama: 'Budi Santoso, S.Pd',
+    nipPembina: '198005122005011002',
+    kontakPembina: '081234567801',
+    hariLatihan: 'Rabu',
+    jamMulai: '15:30',
+    jamSelesai: '17:30',
+    tempat: 'Lapangan Futsal Al Fakhír',
+    tingkatTarget: 'Semua Tingkat',
+    kuotaMaksimal: 30,
+    anggotaSiswaIds: ['sis-001', 'sis-004', 'sis-005'],
+    status: 'Aktif',
+    biayaIuran: 50000,
+    deskripsi: 'Pelatihan teknik sepak bola & futsal modern, fisik, taktik tim, dan persiapan turnamen antarsekolah.'
+  },
+  {
+    id: 'eks-3',
+    kodeEkskul: 'EKS-ROB-03',
+    namaEkskul: 'Robotik & Coding Club',
+    kategori: 'Sains & Teknologi',
+    pembinaNama: 'Rina Marlina, M.Pd',
+    nipPembina: '198807192012012004',
+    kontakPembina: '081234567804',
+    hariLatihan: 'Kamis',
+    jamMulai: '15:00',
+    jamSelesai: '17:00',
+    tempat: 'Laboratorium Komputer & STEM',
+    tingkatTarget: 'Semua Tingkat',
+    kuotaMaksimal: 25,
+    anggotaSiswaIds: ['sis-002', 'sis-006'],
+    status: 'Aktif',
+    biayaIuran: 100000,
+    deskripsi: 'Eksplorasi mikrokontroler Arduino, sensor IoT, robotika dasar, dan pengantar algoritma pemrograman.'
+  },
+  {
+    id: 'eks-4',
+    kodeEkskul: 'EKS-PMR-04',
+    namaEkskul: 'Palang Merah Remaja (PMR)',
+    kategori: 'Kepanduan & Bela Negara',
+    pembinaNama: 'Siti Aminah, S.Pd',
+    nipPembina: '198502102008012003',
+    kontakPembina: '081234567802',
+    hariLatihan: 'Sabtu',
+    jamMulai: '08:00',
+    jamSelesai: '10:00',
+    tempat: 'Ruang UKS & Aula Serbaguna',
+    tingkatTarget: 'Semua Tingkat',
+    kuotaMaksimal: 35,
+    anggotaSiswaIds: ['sis-003', 'sis-005'],
+    status: 'Aktif',
+    biayaIuran: 25000,
+    deskripsi: 'Pelatihan pertolongan pertama pada kecelakaan (P3K), kesiapsiagaan bencana, dan penyuluhan kesehatan remaja.'
+  },
+  {
+    id: 'eks-5',
+    kodeEkskul: 'EKS-THF-05',
+    namaEkskul: 'Tahfidz & Tilawah Al-Qur\'an',
+    kategori: 'Keagamaan',
+    pembinaNama: 'Mochamad Asroru Pahala, S.Pd.I',
+    nipPembina: '199208152018011005',
+    kontakPembina: '089539376516',
+    hariLatihan: 'Senin',
+    jamMulai: '15:00',
+    jamSelesai: '16:30',
+    tempat: 'Masjid Utama Al Fakhír',
+    tingkatTarget: 'Semua Tingkat',
+    kuotaMaksimal: 40,
+    anggotaSiswaIds: ['sis-001', 'sis-002', 'sis-004', 'sis-006'],
+    status: 'Aktif',
+    biayaIuran: 0,
+    deskripsi: 'Bimbingan hafalan Al-Qur\'an tartil metode mutqin, tajwid aplikatif, dan seni tilawah bersuara merdu.'
+  },
+  {
+    id: 'eks-6',
+    kodeEkskul: 'EKS-MSK-06',
+    namaEkskul: 'Seni Musik & Saman / Hadroh',
+    kategori: 'Seni & Budaya',
+    pembinaNama: 'Aulia Safitri, S.Pd',
+    nipPembina: '199504122020012007',
+    kontakPembina: '081298765432',
+    hariLatihan: 'Selasa',
+    jamMulai: '15:00',
+    jamSelesai: '16:45',
+    tempat: 'Ruang Seni & Budaya Lt. 2',
+    tingkatTarget: 'Semua Tingkat',
+    kuotaMaksimal: 30,
+    anggotaSiswaIds: ['sis-003', 'sis-004'],
+    status: 'Aktif',
+    biayaIuran: 35000,
+    deskripsi: 'Pengembangan talenta vokal, instrumen musik akustik, rebana hadroh Islami, dan koreografi tarian Nusantara.'
+  }
+];
+
+export const INITIAL_GAJI: GajiPembayaran[] = [
+  {
+    id: 'gaji-001',
+    penerimaId: 'staf-101',
+    penerimaNama: 'ALYA NABIYLA',
+    penerimaTipe: 'staf',
+    penerimaNipNik: '327601002010001',
+    jabatan: 'ADMINISTRATION',
+    bulan: 'Juli',
+    tahun: '2026',
+    gajiPokok: 2000000,
+    tunjangan: 50000, // Tunjangan Fungsional
+    tunjanganWalas: 70000, // TJ Walas
+    tunjanganKetepatanWaktu: 50000, // Ketetapan Waktu
+    tunjanganKehadiran: 50000, // TJ Kehadiran
+    tunjanganPiket: 0, // Piket
+    tunjanganExcessTime: 1000, // Exces Time
+    potongan: 0,
+    potonganDendaTerlambat: 10000, // Denda Terlambat < 30 Min
+    potonganDendaTerlambatLebih: 1000, // Denda Terlambat > 30 Min
+    potonganDendaLupaFinger: 1000, // Denda Lupa Finger
+    potonganKoperasi: 26000, // Pot. Koperasi
+    potonganKasBon: 20000, // Gaji Diambil Dimuka
+    totalDiterima: 2163000, // Gaji Bersih
+    tanggalBayar: '2026-07-28',
+    metodePembayaran: 'Transfer Bank',
+    status: 'Paid',
+    penerimaRekening: 'BCA 8291029381'
+  },
+  {
+    id: 'gaji-002',
+    penerimaId: 'staf-102',
+    penerimaNama: 'NOUFAL ZAINUDIN ZIDANE',
+    penerimaTipe: 'staf',
+    penerimaNipNik: '327601002010002',
+    jabatan: 'IT ENGINEERING',
+    bulan: 'Juli',
+    tahun: '2026',
+    gajiPokok: 4500000,
+    tunjangan: 1000000, // Tunjangan Fungsional
+    tunjanganWalas: 0,
+    tunjanganKetepatanWaktu: 1170000, // Ketetapan Waktu
+    tunjanganKehadiran: 910000, // TJ Kehadiran
+    tunjanganPiket: 100000, // Piket
+    tunjanganExcessTime: 0,
+    potongan: 0,
+    potonganDendaTerlambat: 0,
+    potonganDendaTerlambatLebih: 0,
+    potonganDendaLupaFinger: 0,
+    potonganKoperasi: 0,
+    potonganKasBon: 5233000, // Gaji Diambil Dimuka
+    totalDiterima: 2447000, // Gaji Bersih
+    tanggalBayar: '2026-07-28',
+    metodePembayaran: 'Transfer Bank',
+    status: 'Paid',
+    penerimaRekening: 'Mandiri 137001928371'
+  },
+  {
+    id: 'gaji-003',
+    penerimaId: 'staf-103',
+    penerimaNama: 'MUHAMMAD LUTHFI HAKIM',
+    penerimaTipe: 'staf',
+    penerimaNipNik: '327601002010003',
+    jabatan: 'OPERATOR',
+    bulan: 'Juli',
+    tahun: '2026',
+    gajiPokok: 2000000,
+    tunjangan: 50000,
+    tunjanganWalas: 50000,
+    tunjanganKetepatanWaktu: 50000,
+    tunjanganKehadiran: 50000,
+    tunjanganPiket: 0,
+    tunjanganExcessTime: 0,
+    potongan: 0,
+    potonganDendaTerlambat: 10000,
+    potonganDendaTerlambatLebih: 0,
+    potonganDendaLupaFinger: 0,
+    potonganKoperasi: 26000,
+    potonganKasBon: 20000,
+    totalDiterima: 2144000,
+    tanggalBayar: '2026-07-28',
+    metodePembayaran: 'Transfer Bank',
+    status: 'Paid',
+    penerimaRekening: 'BRI 092819281726'
+  },
+  {
+    id: 'gaji-004',
+    penerimaId: 'gur-1',
+    penerimaNama: 'MOCHAMAD ASRORU PAHALA, S.PD.I',
+    penerimaTipe: 'guru',
+    penerimaNipNik: '327601002010009',
+    jabatan: 'GURU MATA PELAJARAN',
+    bulan: 'Juli',
+    tahun: '2026',
+    gajiPokok: 1500000,
+    tunjangan: 300000,
+    tunjanganWalas: 200000,
+    tunjanganKetepatanWaktu: 100000,
+    tunjanganKehadiran: 100000,
+    tunjanganPiket: 100000,
+    tunjanganExcessTime: 0,
+    potongan: 0,
+    potonganDendaTerlambat: 20000,
+    potonganDendaTerlambatLebih: 0,
+    potonganDendaLupaFinger: 10000,
+    potonganKoperasi: 20000,
+    potonganKasBon: 0,
+    totalDiterima: 2250000,
+    tanggalBayar: '2026-07-28',
+    metodePembayaran: 'Transfer Bank',
+    status: 'Paid',
+    penerimaRekening: 'BSI 7123984712'
+  },
+  {
+    id: 'gaji-005',
+    penerimaId: 'gur-2',
+    penerimaNama: 'GIAR HERMAWAN, S.KOM',
+    penerimaTipe: 'guru',
+    penerimaNipNik: '3276010410820010',
+    jabatan: 'GURU INFORMATIKA',
+    bulan: 'Juli',
+    tahun: '2026',
+    gajiPokok: 3500000,
+    tunjangan: 500000,
+    tunjanganWalas: 200000,
+    tunjanganKetepatanWaktu: 100000,
+    tunjanganKehadiran: 100000,
+    tunjanganPiket: 0,
+    tunjanganExcessTime: 22000,
+    potongan: 0,
+    potonganDendaTerlambat: 0,
+    potonganDendaTerlambatLebih: 0,
+    potonganDendaLupaFinger: 0,
+    potonganKoperasi: 0,
+    potonganKasBon: 0,
+    totalDiterima: 4422000,
+    tanggalBayar: '2026-07-28',
+    metodePembayaran: 'Transfer Bank',
+    status: 'Paid',
+    penerimaRekening: 'BCA 7712349182'
+  },
+  {
+    id: 'gaji-006',
+    penerimaId: 'gur-3',
+    penerimaNama: 'AULIA SAFITRI, S.PD',
+    penerimaTipe: 'guru',
+    penerimaNipNik: '3276016103820011',
+    jabatan: 'GURU SENI & BUDAYA',
+    bulan: 'Juli',
+    tahun: '2026',
+    gajiPokok: 3500000,
+    tunjangan: 400000,
+    tunjanganWalas: 200000,
+    tunjanganKetepatanWaktu: 100000,
+    tunjanganKehadiran: 100000,
+    tunjanganPiket: 0,
+    tunjanganExcessTime: 0,
+    potongan: 0,
+    potonganDendaTerlambat: 0,
+    potonganDendaTerlambatLebih: 0,
+    potonganDendaLupaFinger: 0,
+    potonganKoperasi: 0,
+    potonganKasBon: 0,
+    totalDiterima: 4300000,
+    tanggalBayar: '2026-07-28',
+    metodePembayaran: 'Transfer Bank',
+    status: 'Paid',
+    penerimaRekening: 'BRI 58291039182'
+  }
 ];

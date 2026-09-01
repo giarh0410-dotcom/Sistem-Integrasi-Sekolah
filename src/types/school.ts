@@ -14,10 +14,12 @@ export interface RombelKelas {
 }
 
 export type Role = 'admin' | 'guru' | 'siswa' | 'staf';
-export type SubTab = 'siswa' | 'guru' | 'staf' | 'rombel' | 'mapel';
-export type AbsensiSubTab = 'scan_barcode' | 'harian_siswa' | 'kelas_mapel' | 'absensi_guru';
-export type CbtSubTab = 'bank_soal' | 'jadwal_kartu' | 'ai_generator' | 'simulasi_ujian';
-export type KeuanganSubTab = 'pembayaran' | 'pengaturan_biaya' | 'rekap';
+export type SubTab = 'siswa' | 'guru' | 'staf' | 'rombel' | 'mapel' | 'ekskul';
+export type AbsensiSubTab = 'scan_barcode' | 'harian_siswa' | 'absensi_guru' | 'redaksi';
+export type CbtSubTab = 'bank_soal' | 'jadwal_kartu' | 'ai_generator' | 'simulasi_ujian' | 'hasil_ujian';
+export type KeuanganSubTab = 'pembayaran' | 'pengaturan_biaya' | 'rekap' | 'redaksi' | 'gaji';
+export type AdministrasiSubTab = 'modul_ajar' | 'cp' | 'atp' | 'kktp' | 'prota' | 'prosem' | 'jadwal' | 'kalender' | 'jurnal_guru';
+export type PengaturanSubTab = 'identitas' | 'logo' | 'google_drive' | 'fonnte' | 'jadwal' | 'sistem';
 
 export interface TarifBiaya {
   id: string;
@@ -28,6 +30,7 @@ export interface TarifBiaya {
   periode: 'Bulanan' | 'Sekali Bayar (Uang Masuk / UKT)' | 'Per Semester';
   keterangan?: string;
   status: 'Aktif' | 'Nonaktif';
+  ekskulId?: string;
 }
 
 export interface Siswa {
@@ -37,6 +40,8 @@ export interface Siswa {
   nik?: string;
   nama: string;
   kelas: string;
+  tingkatKelas?: string;
+  rombel?: string;
   jenisKelamin: 'L' | 'P';
   tempatLahir: string;
   tanggalLahir: string;
@@ -135,6 +140,26 @@ export interface MataPelajaranItem {
   catatan?: string;
 }
 
+export interface EkstrakurikulerItem {
+  id: string;
+  kodeEkskul: string; // e.g. "EKS-PRA-01"
+  namaEkskul: string; // e.g. "Pramuka"
+  kategori: 'Olahraga' | 'Seni & Budaya' | 'Keagamaan' | 'Sains & Teknologi' | 'Kepanduan & Bela Negara' | 'Bahasa & Komunikasi';
+  pembinaNama: string; // e.g. "Drs. H. Bambang Sutrisno"
+  nipPembina?: string;
+  kontakPembina?: string;
+  hariLatihan: 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu' | 'Minggu';
+  jamMulai: string; // e.g. "15:00"
+  jamSelesai: string; // e.g. "16:30"
+  tempat: string; // e.g. "Lapangan Utama"
+  tingkatTarget: string; // e.g. "Semua Tingkat", "Kelas 7", "Kelas 8", "Kelas 9"
+  kuotaMaksimal: number;
+  anggotaSiswaIds: string[];
+  status: 'Aktif' | 'Nonaktif';
+  biayaIuran: number;
+  deskripsi?: string;
+}
+
 export type StatusAbsensi = 'Hadir' | 'Sakit' | 'Izin' | 'Alpha';
 
 export interface AbsensiSiswaHarian {
@@ -160,6 +185,11 @@ export interface AbsensiSiswaKelas {
   materi: string;
   kehadiranMap: Record<string, StatusAbsensi>; // siswaId -> status
   catatan?: string;
+  tujuanPembelajaran?: string;
+  metodePembelajaran?: string;
+  mediaPembelajaran?: string;
+  refleksi?: string;
+  tindakLanjut?: string;
 }
 
 export interface AbsensiGuru {
@@ -192,6 +222,8 @@ export interface SoalCBT {
   kunciJawaban: string | string[]; // Single string untuk PG/Isian, array untuk Multiple Choice / Esai keyword
   pembahasan?: string;
   bobot: number;
+  imageUrl?: string;
+  videoUrl?: string;
 }
 
 export interface BankSoal {
@@ -266,6 +298,75 @@ export interface HasilUjian {
   logKecurangan?: string[];
 }
 
+export interface ModulAjarContent {
+  // A. INFORMASI UMUM
+  informasiUmum: {
+    namaPenyusun: string;
+    namaSekolah: string;
+    mataPelajaran: string;
+    fase: string;
+    kelas: string;
+    semester: string;
+    tahunAjaran: string;
+    alokasiWaktu: string;
+    materi: string;
+  };
+  // B. KOMPETENSI AWAL
+  kompetensiAwal: string;
+  // C. PROFIL / KOMPETENSI YANG DITUJU
+  profilPelajarPancasila: string[];
+  // D. SARANA DAN PRASARANA
+  saranaPrasarana: string[]; // Laptop, Internet, etc.
+  // E. TARGET PESERTA DIDIK
+  targetPesertaDidik: 'Reguler' | 'Dukungan tambahan' | 'Pengayaan';
+  // F. MODEL PEMBELAJARAN
+  modelPembelajaran: string;
+  // G. TUJUAN PEMBELAJARAN
+  tujuanPembelajaran: string[];
+  // H. PEMAHAMAN BERMAKNA
+  pemahamanBermakna: string;
+  // I. PERTANYAAN PEMANTIK
+  pertanyaanPemantik: string[];
+  // J. KEGIATAN PEMBELAJARAN
+  kegiatanPembelajaran: {
+    pendahuluan: { deskripsi: string; durasi: string };
+    inti: { deskripsi: string; durasi: string };
+    penutup: { deskripsi: string; durasi: string };
+  };
+  // K. ASESMEN
+  asesmen: {
+    diagnostik: string;
+    formatif: string;
+    sumatif: string;
+    teknik: string;
+    instrumen: string;
+    rubrik: string;
+    kriteriaPenilaian: string;
+  };
+  // L. DIFERENSIASI PEMBELAJARAN
+  diferensiasi: {
+    konten: string;
+    proses: string;
+    produk: string;
+  };
+  // M. REMEDIAL
+  remedial: string;
+  // N. PENGAYAAN
+  pengayaan: string;
+  // O. REFLEKSI GURU
+  refleksiGuru: string;
+  // P. REFLEKSI PESERTA DIDIK
+  refleksiPesertaDidik: string;
+  // Q. LAMPIRAN
+  lampiran: {
+    lkpd: string;
+    bahanBacaan: string;
+    rubrik: string;
+    instrumenAsesmen: string;
+    daftarPustaka: string;
+  };
+}
+
 export type TipeAdministrasi = 
   | 'modul_ajar'
   | 'atp'
@@ -273,6 +374,7 @@ export type TipeAdministrasi =
   | 'jurnal'
   | 'prota'
   | 'prosem'
+  | 'kktp'
   | 'kaldik'
   | 'jadwal';
 
@@ -310,13 +412,17 @@ export interface TagihanKeuangan {
   terbayar: number;
   status: 'Lunas' | 'Belum Lunas' | 'Dicicil';
   jatuhTempo: string;
+  tanggalTagihan?: string;
+  tanggalBayar?: string; // Tanggal pembayaran dilakukan (e.g. "2026-08-09" / "09/08/2026")
   waWaliSentAt?: string;
+  isDeleted?: boolean;
 }
 
 export interface TransaksiKeuangan {
   id: string;
   tagihanId: string;
   siswaNama: string;
+  pembayaran?: string;
   tipe: TipeKeuangan;
   nominal: number;
   tanggal: string;
@@ -385,4 +491,42 @@ export interface SchoolSettings {
   googleSyncSpreadsheetUrl?: string;
   googleSyncLastTime?: string;
   googleSyncStatus?: 'idle' | 'syncing' | 'success' | 'failed';
+  bankVaName?: string;
+  bankVaNumber?: string;
+  bankVaOwner?: string;
+  qrisUrl?: string;
+}
+
+export interface GajiPembayaran {
+  id: string;
+  penerimaId: string;
+  penerimaNama: string;
+  penerimaTipe: 'guru' | 'staf';
+  penerimaNipNik: string;
+  jabatan: string;
+  bulan: string; // e.g. "Juli", "Agustus"
+  tahun: string; // e.g. "2026"
+  gajiPokok: number;
+  tunjangan: number;
+  // Detailed Tunjangan
+  tunjanganWalas?: number;
+  tunjanganKetepatanWaktu?: number;
+  tunjanganKehadiran?: number;
+  tunjanganPiket?: number;
+  tunjanganExcessTime?: number;
+  
+  potongan: number;
+  // Detailed Potongan
+  potonganDendaTerlambat?: number; // Denda Terlambat < 30 Min
+  potonganDendaTerlambatLebih?: number; // Denda Terlambat > 30 Min
+  potonganDendaLupaFinger?: number; // Denda Lupa Finger
+  potonganKoperasi?: number; // Pot. Koperasi
+  potonganKasBon?: number; // Gaji Diambil Dimuka (Kasbon / Pinjaman)
+
+  totalDiterima: number;
+  tanggalBayar: string; // YYYY-MM-DD
+  metodePembayaran: 'Cash' | 'Transfer Bank' | 'E-Wallet';
+  status: 'Draft' | 'Paid';
+  catatan?: string;
+  penerimaRekening?: string;
 }

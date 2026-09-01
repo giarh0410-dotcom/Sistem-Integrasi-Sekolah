@@ -59,6 +59,8 @@ interface PengaturanViewProps {
   mapelList?: MataPelajaranItem[];
   absensiHarian?: AbsensiSiswaHarian[];
   absensiKelasList?: AbsensiSiswaKelas[];
+  activeSubTab: 'identitas' | 'logo' | 'google_drive' | 'fonnte' | 'jadwal' | 'sistem';
+  setActiveSubTab: (tab: 'identitas' | 'logo' | 'google_drive' | 'fonnte' | 'jadwal' | 'sistem') => void;
 }
 
 export const PengaturanView: React.FC<PengaturanViewProps> = ({
@@ -75,9 +77,10 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
   rombelList,
   mapelList,
   absensiHarian,
-  absensiKelasList
+  absensiKelasList,
+  activeSubTab,
+  setActiveSubTab
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'identitas' | 'logo' | 'google_drive' | 'fonnte' | 'jadwal'>('identitas');
   const [formData, setFormData] = useState<SchoolSettings>({ ...schoolSettings });
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isSyncingManual, setIsSyncingManual] = useState(false);
@@ -168,9 +171,54 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
     const reader = new FileReader();
     reader.onload = (event) => {
       const base64Url = event.target?.result as string;
-      if (base64Url) {
+      if (!base64Url) return;
+
+      // Auto remove background for JPG/PNG/WEBP by making white/off-white transparent using Canvas processing
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          setFormData(prev => ({ ...prev, logoUrl: base64Url }));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0);
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imgData.data;
+
+        // Sample background color from top-left or top-right corner
+        const r0 = data[0];
+        const g0 = data[1];
+        const b0 = data[2];
+
+        // If background is whitish or very light, make it transparent
+        const isLightBackground = r0 > 220 && g0 > 220 && b0 > 220;
+
+        if (isLightBackground) {
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            // If near white / light grey, set alpha to 0 (transparent)
+            if (r > 215 && g > 215 && b > 215) {
+              data[i + 3] = 0;
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+          const transparentUrl = canvas.toDataURL('image/png');
+          setFormData(prev => ({ ...prev, logoUrl: transparentUrl }));
+        } else {
+          setFormData(prev => ({ ...prev, logoUrl: base64Url }));
+        }
+      };
+      img.onerror = () => {
         setFormData(prev => ({ ...prev, logoUrl: base64Url }));
-      }
+      };
+      img.src = base64Url;
     };
     reader.readAsDataURL(file);
   };
@@ -185,77 +233,6 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
   return (
     <div className="space-y-6">
       
-      {/* Top Header & Navigation Banner */}
-      <div className="bg-[#121212] rounded-2xl p-6 border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/30">
-              SISTEM MASTER DATA
-            </span>
-          </div>
-          <h2 className="text-xl font-bold text-white mt-1 flex items-center gap-2">
-            <Building2 className="w-6 h-6 text-blue-500" /> Pengaturan Identitas & Logo Sekolah
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Kelola profil resmi sekolah, alamat, kepala sekolah, serta logo yang otomatis muncul pada KOP surat, kartu ujian, dan laporan CBT.
-          </p>
-        </div>
-
-        {/* Subtab Toggle Buttons */}
-        <div className="flex items-center bg-[#181818] p-1 rounded-xl border border-slate-800 shrink-0">
-          <button
-            onClick={() => setActiveSubTab('identitas')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-              activeSubTab === 'identitas'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <School className="w-4 h-4" /> Identitas Sekolah
-          </button>
-          <button
-            onClick={() => setActiveSubTab('logo')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-              activeSubTab === 'logo'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <ImageIcon className="w-4 h-4" /> Logo Sekolah
-          </button>
-          <button
-            onClick={() => setActiveSubTab('google_drive')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-              activeSubTab === 'google_drive'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Cloud className="w-4 h-4" /> Google Drive & Auto-Sync
-          </button>
-          <button
-            onClick={() => setActiveSubTab('fonnte')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-              activeSubTab === 'fonnte'
-                ? 'bg-emerald-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <MessageSquare className="w-4 h-4 text-emerald-400" /> Token Fonnte (WA)
-          </button>
-          <button
-            onClick={() => setActiveSubTab('jadwal')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-              activeSubTab === 'jadwal'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Clock className="w-4 h-4 text-blue-400" /> Jadwal Masuk & Pulang
-          </button>
-        </div>
-      </div>
-
       {/* Save Success Toast Banner */}
       {savedSuccess && (
         <div className="p-4 bg-emerald-950/90 border border-emerald-500/50 rounded-2xl text-emerald-200 text-xs font-bold flex items-center justify-between gap-3 shadow-xl animate-fade-in">
@@ -689,7 +666,7 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
                   </div>
                   <div className="text-[9px] text-slate-600 flex justify-between font-mono">
                     <span>Siswa: Ahmad Rizky</span>
-                    <span>Kelas: X-IPA-1</span>
+                    <span>Kelas: VIII - Al Biruni</span>
                   </div>
                 </div>
               </div>
@@ -792,16 +769,16 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
                             const { user, accessToken } = res;
                             setFormData(prev => ({
                               ...prev,
-                              googleSyncEmail: user.email || 'pengguna.sekolah@gmail.com',
+                              googleSyncEmail: user.email || 'giar.hermawan4@guru.smp.belajar.id',
                               googleSyncEnabled: true
                             }));
                             setSchoolSettings(prev => ({
                               ...prev,
-                              googleSyncEmail: user.email || 'pengguna.sekolah@gmail.com',
+                              googleSyncEmail: user.email || 'giar.hermawan4@guru.smp.belajar.id',
                               googleSyncEnabled: true
                             }));
                             if (setUserGoogleToken) setUserGoogleToken(accessToken);
-                            if (setUserEmail) setUserEmail(user.email || 'pengguna.sekolah@gmail.com');
+                            if (setUserEmail) setUserEmail(user.email || 'giar.hermawan4@guru.smp.belajar.id');
                           }
                         } catch (e) {
                           alert('Gagal menghubungkan akun Google. Mohon coba lagi.');
@@ -1046,6 +1023,16 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
                   </div>
                   <p className="text-[10px] text-slate-500">
                     Dapatkan token resmi dari dashboard menu Device / API di website Fonnte (https://fonnte.com).
+                  </p>
+                </div>
+
+                {/* Info Watermark Fonnte */}
+                <div className="p-3 bg-amber-950/30 border border-amber-500/30 rounded-xl space-y-1">
+                  <p className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                    💡 Info Watermark "Sent via fonnte.com"
+                  </p>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Teks <code className="text-amber-200 font-mono">"Sent via fonnte.com"</code> ditambahkan secara otomatis oleh server Fonnte untuk akun dengan paket <b>Free / Trial</b>. Untuk menyembunyikan atau menghilangkan watermark tersebut, silakan upgrade akun Fonnte Anda ke paket <b>Pro / Berlangganan</b> di website resmi Fonnte.
                   </p>
                 </div>
 
@@ -1558,6 +1545,73 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* SUBTAB 6: SISTEM & DATABASE (RESET) */}
+      {activeSubTab === 'sistem' && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="bg-[#121212] border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+            <div className="p-4 border-b border-slate-800 bg-[#151515] flex items-center justify-between">
+              <div>
+                <h3 className="font-extrabold text-sm flex items-center gap-2 text-rose-400">
+                  <ShieldAlert className="w-4 h-4 text-rose-500" />
+                  Manajemen Database & Reset Sistem
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">Hapus data demo dan bersihkan database untuk mulai dari awal</p>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              <div className="p-4 bg-rose-950/20 border border-rose-500/30 rounded-xl space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-rose-500/20 rounded-lg shrink-0">
+                    <AlertCircle className="w-5 h-5 text-rose-500" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-bold text-xs text-rose-200">Hapus Seluruh Data Demo (Factory Reset)</h4>
+                    <p className="text-[11px] text-rose-300/80 leading-relaxed">
+                      Tindakan ini akan menghapus <strong>SELURUH</strong> data yang ada di database Firestore Anda, termasuk:
+                      Siswa, Guru, Staf, Rombel, Mata Pelajaran, Tagihan Keuangan, Transaksi, dan Absensi.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="pt-2">
+                  <button
+                    onClick={() => {
+                      const confirmText = "HAPUS_SEMUA_DATA";
+                      const userInput = window.prompt(`Ketik "${confirmText}" untuk mengkonfirmasi penghapusan seluruh data sistem secara permanen:`);
+                      
+                      if (userInput === confirmText) {
+                        localStorage.setItem('edu_system_reset', 'true');
+                        alert('Sistem akan direset. Aplikasi akan memuat ulang untuk membersihkan database.');
+                        window.location.reload();
+                      }
+                    }}
+                    className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold rounded-xl text-xs transition-all shadow-lg shadow-rose-600/20 flex items-center gap-2 cursor-pointer w-full sm:w-auto justify-center"
+                  >
+                    <Zap className="w-4 h-4 text-amber-300" />
+                    Reset Data & Bersihkan Database
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 bg-indigo-950/20 border border-indigo-500/30 rounded-xl space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-indigo-500/20 rounded-lg shrink-0">
+                    <Database className="w-5 h-5 text-indigo-400" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-bold text-xs text-indigo-200">Mode Persiapan Produksi</h4>
+                    <p className="text-[11px] text-indigo-300/80 leading-relaxed">
+                      Setelah melakukan reset, sistem tidak akan memuat data demo (INITIAL DATA) lagi. Anda harus menginput data Siswa dan Rombel secara manual atau melalui impor Excel.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

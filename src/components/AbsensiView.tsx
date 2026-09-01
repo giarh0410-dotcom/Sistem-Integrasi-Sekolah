@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CameraScanner } from './CameraScanner';
 import { 
   CalendarCheck, 
@@ -23,7 +23,15 @@ import {
   LogIn,
   LogOut,
   Smartphone,
-  Share2
+  Share2,
+  Sparkles,
+  Bell,
+  Sliders,
+  RefreshCw,
+  Calendar,
+  Trash2,
+  Square,
+  CheckSquare
 } from 'lucide-react';
 import { 
   Siswa, 
@@ -41,6 +49,47 @@ import {
 } from '../types/school';
 import { exportAllToGoogleSheets } from '../lib/googleDriveSync';
 import { sendFonnteMessage, getFonnteDeviceStatus, FonnteDeviceStatus } from '../lib/fonnte';
+
+const LocationWithMapLink = ({ text }: { text: string }) => {
+  if (!text || text === '-' || text === 'N/A') return <span>-</span>;
+  
+  const match = text.match(/\(([^)]+)\)/);
+  let cleanCoords = '';
+  let before = text;
+  let after = '';
+  let hasCoords = false;
+
+  if (match) {
+    const coords = match[1];
+    const parts = coords.split(',');
+    if (parts.length === 2 && !isNaN(parseFloat(parts[0])) && !isNaN(parseFloat(parts[1]))) {
+      before = text.substring(0, match.index);
+      after = text.substring(match.index! + match[0].length);
+      cleanCoords = coords.trim().replace(/\s+/g, '');
+      hasCoords = true;
+    }
+  }
+
+  const query = hasCoords ? cleanCoords : `${text} Sekolah Islam Modern Al Fakhir`;
+  const href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+
+  return (
+    <div className="flex items-center flex-wrap gap-1">
+      <span className="text-slate-700">{hasCoords ? before.trim() : text}</span>
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-700 transition-colors uppercase tracking-tight shadow-sm"
+        title="Buka di Google Maps"
+      >
+        <MapPin className="w-2 h-2 mr-0.5" />
+        Peta
+      </a>
+      {hasCoords && <span className="text-slate-500 text-[10px]">{after}</span>}
+    </div>
+  );
+};
 
 interface AbsensiViewProps {
   siswaList: Siswa[];
@@ -62,7 +111,30 @@ interface AbsensiViewProps {
   setSchoolSettings?: React.Dispatch<React.SetStateAction<SchoolSettings>>;
 }
 
-type SubTabAbsensi = 'scan_barcode' | 'harian_siswa' | 'kelas_mapel' | 'absensi_guru';
+type SubTabAbsensi = 'scan_barcode' | 'harian_siswa' | 'absensi_guru' | 'redaksi' | 'jurnal_guru';
+
+// Helper to resolve coordinates to known school locations or format nicely
+const getFriendlyLocationName = (lat: number, lng: number): string => {
+  // School reference point (based on typical coordinates in the screenshot)
+  const schoolPoints = [
+    { lat: -6.2415, lng: 106.8045, name: 'Sekolah Islam Modern Al Fakhir' },
+    { lat: -6.200000, lng: 106.816666, name: 'Gerbang Utama Sekolah' },
+    { lat: -6.200100, lng: 106.816700, name: 'Lobby Gedung Utama' },
+    { lat: -6.200200, lng: 106.816500, name: 'Area Parkir Guru' },
+    { lat: -6.200500, lng: 106.816800, name: 'Kantor Tata Usaha' }
+  ];
+
+  // Check if within ~50 meters (roughly 0.0005 degrees)
+  const found = schoolPoints.find(p => 
+    Math.abs(p.lat - lat) < 0.0005 && Math.abs(p.lng - lng) < 0.0005
+  );
+
+  const coordsStr = `(${lat.toFixed(6)}, ${lng.toFixed(6)})`;
+  if (found) return `${found.name} ${coordsStr}`;
+  
+  // Otherwise return formatted GPS
+  return `Lokasi Luar ${coordsStr}`;
+};
 
 export const AbsensiView: React.FC<AbsensiViewProps> = ({
   siswaList,
@@ -83,7 +155,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   schoolSettings,
   setSchoolSettings
 }) => {
-  const [internalSubTab, setInternalSubTab] = useState<SubTabAbsensi>(currentRole === 'guru' ? 'kelas_mapel' : 'scan_barcode');
+  const [internalSubTab, setInternalSubTab] = useState<SubTabAbsensi>('scan_barcode');
 
   const subTab = controlledSubTab ?? internalSubTab;
   const setSubTab = (val: SubTabAbsensi) => {
@@ -93,12 +165,9 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
 
   useEffect(() => {
     if (currentRole === 'guru') {
-      if (subTab === 'harian_siswa' || subTab === 'absensi_guru') {
-        setSubTab('kelas_mapel');
-      }
       setScanTargetType('siswa');
     }
-  }, [currentRole, subTab]);
+  }, [currentRole]);
 
   // --- Subtab Barcode Scanner, Jadwal & Fonnte Modal State ---
   const [showFonnteModal, setShowFonnteModal] = useState(false);
@@ -107,11 +176,14 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     schoolSettings?.jadwalPresensi || {
       jamMasuk: '07:00',
       jamToleransi: '07:15',
-      jamPulang: '14:30',
+      jamPulang: '16:00',
       hariKerja: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'],
       autoSwitchScanMode: true
     }
   );
+
+  // Selection state for bulk actions
+  const [selectedGuruIds, setSelectedGuruIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (schoolSettings?.jadwalPresensi) {
@@ -133,6 +205,104 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
       }
     }
   }, [schoolSettings?.jadwalPresensi, localJadwal]);
+
+  // GPS Geotagging State & Integration
+  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<'idle' | 'fetching' | 'connected' | 'error'>('idle');
+  const [gpsAddress, setGpsAddress] = useState<string>('Mencari Lokasi GPS...');
+
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setGpsStatus('error');
+      setGpsAddress('Geolocation tidak didukung');
+      return;
+    }
+
+    setGpsStatus('fetching');
+    
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const accuracy = position.coords.accuracy;
+        setGpsCoords({ lat, lng, accuracy });
+        setGpsStatus('connected');
+        const friendlyName = getFriendlyLocationName(lat, lng);
+        setGpsAddress(`${friendlyName} (Akurasi ±${Math.round(accuracy)}m)`);
+      },
+      (error) => {
+        let errorMsg = 'GPS Offline';
+        let detailMsg = 'Silakan periksa pengaturan GPS Anda.';
+        
+        switch (error.code) {
+          case 1: // PERMISSION_DENIED
+            errorMsg = 'Izin Lokasi Ditolak';
+            detailMsg = 'Silakan izinkan akses lokasi di browser. ';
+            if (window.self !== window.top) {
+              detailMsg += 'Klik ikon "Buka di Tab Baru" di pojok kanan atas jika izin tidak muncul.';
+            }
+            break;
+          case 2: // POSITION_UNAVAILABLE
+            errorMsg = 'Lokasi Tidak Terdeteksi';
+            detailMsg = 'Pastikan GPS perangkat Anda aktif.';
+            break;
+          case 3: // TIMEOUT
+            errorMsg = 'Waktu Tunggu GPS Habis';
+            detailMsg = 'Mencoba mendapatkan lokasi kembali...';
+            break;
+          default:
+            errorMsg = 'Gagal Mengakses GPS';
+        }
+        
+        console.error(`GPS Error [${error.code}]:`, errorMsg);
+        
+        setGpsStatus('error');
+        setGpsAddress(`${errorMsg} - ${detailMsg}`);
+
+        // Set fallback coordinates if none exist
+        if (!gpsCoords) {
+          setGpsCoords({ lat: -6.2415, lng: 106.8045, accuracy: 100 });
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  const fetchGpsLocation = () => {
+    // Manual refresh if needed, though watchPosition should handle it
+    setGpsStatus('fetching');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const accuracy = position.coords.accuracy;
+        setGpsCoords({ lat, lng, accuracy });
+        setGpsStatus('connected');
+        const friendlyName = getFriendlyLocationName(lat, lng);
+        setGpsAddress(`${friendlyName} (Akurasi ±${Math.round(accuracy)}m)`);
+        showToast(`GPS Diperbarui: ${friendlyName}`, 'success');
+      },
+      (error) => {
+        let errorMsg = 'GPS Error';
+        let detailMsg = 'Pastikan GPS aktif.';
+        switch (error.code) {
+          case 1: 
+            errorMsg = 'Izin Lokasi Ditolak'; 
+            detailMsg = 'Buka di tab baru jika izin tidak muncul.';
+            break;
+          case 2: errorMsg = 'Lokasi Tidak Terdeteksi'; break;
+          case 3: errorMsg = 'Waktu Tunggu Habis'; break;
+          default: errorMsg = 'Gagal Mengakses GPS';
+        }
+        showToast(`Gagal: ${errorMsg}. ${detailMsg}`, 'error');
+        setGpsStatus('error');
+        setGpsAddress(`${errorMsg} - ${detailMsg}`);
+      },
+      { enableHighAccuracy: true, timeout: 5000 }
+    );
+  };
 
   // Helper to calculate status attendance label (Tepat Waktu, Terlambat, Pulang Cepat)
   const calculateAttendanceStatusLabel = (timeStr: string, mode: 'Masuk' | 'Pulang') => {
@@ -158,7 +328,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
         return { label: `Terlambat (${lateMins} Menit)`, isLate: true };
       }
     } else {
-      const [pH, pM] = (jadwal.jamPulang || '14:30').split(':').map(Number);
+      const [pH, pM] = (jadwal.jamPulang || '16:00').split(':').map(Number);
       const pulangSec = pH * 3600 + pM * 60;
 
       if (curTotalSec < pulangSec) {
@@ -174,9 +344,18 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   const [fonnteStatusInfo, setFonnteStatusInfo] = useState<FonnteDeviceStatus | null>(null);
   const [isCheckingToken, setIsCheckingToken] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
-  const [scanTargetType, setScanTargetType] = useState<'siswa' | 'guru'>('siswa');
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const [autoSimulate, setAutoSimulate] = useState<boolean>(false);
+  const [scanTargetType, setScanTargetType] = useState<'siswa' | 'guru' | 'staf'>('siswa');
   const [scanMode, setScanMode] = useState<'Masuk' | 'Pulang'>('Masuk');
   const [autoSendWA, setAutoSendWA] = useState<boolean>(true);
+
+  // Custom Toast State
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000);
+  };
 
   const [lastScannedResult, setLastScannedResult] = useState<{
     nama: string;
@@ -189,6 +368,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     tipeAbsensi?: 'Masuk' | 'Pulang';
     siswaObj?: Siswa;
     waSentStatus?: string;
+    isUnknown?: boolean;
   } | null>(null);
 
   const [scanHistory, setScanHistory] = useState<Array<{
@@ -200,7 +380,118 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     teleponWali?: string;
     namaWali?: string;
     siswaObj?: Siswa;
+    isUnknown?: boolean;
   }>>([]);
+
+  // --- Attendance WA Template Redaksi States & Helpers ---
+  const defaultAbsensiMasukText = `*PRESENSI SEKOLAH - NOTIFIKASI MASUK*\n\nYth. Bapak/Ibu Wali dari *{NAMA_SISWA}* (*Kelas {KELAS}*),\n\nKami menginformasikan bahwa siswa/i atas nama *{NAMA_SISWA}* telah *HADIR & MELAKUKAN PRESENSI MASUK* di sekolah pada:\n🗓 Tanggal: *{TANGGAL}*\n⏰ Jam Scan: *{JAM_SCAN} WIB*\n📍 Status: *{STATUS_KEHADIRAN}*\n\nTerima kasih atas perhatian dan kerja sama Bapak/Ibu Wali Murid.\n\n_{NAMA_SEKOLAH}_`;
+
+  const defaultAbsensiPulangText = `*PRESENSI SEKOLAH - NOTIFIKASI PULANG*\n\nYth. Bapak/Ibu Wali dari *{NAMA_SISWA}* (*Kelas {KELAS}*),\n\nKami menginformasikan bahwa siswa/i atas nama *{NAMA_SISWA}* telah *SELESAI KBM & PRESENSI PULANG* dari sekolah pada:\n🗓 Tanggal: *{TANGGAL}*\n⏰ Jam Scan: *{JAM_SCAN} WIB*\n📍 Status: *{STATUS_KEHADIRAN}*\n\nTerima kasih dan selamat beristirahat.\n\n_{NAMA_SEKOLAH}_`;
+
+  const [localTemplateAbsensiMasuk, setLocalTemplateAbsensiMasuk] = useState(schoolSettings?.fonnteConfig?.templateAbsensiMasuk || defaultAbsensiMasukText);
+  const [localTemplateAbsensiPulang, setLocalTemplateAbsensiPulang] = useState(schoolSettings?.fonnteConfig?.templateAbsensiPulang || defaultAbsensiPulangText);
+  const [activeRedaksiTab, setActiveRedaksiTab] = useState<'masuk' | 'pulang'>('masuk');
+  const [redaksiSaveSuccessMsg, setRedaksiSaveSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (schoolSettings?.fonnteConfig?.templateAbsensiMasuk) {
+      setLocalTemplateAbsensiMasuk(schoolSettings.fonnteConfig.templateAbsensiMasuk);
+    }
+    if (schoolSettings?.fonnteConfig?.templateAbsensiPulang) {
+      setLocalTemplateAbsensiPulang(schoolSettings.fonnteConfig.templateAbsensiPulang);
+    }
+  }, [schoolSettings]);
+
+  const formatWhatsAppMarkdown = (text: string) => {
+    let html = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+    // Asterisks for bold: *text* -> <strong class="font-extrabold text-slate-900">text</strong>
+    html = html.replace(/\*([^*]+)\*/g, '<strong class="font-extrabold text-slate-900">$1</strong>');
+    
+    // Underscores for italics: _text_ -> <em class="italic text-slate-600">text</em>
+    html = html.replace(/_([^_]+)_/g, '<em class="italic text-slate-600">$1</em>');
+
+    return html;
+  };
+
+  const parseWaTemplateAbsensi = (
+    template: string,
+    vars: {
+      NAMA_SISWA: string;
+      KELAS: string;
+      TANGGAL: string;
+      JAM_SCAN: string;
+      STATUS_KEHADIRAN: string;
+      NAMA_SEKOLAH: string;
+    }
+  ) => {
+    let result = template;
+    Object.entries(vars).forEach(([key, val]) => {
+      result = result.replace(new RegExp(`{${key}}`, 'gi'), val);
+    });
+    return result;
+  };
+
+  const handleSaveTemplates = () => {
+    if (!setSchoolSettings) {
+      alert("Fasilitas simpan pengaturan tidak tersedia!");
+      return;
+    }
+    setSchoolSettings(prev => ({
+      ...prev,
+      fonnteConfig: {
+        ...(prev.fonnteConfig || {
+          apiKey: prev.fonnteToken || '',
+          senderName: '',
+          enabled: true,
+          autoSendAbsensi: true,
+          autoSendKeuangan: true,
+          templateReminder: '',
+          templateReceipt: ''
+        }),
+        templateAbsensiMasuk: localTemplateAbsensiMasuk,
+        templateAbsensiPulang: localTemplateAbsensiPulang
+      }
+    }));
+    setRedaksiSaveSuccessMsg("Redaksi notifikasi WhatsApp Presensi berhasil disimpan!");
+    setTimeout(() => setRedaksiSaveSuccessMsg(null), 3000);
+  };
+
+  const handleResetTemplate = () => {
+    if (activeRedaksiTab === 'masuk') {
+      setLocalTemplateAbsensiMasuk(defaultAbsensiMasukText);
+    } else {
+      setLocalTemplateAbsensiPulang(defaultAbsensiPulangText);
+    }
+  };
+
+  const insertPlaceholder = (placeholder: string) => {
+    const elId = activeRedaksiTab === 'masuk' ? 'template_masuk_input' : 'template_pulang_input';
+    const textarea = document.getElementById(elId) as HTMLTextAreaElement;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = activeRedaksiTab === 'masuk' ? localTemplateAbsensiMasuk : localTemplateAbsensiPulang;
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+    const newText = before + placeholder + after;
+
+    if (activeRedaksiTab === 'masuk') {
+      setLocalTemplateAbsensiMasuk(newText);
+    } else {
+      setLocalTemplateAbsensiPulang(newText);
+    }
+
+    // Restore focus and cursor selection range
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + placeholder.length, start + placeholder.length);
+    }, 0);
+  };
 
   // Helper to send WhatsApp Notification using Fonnte API Token
   const sendWhatsAppNotif = async (siswa: Siswa, waktu: string, tipe: 'Masuk' | 'Pulang') => {
@@ -279,121 +570,345 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   };
 
   const handleExecuteScan = (codeToScan: string) => {
-    const code = codeToScan.trim();
-    if (!code) return;
+    let rawCode = codeToScan.trim();
+    if (!rawCode) return;
+
+    // Smart Parsing: extract ID from complex strings (e.g. "Nama: Giar | ID: gur-123")
+    let code = rawCode;
+    if (rawCode.includes('ID:')) {
+      const parts = rawCode.split('ID:');
+      if (parts.length > 1) {
+        code = parts[1].split('|')[0].trim();
+      }
+    } else if (rawCode.includes('|')) {
+      const parts = rawCode.split('|');
+      // Try to find part with SIS-, GUR-, or STF- prefix
+      const prefixedPart = parts.find(p => {
+        const up = p.trim().toUpperCase();
+        return up.startsWith('SIS-') || up.startsWith('GUR-') || up.startsWith('STF-');
+      });
+      if (prefixedPart) {
+        code = prefixedPart.trim();
+      }
+    }
+
+    // Detect prefix and automatically switch scanTargetType to ensure flawless mapping
+    let currentTargetType = scanTargetType;
+    const upperCode = code.toUpperCase();
+    
+    if (upperCode.startsWith('SIS-')) {
+      currentTargetType = 'siswa';
+      setScanTargetType('siswa');
+    } else if (upperCode.startsWith('GUR-')) {
+      currentTargetType = 'guru';
+      setScanTargetType('guru');
+    } else if (upperCode.startsWith('STF-')) {
+      currentTargetType = 'staf';
+      setScanTargetType('staf');
+    }
 
     playBeepSound();
     const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const today = new Date().toISOString().split('T')[0];
 
-    if (scanTargetType === 'siswa') {
-      // Find student by barcode or NISN or NIS
-      const foundSiswa = siswaList.find(s => 
-        (s.kodeBarcode && s.kodeBarcode.toLowerCase() === code.toLowerCase()) ||
-        s.nisn === code ||
-        s.nis === code ||
-        s.nama.toLowerCase().includes(code.toLowerCase())
-      );
+    // Cross-check: find in siswa, guru, or staf list to prevent tab mismatch issues
+    const foundSiswa = siswaList.find(s => 
+      (s.kodeBarcode && s.kodeBarcode.toLowerCase() === code.toLowerCase()) ||
+      s.nisn === code ||
+      s.nis === code ||
+      `SIS-${s.nisn}`.toLowerCase() === code.toLowerCase() ||
+      `SIS-${s.nis}`.toLowerCase() === code.toLowerCase() ||
+      s.nama.toLowerCase() === code.toLowerCase()
+    );
 
-      if (foundSiswa) {
-        const statusInfo = calculateAttendanceStatusLabel(timeNow, scanMode);
+    const foundGuru = guruList.find(g => 
+      (g.kodeBarcode && g.kodeBarcode.toLowerCase() === code.toLowerCase()) ||
+      (g.nik && g.nik === code) ||
+      (g.nik && `GUR-${g.nik}`.toLowerCase() === code.toLowerCase()) ||
+      g.nip === code ||
+      `GUR-${g.nip}`.toLowerCase() === code.toLowerCase() ||
+      g.id === code ||
+      `GUR-${g.id}`.toLowerCase() === code.toLowerCase() ||
+      g.nama.toLowerCase() === code.toLowerCase()
+    );
 
-        setAbsensiHarian(prev => {
-          const existing = prev.find(a => a.siswaId === foundSiswa.id && a.tanggal === today);
-          const filtered = prev.filter(a => !(a.siswaId === foundSiswa.id && a.tanggal === today));
-          return [
-            {
-              id: `abh-${foundSiswa.id}-${today}`,
-              siswaId: foundSiswa.id,
-              tanggal: today,
-              status: statusInfo.isLate ? 'Terlambat' : 'Hadir',
-              jamScan: timeNow,
-              jamMasuk: scanMode === 'Masuk' ? timeNow : (existing?.jamMasuk || timeNow),
-              jamPulang: scanMode === 'Pulang' ? timeNow : existing?.jamPulang,
-              tipeScan: scanMode,
-              metodeScan: 'Barcode / QR'
-            },
-            ...filtered
-          ];
-        });
+    const foundStaf = stafList.find(s => 
+      (s.kodeBarcode && s.kodeBarcode.toLowerCase() === code.toLowerCase()) ||
+      (s.nik && s.nik === code) ||
+      (s.nik && `STF-${s.nik}`.toLowerCase() === code.toLowerCase()) ||
+      s.id === code ||
+      `STF-${s.id}`.toLowerCase() === code.toLowerCase() ||
+      s.nama.toLowerCase() === code.toLowerCase()
+    );
 
-        const res = {
-          nama: foundSiswa.nama,
-          role: `Siswa Kelas ${foundSiswa.kelas}`,
-          kode: foundSiswa.kodeBarcode || `SIS-${foundSiswa.nisn}`,
-          waktu: timeNow,
-          detail: `NISN: ${foundSiswa.nisn} | Status: ${statusInfo.label} | Wali: ${foundSiswa.namaWali || '-'} (${foundSiswa.teleponWali || '-'})`,
-          teleponWali: foundSiswa.teleponWali,
-          namaWali: foundSiswa.namaWali,
-          tipeAbsensi: scanMode,
-          siswaObj: foundSiswa
-        };
-        setLastScannedResult(res);
-        setScanHistory(prev => [res, ...prev]);
+    // Process based on who was actually found (prioritizing the detected currentTargetType)
+    let processed = false;
 
-        if (autoSendWA && foundSiswa.teleponWali) {
-          sendWhatsAppNotif(foundSiswa, timeNow, scanMode);
-        }
-      } else {
-        alert(`Barcode / ID "${code}" tidak ditemukan pada Database Siswa!`);
-      }
+    if (foundSiswa && (currentTargetType === 'siswa' || (!foundGuru && !foundStaf))) {
+      setScanTargetType('siswa');
+      processSiswaScan(foundSiswa, timeNow, today);
+      processed = true;
+    } else if (foundGuru && (currentTargetType === 'guru' || (!foundSiswa && !foundStaf))) {
+      setScanTargetType('guru');
+      processGuruScan(foundGuru, timeNow, today);
+      processed = true;
+    } else if (foundStaf && (currentTargetType === 'staf' || (!foundSiswa && !foundGuru))) {
+      setScanTargetType('staf');
+      processStafScan(foundStaf, timeNow, today);
+      processed = true;
     } else {
-      // Find guru by barcode or NIP
-      const foundGuru = guruList.find(g => 
-        (g.kodeBarcode && g.kodeBarcode.toLowerCase() === code.toLowerCase()) ||
-        g.nip === code ||
-        g.nama.toLowerCase().includes(code.toLowerCase())
-      );
-
-      if (foundGuru) {
-        setAbsensiGuruList(prev => {
-          const existingIndex = prev.findIndex(g => g.guruId === foundGuru.id && g.tanggal === today);
-          if (existingIndex >= 0) {
-            const updated = [...prev];
-            if (scanMode === 'Pulang') {
-              updated[existingIndex].jamPulang = timeNow;
-              updated[existingIndex].metodeOut = 'Barcode / QR';
-            } else {
-              updated[existingIndex].jamMasuk = timeNow;
-              updated[existingIndex].status = 'Hadir';
-              updated[existingIndex].metodeIn = 'Barcode / QR';
-            }
-            return updated;
-          } else {
-            return [
-              {
-                id: `abg-${Date.now()}`,
-                guruId: foundGuru.id,
-                guruNama: foundGuru.nama,
-                tanggal: today,
-                jamMasuk: scanMode === 'Masuk' ? timeNow : undefined,
-                jamPulang: scanMode === 'Pulang' ? timeNow : undefined,
-                status: 'Hadir',
-                statusIzin: 'Disetujui',
-                lokasiIn: 'Mesin Scan Barcode Utama',
-                metodeIn: 'Barcode / QR'
-              },
-              ...prev
-            ];
-          }
-        });
-
-        const res = {
-          nama: foundGuru.nama,
-          role: `Guru ${foundGuru.mataPelajaran}`,
-          kode: foundGuru.kodeBarcode || `GUR-${foundGuru.nip}`,
-          waktu: timeNow,
-          detail: `NIP: ${foundGuru.nip} | Status: ${foundGuru.status}`
-        };
-        setLastScannedResult(res);
-        setScanHistory(prev => [res, ...prev]);
-      } else {
-        alert(`Barcode / NIP "${code}" tidak ditemukan pada Database Guru!`);
+      // Final specific check if not processed yet
+      if (foundSiswa) {
+        setScanTargetType('siswa');
+        processSiswaScan(foundSiswa, timeNow, today);
+        processed = true;
+      } else if (foundGuru) {
+        setScanTargetType('guru');
+        processGuruScan(foundGuru, timeNow, today);
+        processed = true;
+      } else if (foundStaf) {
+        setScanTargetType('staf');
+        processStafScan(foundStaf, timeNow, today);
+        processed = true;
       }
     }
 
+    // Fallback: If code is not found in any database list, STILL display it in "Hasil Scan Terakhir" as requested!
+    if (!processed) {
+      const fallbackResult = {
+        nama: `ID / Kartu: ${rawCode.length > 30 ? rawCode.substring(0, 30) + '...' : rawCode}`,
+        role: `KARTU TIDAK DIKENAL`,
+        kode: code,
+        waktu: timeNow,
+        detail: `Pemindaian sukses, namun kode "${code}" belum terdaftar di Database ${upperCode.startsWith('GUR-') ? 'GURU' : upperCode.startsWith('STF-') ? 'STAF' : 'SISWA'}.`,
+        tipeAbsensi: scanMode,
+        isUnknown: true
+      };
+      setLastScannedResult(fallbackResult);
+      setScanHistory(prev => [fallbackResult, ...prev]);
+      showToast(`ID / Barcode "${code}" tidak dikenal!`, 'error');
+    }
+
     setBarcodeInput('');
+    setTimeout(() => {
+      barcodeInputRef.current?.focus();
+    }, 50);
   };
+
+  // Logic to get separate status for Masuk and Pulang
+  const getDualStatus = (a: AbsensiGuru) => {
+    const statusMasuk = { label: '-', color: 'text-slate-400' };
+    const statusPulang = { label: '-', color: 'text-slate-400' };
+
+    if (a.status !== 'Hadir') {
+      const color = a.status === 'Izin' ? 'bg-amber-100 text-amber-800' : a.status === 'Sakit' ? 'bg-rose-100 text-rose-800' : 'bg-blue-100 text-blue-800';
+      return { 
+        masuk: { label: a.status, color }, 
+        pulang: { label: a.status, color } 
+      };
+    }
+
+    if (a.jamMasuk) {
+      const res = calculateAttendanceStatusLabel(a.jamMasuk, 'Masuk');
+      statusMasuk.label = res.label;
+      statusMasuk.color = res.isLate ? 'bg-rose-100 text-rose-800' : res.label.includes('Toleransi') ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800';
+    } else {
+      statusMasuk.label = 'Tanpa Scan';
+      statusMasuk.color = 'bg-slate-100 text-slate-500';
+    }
+
+    if (a.jamKeluar) {
+      const res = calculateAttendanceStatusLabel(a.jamKeluar, 'Pulang');
+      statusPulang.label = res.label;
+      statusPulang.color = res.label.includes('Pulang Cepat') ? 'bg-orange-100 text-orange-800' : 'bg-emerald-100 text-emerald-800';
+    } else {
+      statusPulang.label = 'Tanpa Scan';
+      statusPulang.color = 'bg-slate-100 text-slate-500';
+    }
+
+    return { masuk: statusMasuk, pulang: statusPulang };
+  };
+
+  // Helper scan processors to keep code modular and readable
+  const processSiswaScan = (siswa: Siswa, timeNow: string, today: string) => {
+    const statusInfo = calculateAttendanceStatusLabel(timeNow, scanMode);
+    const locationStr = gpsCoords ? getFriendlyLocationName(gpsCoords.lat, gpsCoords.lng) : 'Mesin Scan Barcode Utama';
+
+    setAbsensiHarian(prev => {
+      const existing = prev.find(a => a.siswaId === siswa.id && a.tanggal === today);
+      const filtered = prev.filter(a => !(a.siswaId === siswa.id && a.tanggal === today));
+      return [
+        {
+          id: `abh-${siswa.id}-${today}`,
+          siswaId: siswa.id,
+          tanggal: today,
+          status: statusInfo.isLate ? 'Terlambat' : 'Hadir',
+          jamScan: timeNow,
+          jamMasuk: scanMode === 'Masuk' ? timeNow : (existing?.jamMasuk || timeNow),
+          jamPulang: scanMode === 'Pulang' ? timeNow : existing?.jamPulang,
+          tipeScan: scanMode,
+          metodeScan: 'Barcode / QR',
+          lokasiScan: locationStr,
+          koordinatGps: gpsCoords ? `${gpsCoords.lat}, ${gpsCoords.lng}` : undefined
+        },
+        ...filtered
+      ];
+    });
+
+    const res = {
+      nama: siswa.nama,
+      role: `Siswa Kelas ${siswa.kelas}`,
+      kode: siswa.kodeBarcode || `SIS-${siswa.nisn}`,
+      waktu: timeNow,
+      detail: `NISN: ${siswa.nisn} | Status: ${statusInfo.label} | Lokasi: ${gpsCoords ? getFriendlyLocationName(gpsCoords.lat, gpsCoords.lng) : 'Terhubung'}`,
+      teleponWali: siswa.teleponWali,
+      namaWali: siswa.namaWali,
+      tipeAbsensi: scanMode,
+      siswaObj: siswa
+    };
+    setLastScannedResult(res);
+    setScanHistory(prev => [res, ...prev]);
+    showToast(`Presensi ${scanMode} Berhasil: ${siswa.nama} (${statusInfo.label})`, 'success');
+
+    if (autoSendWA && siswa.teleponWali) {
+      sendWhatsAppNotif(siswa, timeNow, scanMode);
+    }
+  };
+
+  const processGuruScan = (guru: Guru, timeNow: string, today: string) => {
+    const locationStr = gpsCoords ? getFriendlyLocationName(gpsCoords.lat, gpsCoords.lng) : 'Mesin Scan Barcode Utama';
+    setAbsensiGuruList(prev => {
+      const existingIndex = prev.findIndex(g => g.guruId === guru.id && g.tanggal === today);
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        if (scanMode === 'Pulang') {
+          updated[existingIndex].jamKeluar = timeNow;
+          updated[existingIndex].metodeOut = 'Barcode / QR';
+          updated[existingIndex].lokasiOut = locationStr;
+        } else {
+          updated[existingIndex].jamMasuk = timeNow;
+          updated[existingIndex].status = 'Hadir';
+          updated[existingIndex].statusIzin = 'Disetujui';
+          updated[existingIndex].metodeIn = 'Barcode / QR';
+          updated[existingIndex].lokasiIn = locationStr;
+        }
+        updated[existingIndex].koordinatGps = gpsCoords ? `${gpsCoords.lat}, ${gpsCoords.lng}` : undefined;
+        return updated;
+      } else {
+        const record: any = {
+          id: `abg-${Date.now()}`,
+          guruId: guru.id,
+          guruNama: guru.nama,
+          tanggal: today,
+          status: 'Hadir',
+          statusIzin: 'Disetujui',
+          lokasiIn: locationStr,
+          metodeIn: 'Barcode / QR',
+          koordinatGps: gpsCoords ? `${gpsCoords.lat}, ${gpsCoords.lng}` : undefined
+        };
+        if (scanMode === 'Masuk') {
+          record.jamMasuk = timeNow;
+        } else if (scanMode === 'Pulang') {
+          record.jamKeluar = timeNow;
+          record.lokasiOut = locationStr;
+        }
+        return [record, ...prev];
+      }
+    });
+
+    const res = {
+      nama: guru.nama,
+      role: `Guru ${guru.mataPelajaran}`,
+      kode: guru.kodeBarcode || `GUR-${guru.nip}`,
+      waktu: timeNow,
+      detail: `NIP: ${guru.nip} | Status: ${guru.status} | Lokasi: ${gpsCoords ? getFriendlyLocationName(gpsCoords.lat, gpsCoords.lng) : 'Terhubung'}`,
+      tipeAbsensi: scanMode
+    };
+    setLastScannedResult(res);
+    setScanHistory(prev => [res, ...prev]);
+    showToast(`Presensi ${scanMode} Guru Berhasil: ${guru.nama}`, 'success');
+  };
+
+  const processStafScan = (staf: Staf, timeNow: string, today: string) => {
+    const locationStr = gpsCoords ? getFriendlyLocationName(gpsCoords.lat, gpsCoords.lng) : 'Mesin Scan Barcode Utama';
+    setAbsensiGuruList(prev => {
+      const existingIndex = prev.findIndex(g => g.guruId === staf.id && g.tanggal === today);
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        if (scanMode === 'Pulang') {
+          updated[existingIndex].jamKeluar = timeNow;
+          updated[existingIndex].metodeOut = 'Barcode / QR';
+          updated[existingIndex].lokasiOut = locationStr;
+        } else {
+          updated[existingIndex].jamMasuk = timeNow;
+          updated[existingIndex].status = 'Hadir';
+          updated[existingIndex].statusIzin = 'Disetujui';
+          updated[existingIndex].metodeIn = 'Barcode / QR';
+          updated[existingIndex].lokasiIn = locationStr;
+        }
+        updated[existingIndex].koordinatGps = gpsCoords ? `${gpsCoords.lat}, ${gpsCoords.lng}` : undefined;
+        return updated;
+      } else {
+        const record: any = {
+          id: `abg-${Date.now()}`,
+          guruId: staf.id,
+          guruNama: staf.nama,
+          tanggal: today,
+          status: 'Hadir',
+          statusIzin: 'Disetujui',
+          lokasiIn: locationStr,
+          metodeIn: 'Barcode / QR',
+          koordinatGps: gpsCoords ? `${gpsCoords.lat}, ${gpsCoords.lng}` : undefined
+        };
+        if (scanMode === 'Masuk') {
+          record.jamMasuk = timeNow;
+        } else if (scanMode === 'Pulang') {
+          record.jamKeluar = timeNow;
+          record.lokasiOut = locationStr;
+        }
+        return [record, ...prev];
+      }
+    });
+
+    const res = {
+      nama: staf.nama,
+      role: `Staf / Tata Usaha (${staf.bagian})`,
+      kode: staf.nik || staf.id,
+      waktu: timeNow,
+      detail: `NIK: ${staf.nik} | Bagian: ${staf.bagian} | Lokasi: ${gpsCoords ? getFriendlyLocationName(gpsCoords.lat, gpsCoords.lng) : 'Terhubung'}`,
+      tipeAbsensi: scanMode
+    };
+    setLastScannedResult(res);
+    setScanHistory(prev => [res, ...prev]);
+    showToast(`Presensi ${scanMode} Staf Berhasil: ${staf.nama}`, 'success');
+  };
+
+  // Automated Simulation Effect for Automatic Scanning
+  useEffect(() => {
+    if (!autoSimulate) return;
+
+    const interval = setInterval(() => {
+      const today = new Date().toISOString().split('T')[0];
+      if (scanTargetType === 'siswa') {
+        if (siswaList.length === 0) return;
+        const randomIdx = Math.floor(Math.random() * siswaList.length);
+        const randomSiswa = siswaList[randomIdx];
+        handleExecuteScan(randomSiswa.kodeBarcode || `SIS-${randomSiswa.nisn}`);
+      } else if (scanTargetType === 'guru') {
+        if (guruList.length === 0) return;
+        const randomIdx = Math.floor(Math.random() * guruList.length);
+        const randomGuru = guruList[randomIdx];
+        handleExecuteScan(randomGuru.kodeBarcode || `GUR-${randomGuru.nip}`);
+      } else {
+        if (stafList.length === 0) return;
+        const randomIdx = Math.floor(Math.random() * stafList.length);
+        const randomStaf = stafList[randomIdx];
+        handleExecuteScan(randomStaf.nik || randomStaf.id);
+      }
+    }, 5000); // scan automatically every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [autoSimulate, scanTargetType, siswaList, guruList, stafList, scanMode]);
 
   // Dynamic list of available classes from rombelList and siswaList
   const availableKelasOptions = useMemo(() => {
@@ -401,19 +916,19 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     rombelList.forEach(r => { if (r.namaRombel && r.namaRombel.trim()) set.add(r.namaRombel.trim()); });
     siswaList.forEach(s => { if (s.kelas && s.kelas.trim()) set.add(s.kelas.trim()); });
     if (set.size === 0) {
-      ['X-IPA-1', 'XI-IPA-2', 'XI-IPS-1', 'XII-IPA-1'].forEach(k => set.add(k));
+      ['VIII - Al Biruni', 'VIII - Al Farabi', 'VIII - Al Khawarizmi', 'VIII - Al Kindi'].forEach(k => set.add(k));
     }
     return Array.from(set);
   }, [rombelList, siswaList]);
 
   // --- Subtab 1: Absensi Siswa Harian State ---
   const todayDateStr = new Date().toISOString().split('T')[0];
-  const [selectedKelas, setSelectedKelas] = useState(() => availableKelasOptions[0] || 'X-IPA-1');
+  const [selectedKelas, setSelectedKelas] = useState(() => availableKelasOptions[0] || 'VIII - Al Biruni');
   const [selectedTanggal, setSelectedTanggal] = useState(todayDateStr);
 
   // Auto ensure selectedKelas is valid if available options change
   useEffect(() => {
-    if (availableKelasOptions.length > 0 && !availableKelasOptions.includes(selectedKelas)) {
+    if (availableKelasOptions.length > 0 && (!selectedKelas || selectedKelas === 'X-IPA-1' || !availableKelasOptions.includes(selectedKelas))) {
       setSelectedKelas(availableKelasOptions[0]);
     }
   }, [availableKelasOptions, selectedKelas]);
@@ -467,126 +982,6 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
-  // --- Subtab 2: Absensi Kelas Per Mapel State ---
-  const [mapelKelas, setMapelKelas] = useState(() => availableKelasOptions[0] || 'X-IPA-1');
-  const [mapelNama, setMapelNama] = useState('Fisika & Informatika');
-  const [mapelGuru, setMapelGuru] = useState('Siti Rahmawati, S.Si., M.Sc.');
-  const [mapelJam, setMapelJam] = useState('1 - 2 (07:00 - 08:30)');
-  const [mapelMateri, setMapelMateri] = useState('Eksperimen Praktikum Vektor & Simulasi Komputer');
-
-  // Auto ensure mapelKelas is valid if available options change
-  useEffect(() => {
-    if (availableKelasOptions.length > 0 && !availableKelasOptions.includes(mapelKelas)) {
-      setMapelKelas(availableKelasOptions[0]);
-    }
-  }, [availableKelasOptions, mapelKelas]);
-
-  // Memoized student list for Subtab 2 (Absensi Mapel)
-  const classSiswaMapelList = useMemo(() => {
-    if (!mapelKelas) return [];
-    const target = mapelKelas.trim().toLowerCase();
-    return siswaList.filter(s => s.kelas && s.kelas.trim().toLowerCase() === target);
-  }, [siswaList, mapelKelas]);
-  
-  const [localMapelState, setLocalMapelState] = useState<Record<string, StatusAbsensi>>({});
-  const [savingToDrive, setSavingToDrive] = useState(false);
-  const [spreadsheetUrl, setSpreadsheetUrl] = useState<string | null>(null);
-
-  // Dynamic selection lists
-  const subjectsOptions = Array.from(new Set([
-    ...mapelList.map(m => m.namaMapel),
-    'Fisika & Informatika',
-    'Matematika Tingkat Lanjut',
-    'Bahasa Indonesia',
-    'Bahasa Inggris',
-    'Pendidikan Pancasila',
-    'IPA Terpadu',
-    'IPS Terpadu',
-    'Seni & Musik',
-    'PJOK'
-  ]));
-
-  const teachersOptions = Array.from(new Set([
-    ...guruList.map(g => g.nama),
-    'Siti Rahmawati, S.Si., M.Sc.',
-    'Drs. Hendra Kusuma, M.Pd.',
-    'Budi Santoso, S.Pd.',
-    'Rina Wijaya, M.Pd.',
-    'Achmad Fauzi, S.Kom.'
-  ]));
-
-  const hoursOptions = [
-    '1 - 2 (07:00 - 08:30)',
-    '3 - 4 (08:30 - 10:00)',
-    '5 - 6 (10:15 - 11:45)',
-    '7 - 8 (12:30 - 14:00)',
-    '9 - 10 (14:00 - 15:30)'
-  ];
-
-  // Auto fill teacher based on selected subject from mapelList
-  useEffect(() => {
-    if (mapelList && mapelList.length > 0) {
-      const matchingMapel = mapelList.find(m => m.namaMapel === mapelNama);
-      if (matchingMapel) {
-        setMapelGuru(matchingMapel.guruPengampuNama);
-      }
-    }
-  }, [mapelNama, mapelList]);
-
-  // Reset local mapel state when class changes to clear previous selections
-  useEffect(() => {
-    setLocalMapelState({});
-  }, [mapelKelas]);
-
-  const handleSaveAbsensiMapel = async () => {
-    // Fill in default 'Hadir' status for all students in the class who don't have a status yet
-    const finalKehadiranMap: Record<string, StatusAbsensi> = {};
-    classSiswaMapelList.forEach(s => {
-      finalKehadiranMap[s.id] = localMapelState[s.id] || 'Hadir';
-    });
-
-    const newEntry: AbsensiSiswaKelas = {
-      id: `abk-${Date.now()}`,
-      kelas: mapelKelas,
-      mataPelajaran: mapelNama,
-      guruNama: mapelGuru,
-      tanggal: selectedTanggal,
-      jamKe: mapelJam,
-      materi: mapelMateri,
-      kehadiranMap: finalKehadiranMap,
-      catatan: 'Absensi jurnal mengajar berhasil disimpan.'
-    };
-    
-    setAbsensiKelasList(prev => [newEntry, ...prev]);
-
-    setSavingToDrive(true);
-    try {
-      const res = await exportAllToGoogleSheets(userGoogleToken, {
-        siswaList,
-        guruList,
-        stafList,
-        rombelList,
-        mapelList,
-        absensiHarian,
-        absensiKelasList: [newEntry, ...absensiKelasList]
-      });
-
-      if (res.success) {
-        alert(`Jurnal & Absensi Kelas Berhasil Disimpan!\n\n${res.message}`);
-        if (res.url) {
-          setSpreadsheetUrl(res.url);
-        }
-      } else {
-        alert(`Jurnal & Absensi Kelas disimpan secara lokal, namun gagal sync ke Google Sheets: ${res.message}`);
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert('Jurnal & Absensi Kelas berhasil disimpan secara lokal.');
-    } finally {
-      setSavingToDrive(false);
-    }
-  };
-
   // --- Subtab 3: Absensi Guru Clock In / Clock Out & Izin ---
   const [guruClockStatus, setGuruClockStatus] = useState<string | null>(null);
   const [showFormIzin, setShowFormIzin] = useState(false);
@@ -596,6 +991,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   const handleClockIn = (guruId: string) => {
     const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     const today = new Date().toISOString().split('T')[0];
+    const locationStr = gpsCoords ? getFriendlyLocationName(gpsCoords.lat, gpsCoords.lng) : 'Aplikasi Presensi Mandiri';
 
     setAbsensiGuruList(prev => {
       const existingIndex = prev.findIndex(g => g.guruId === guruId && g.tanggal === today);
@@ -603,6 +999,10 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
         const updated = [...prev];
         updated[existingIndex].jamMasuk = timeNow;
         updated[existingIndex].status = 'Hadir';
+        updated[existingIndex].statusIzin = 'Disetujui';
+        updated[existingIndex].metodeIn = 'Aplikasi Web';
+        updated[existingIndex].lokasiIn = locationStr;
+        updated[existingIndex].koordinatGps = gpsCoords ? `${gpsCoords.lat}, ${gpsCoords.lng}` : undefined;
         return updated;
       } else {
         const guru = guruList.find(g => g.id === guruId);
@@ -615,7 +1015,9 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
             jamMasuk: timeNow,
             status: 'Hadir',
             statusIzin: 'Disetujui',
-            lokasiIn: 'Gedung Utama Sekolah'
+            metodeIn: 'Aplikasi Web',
+            lokasiIn: locationStr,
+            koordinatGps: gpsCoords ? `${gpsCoords.lat}, ${gpsCoords.lng}` : undefined
           },
           ...prev
         ];
@@ -629,12 +1031,16 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   const handleClockOut = (guruId: string) => {
     const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     const today = new Date().toISOString().split('T')[0];
+    const locationStr = gpsCoords ? getFriendlyLocationName(gpsCoords.lat, gpsCoords.lng) : 'Aplikasi Presensi Mandiri';
 
     setAbsensiGuruList(prev => {
       const existingIndex = prev.findIndex(g => g.guruId === guruId && g.tanggal === today);
       if (existingIndex >= 0) {
         const updated = [...prev];
         updated[existingIndex].jamKeluar = timeNow;
+        updated[existingIndex].metodeOut = 'Aplikasi Web';
+        updated[existingIndex].lokasiOut = locationStr;
+        updated[existingIndex].koordinatGps = gpsCoords ? `${gpsCoords.lat}, ${gpsCoords.lng}` : undefined;
         return updated;
       }
       return prev;
@@ -669,8 +1075,52 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     setAbsensiGuruList(prev => prev.map(a => a.id === id ? { ...a, statusIzin: newStatus } : a));
   };
 
+  const handleDeleteGuruRecords = (ids: string[], forceConfirm: boolean = false) => {
+    // Show confirmation if forced or if deleting multiple items
+    if (forceConfirm || ids.length > 1) {
+      if (!confirm(`Yakin ingin menghapus ${ids.length} data terpilih?`)) return;
+    }
+    
+    // Perform deletion
+    setAbsensiGuruList(prev => prev.filter(a => !ids.includes(a.id)));
+    
+    // Clear selection
+    setSelectedGuruIds(prev => prev.filter(id => !ids.includes(id)));
+    
+    // Feedback
+    showToast(`${ids.length} data berhasil dihapus`, 'success');
+  };
+
+  const toggleSelectGuru = (id: string) => {
+    setSelectedGuruIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllGuru = () => {
+    if (selectedGuruIds.length === absensiGuruList.length) {
+      setSelectedGuruIds([]);
+    } else {
+      setSelectedGuruIds(absensiGuruList.map(a => a.id));
+    }
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      
+      {/* Floating Toast Notification */}
+      {toast && (
+        <div className="fixed top-6 right-6 z-50 animate-fade-in-down max-w-sm">
+          <div className={`px-4 py-3 rounded-xl shadow-2xl border text-xs font-bold flex items-center gap-2.5 text-white ${
+            toast.type === 'success' ? 'bg-emerald-600 border-emerald-500 shadow-emerald-950/50' :
+            toast.type === 'error' ? 'bg-red-600 border-red-500 shadow-red-950/50' :
+            'bg-blue-600 border-blue-500 shadow-blue-950/50'
+          }`}>
+            <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
       
       {/* Top Navigation */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#121212] p-5 rounded-xl border border-slate-800 shadow-sm">
@@ -689,8 +1139,9 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
           <span className="px-3 py-1 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-sm">
             {subTab === 'scan_barcode' && <><QrCode className="w-3.5 h-3.5" /> Scan Barcode / QR</>}
             {subTab === 'harian_siswa' && <><CalendarCheck className="w-3.5 h-3.5" /> Absensi Harian Siswa</>}
-            {subTab === 'kelas_mapel' && <><BookOpen className="w-3.5 h-3.5" /> Absensi Kelas Per Mapel</>}
+            {subTab === 'jurnal_guru' && <><BookOpen className="w-3.5 h-3.5" /> Jurnal Guru</>}
             {subTab === 'absensi_guru' && <><UserCheck className="w-3.5 h-3.5" /> Presensi Guru</>}
+            {subTab === 'redaksi' && <><MessageSquare className="w-3.5 h-3.5" /> Redaksi Notifikasi WA</>}
           </span>
         </div>
       </div>
@@ -738,6 +1189,44 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
               </div>
             </div>
 
+            {/* GPS Geotagging Status & Refresh Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-blue-950/20 p-3 rounded-xl border border-blue-500/30 text-xs">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-2.5 h-2.5 rounded-full ${gpsStatus === 'connected' ? 'bg-emerald-500 animate-pulse' : gpsStatus === 'fetching' ? 'bg-amber-500 animate-ping' : 'bg-red-500'}`} />
+                <MapPin className="w-4 h-4 text-blue-400" />
+                <div>
+                  <span className="font-bold text-blue-200">GPS Geotagging:</span>{' '}
+                  <span className="text-slate-300 font-mono text-[11px]">{gpsAddress}</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {gpsStatus === 'error' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGpsCoords({ lat: -6.2415, lng: 106.8045, accuracy: 5 });
+                      setGpsStatus('connected');
+                      setGpsAddress('Sekolah Islam Modern Al Fakhir (Manual)');
+                      showToast('Menggunakan Lokasi Sekolah secara manual', 'success');
+                    }}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-sm"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    Paksa Lokasi Sekolah
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={fetchGpsLocation}
+                  disabled={gpsStatus === 'fetching'}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${gpsStatus === 'fetching' ? 'animate-spin' : ''}`} />
+                  <span>{gpsStatus === 'fetching' ? 'Mendapatkan GPS...' : 'Refresh GPS'}</span>
+                </button>
+              </div>
+            </div>
+
             {/* Target Selector & WA Config Bar */}
             <div className="flex flex-wrap items-center justify-between gap-3 bg-[#181818] p-3 rounded-xl border border-slate-800 text-xs">
               <div className="flex items-center gap-2">
@@ -761,6 +1250,15 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                       }`}
                     >
                       Guru
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScanTargetType('staf')}
+                      className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
+                        scanTargetType === 'staf' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Staf
                     </button>
                   </div>
                 ) : (
@@ -794,6 +1292,23 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                   </button>
                 </div>
               )}
+
+              {/* Simulation Mode Toggle Button */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAutoSimulate(prev => !prev)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border shadow-sm ${
+                    autoSimulate
+                      ? 'bg-amber-600 border-amber-500/50 text-white shadow-md shadow-amber-600/30'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                  title="Simulasikan pemindaian kartu secara otomatis setiap 5 detik"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${autoSimulate ? 'animate-spin text-amber-300' : 'text-amber-500'}`} />
+                  <span>{autoSimulate ? 'Simulasi Auto Scan Aktif (5s)' : 'Simulasi Auto Scan'}</span>
+                </button>
+              </div>
             </div>
 
             {/* Active Presensi Schedule Info Banner */}
@@ -833,7 +1348,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
             {/* Manual / Scanner Input Field */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-300 block">
-                Input Manual / Tempelkan Laser Barcode Scanner di Sini:
+                Input Manual {scanTargetType === 'siswa' ? 'NISN/NIS' : 'NIK'} / Scan Barcode:
               </label>
               <form
                 onSubmit={e => {
@@ -843,8 +1358,9 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                 className="flex gap-2"
               >
                 <input
+                  ref={barcodeInputRef}
                   type="text"
-                  placeholder={scanTargetType === 'siswa' ? 'Contoh: SIS-0081234561 atau NISN' : 'Contoh: GUR-198501152010011002 atau NIP'}
+                  placeholder={scanTargetType === 'siswa' ? 'Contoh: NISN / NIS' : 'Contoh: NIK (320xxxxxxxxxxxxx)'}
                   value={barcodeInput}
                   onChange={e => setBarcodeInput(e.target.value)}
                   autoFocus
@@ -859,36 +1375,6 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
               </form>
             </div>
 
-            {/* Quick Demo Pickers */}
-            <div className="pt-2 border-t border-slate-800">
-              <p className="text-[11px] font-bold text-slate-400 mb-2">Pilih Sampel Kartu ID untuk Tes Simulasi Scan Quick Barcode:</p>
-              <div className="flex flex-wrap gap-2">
-                {scanTargetType === 'siswa' ? (
-                  siswaList.slice(0, 4).map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => handleExecuteScan(s.kodeBarcode || `SIS-${s.nisn}`)}
-                      className="px-3 py-1.5 bg-[#181818] hover:bg-slate-800 border border-slate-800 hover:border-blue-500/40 rounded-lg text-left transition-all group"
-                    >
-                      <div className="text-[11px] font-bold text-white group-hover:text-blue-400">{s.nama}</div>
-                      <div className="text-[9px] font-mono text-slate-500">{s.kodeBarcode || `SIS-${s.nisn}`}</div>
-                    </button>
-                  ))
-                ) : (
-                  guruList.map(g => (
-                    <button
-                      key={g.id}
-                      onClick={() => handleExecuteScan(g.kodeBarcode || `GUR-${g.nip}`)}
-                      className="px-3 py-1.5 bg-[#181818] hover:bg-slate-800 border border-slate-800 hover:border-purple-500/40 rounded-lg text-left transition-all group"
-                    >
-                      <div className="text-[11px] font-bold text-white group-hover:text-purple-400">{g.nama}</div>
-                      <div className="text-[9px] font-mono text-slate-500">{g.kodeBarcode || `GUR-${g.nip}`}</div>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-
           </div>
 
           {/* Right Column: Scan Result Card & Log */}
@@ -900,30 +1386,56 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                 <span className="flex items-center gap-1.5">
                   <CheckCheck className="w-4 h-4 text-emerald-400" /> Hasil Scan Terakhir
                 </span>
-                {lastScannedResult?.tipeAbsensi && (
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
-                    lastScannedResult.tipeAbsensi === 'Masuk' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  }`}>
-                    {lastScannedResult.tipeAbsensi.toUpperCase()}
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {scanHistory.length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (confirm('Bersihkan semua riwayat scan?')) setScanHistory([]);
+                      }}
+                      className="text-[10px] text-rose-400 hover:text-rose-300 transition-colors flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3 h-3" /> Bersihkan
+                    </button>
+                  )}
+                  {lastScannedResult?.tipeAbsensi && (
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                      lastScannedResult.isUnknown
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse'
+                        : lastScannedResult.tipeAbsensi === 'Masuk'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    }`}>
+                      {lastScannedResult.isUnknown ? 'UNREGISTERED' : lastScannedResult.tipeAbsensi.toUpperCase()}
+                    </span>
+                  )}
+                </div>
               </h4>
 
               {lastScannedResult ? (
-                <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl space-y-3">
+                <div className={`p-4 rounded-xl space-y-3 border ${
+                  lastScannedResult.isUnknown
+                    ? 'bg-red-950/25 border-red-900/40'
+                    : 'bg-slate-900/90 border-slate-800'
+                }`}>
                   <div className="flex items-center justify-between">
                     <span className={`px-2 py-0.5 font-bold text-[10px] rounded border ${
-                      lastScannedResult.tipeAbsensi === 'Pulang'
+                      lastScannedResult.isUnknown
+                        ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                        : lastScannedResult.tipeAbsensi === 'Pulang'
                         ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
                         : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                     }`}>
-                      PRESENSI {lastScannedResult.tipeAbsensi ? lastScannedResult.tipeAbsensi.toUpperCase() : 'BERHASIL'}
+                      {lastScannedResult.isUnknown ? 'KARTU TIDAK DIKENAL' : `PRESENSI ${lastScannedResult.tipeAbsensi ? lastScannedResult.tipeAbsensi.toUpperCase() : 'BERHASIL'}`}
                     </span>
                     <span className="text-[10px] font-mono text-slate-400">{lastScannedResult.waktu}</span>
                   </div>
                   <div>
-                    <h3 className="text-base font-extrabold text-white">{lastScannedResult.nama}</h3>
-                    <p className="text-xs font-semibold text-blue-400">{lastScannedResult.role}</p>
+                    <h3 className={`text-base font-extrabold ${lastScannedResult.isUnknown ? 'text-red-400' : 'text-white'}`}>
+                      {lastScannedResult.nama}
+                    </h3>
+                    <p className={`text-xs font-semibold ${lastScannedResult.isUnknown ? 'text-slate-400' : 'text-blue-400'}`}>
+                      {lastScannedResult.role}
+                    </p>
                     <p className="text-[10px] font-mono text-slate-400 mt-1">{lastScannedResult.detail}</p>
                   </div>
 
@@ -944,6 +1456,14 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                       </button>
                     </div>
                   )}
+
+                  {lastScannedResult.isUnknown && (
+                    <div className="pt-2 border-t border-red-900/30 text-center">
+                      <span className="text-[9px] text-red-400 font-semibold italic">
+                        *Daftarkan kode barcode ini di menu Database Sekolah agar terbaca otomatis.
+                      </span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-6 bg-[#181818] rounded-xl text-center text-slate-500 text-xs border border-slate-800">
@@ -960,15 +1480,23 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                   <p className="text-xs text-slate-500 text-center py-4">Belum ada riwayat scan.</p>
                 ) : (
                   scanHistory.map((item, idx) => (
-                    <div key={idx} className="p-2.5 bg-[#181818] rounded-lg border border-slate-800/80 flex items-center justify-between text-xs gap-2">
+                    <div key={idx} className={`p-2.5 rounded-lg border flex items-center justify-between text-xs gap-2 ${
+                      item.isUnknown 
+                        ? 'bg-red-950/10 border-red-900/20' 
+                        : 'bg-[#181818] border-slate-800/80'
+                    }`}>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-white truncate">{item.nama}</span>
+                          <span className={`font-bold truncate ${item.isUnknown ? 'text-red-400' : 'text-white'}`}>{item.nama}</span>
                           {item.tipeAbsensi && (
                             <span className={`px-1.5 py-0.2 text-[9px] font-extrabold rounded ${
-                              item.tipeAbsensi === 'Pulang' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              item.isUnknown
+                                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                : item.tipeAbsensi === 'Pulang'
+                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                             }`}>
-                              {item.tipeAbsensi}
+                              {item.isUnknown ? 'UNKNOWN' : item.tipeAbsensi}
                             </span>
                           )}
                         </div>
@@ -976,11 +1504,11 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <div className="text-right">
-                          <div className="font-mono text-emerald-400 font-bold text-[11px]">{item.waktu}</div>
+                          <div className={`font-mono font-bold text-[11px] ${item.isUnknown ? 'text-red-400' : 'text-emerald-400'}`}>{item.waktu}</div>
                           <div className="text-[9px] text-slate-500 font-mono">{item.kode}</div>
                         </div>
 
-                        {item.siswaObj && item.teleponWali && (
+                        {item.siswaObj && item.teleponWali && !item.isUnknown && (
                           <button
                             type="button"
                             onClick={() => sendWhatsAppNotif(item.siswaObj!, item.waktu, item.tipeAbsensi || 'Masuk')}
@@ -1024,12 +1552,22 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
 
               <div>
                 <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Tanggal</label>
-                <input
-                  type="date"
-                  value={selectedTanggal}
-                  onChange={e => setSelectedTanggal(e.target.value)}
-                  className="bg-[#181818] border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-200 focus:outline-none focus:border-blue-500"
-                />
+                <div className="relative w-full min-w-[140px]">
+                  <input
+                    type="date"
+                    value={selectedTanggal}
+                    onChange={e => setSelectedTanggal(e.target.value)}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  <div className="bg-[#181818] border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-200 flex justify-between items-center group focus-within:border-blue-500 transition-colors">
+                    <span>
+                      {selectedTanggal
+                        ? selectedTanggal.split('-').reverse().join('/')
+                        : <span className="text-slate-500">dd/mm/yyyy</span>}
+                    </span>
+                    <Calendar className="w-3.5 h-3.5 text-slate-500 group-hover:text-blue-500 transition-colors ml-2" />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1105,179 +1643,6 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
         </div>
       )}
 
-      {/* SUBTAB 2: ABSENSI KELAS PER MAPEL */}
-      {subTab === 'kelas_mapel' && (
-        <div className="space-y-6">
-          
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 border-b pb-3">
-              <BookOpen className="w-5 h-5 text-emerald-600" /> Form Jurnal & Kehadiran Per Mata Pelajaran
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div>
-                <label className="text-[11px] font-bold text-slate-700">Kelas</label>
-                <select 
-                  value={mapelKelas} 
-                  onChange={e => setMapelKelas(e.target.value)}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
-                >
-                  {availableKelasOptions.map(k => (
-                    <option key={k} value={k}>{k}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-slate-700">Mata Pelajaran</label>
-                <select 
-                  value={mapelNama} 
-                  onChange={e => setMapelNama(e.target.value)}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                >
-                  {subjectsOptions.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-slate-700">Guru Pengajar</label>
-                <select 
-                  value={mapelGuru} 
-                  onChange={e => setMapelGuru(e.target.value)}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                >
-                  {teachersOptions.map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-slate-700">Jam Ke- / Waktu</label>
-                <select 
-                  value={mapelJam} 
-                  onChange={e => setMapelJam(e.target.value)}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                >
-                  {hoursOptions.map(h => (
-                    <option key={h} value={h}>{h}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[11px] font-bold text-slate-700">Materi Pembelajaran / Ringkasan Jurnal Kelas</label>
-              <textarea 
-                rows={2} 
-                value={mapelMateri} 
-                onChange={e => setMapelMateri(e.target.value)}
-                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:text-slate-950 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500" 
-              />
-            </div>
-
-            {/* Checklist Attendance in Mapel */}
-            <div className="pt-2">
-              <h4 className="font-bold text-xs uppercase text-slate-500 mb-2">
-                Checklist Kehadiran Siswa di Jam Mapel Ini ({classSiswaMapelList.length} Siswa):
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto p-2 border rounded-xl bg-slate-50">
-                {classSiswaMapelList.length === 0 ? (
-                  <p className="text-xs text-slate-500 text-center py-4 col-span-2">
-                    Tidak ada data siswa untuk kelas <span className="font-bold text-slate-700">{mapelKelas}</span>. Silakan tambahkan siswa di kelas ini melalui Menu Database Siswa.
-                  </p>
-                ) : (
-                  classSiswaMapelList.map(s => {
-                    const status = localMapelState[s.id] || 'Hadir';
-                    return (
-                      <div key={s.id} className="p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-xs shadow-xs hover:border-slate-300 transition-all">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-800">{s.nama}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">NISN: {s.nisn}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {(['Hadir', 'Sakit', 'Izin', 'Alpha'] as StatusAbsensi[]).map(st => (
-                            <button
-                              key={st}
-                              type="button"
-                              onClick={() => setLocalMapelState(prev => ({ ...prev, [s.id]: st }))}
-                              className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                                status === st 
-                                  ? st === 'Hadir' ? 'bg-emerald-500 text-slate-950 font-black shadow-xs'
-                                    : st === 'Sakit' ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
-                                    : st === 'Izin' ? 'bg-blue-600 text-white font-black shadow-xs'
-                                    : 'bg-rose-600 text-white font-black shadow-xs'
-                                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                              }`}
-                            >
-                              {st}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-between pt-3 gap-3 border-t">
-              <div>
-                {spreadsheetUrl && (
-                  <a 
-                    href={spreadsheetUrl} 
-                    target="_blank" 
-                    referrerPolicy="no-referrer"
-                    rel="noopener noreferrer" 
-                    className="text-xs text-emerald-600 hover:text-emerald-500 font-bold flex items-center gap-1.5 border-b border-emerald-500/30 transition-all"
-                  >
-                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Buka Database Spreadsheet Anda di Google Drive
-                  </a>
-                )}
-              </div>
-              <button
-                onClick={handleSaveAbsensiMapel}
-                disabled={savingToDrive}
-                className={`px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-2 shadow-md ${
-                  savingToDrive ? 'opacity-70 cursor-not-allowed' : ''
-                }`}
-              >
-                {savingToDrive ? (
-                  <>
-                    <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-950 border-t-transparent animate-spin"></span>
-                    Menyimpan & Menyinkronkan ke Drive...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" /> Simpan Jurnal & Sync Spreadsheet
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* History Jurnal Kelas */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-3">
-            <h3 className="font-bold text-slate-900 text-sm">Riwayat Jurnal Kelas & Absensi Mapel</h3>
-            <div className="space-y-2">
-              {absensiKelasList.map(item => (
-                <div key={item.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2">
-                  <div>
-                    <div className="font-bold text-slate-900">{item.mataPelajaran} ({item.kelas}) - {item.jamKe}</div>
-                    <div className="text-slate-500 mt-0.5">Guru: {item.guruNama} | Materi: {item.materi}</div>
-                  </div>
-                  <span className="px-2.5 py-1 bg-blue-100 text-blue-800 font-bold rounded-full text-[10px] self-start sm:self-center">
-                    {item.tanggal}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-        </div>
-      )}
 
       {/* SUBTAB 3: ABSENSI GURU CLOCK IN/OUT & IZIN */}
       {subTab === 'absensi_guru' && (
@@ -1378,7 +1743,18 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
           {/* Daftar Kehadiran Guru Hari Ini */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Rekap Kehadiran Guru (Hari Ini)</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Rekap Kehadiran Guru (Hari Ini)</h3>
+                {selectedGuruIds.length > 0 && (
+                  <button
+                    onClick={() => handleDeleteGuruRecords(selectedGuruIds, true)}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-rose-600 text-white rounded-lg text-[10px] font-bold hover:bg-rose-700 transition-colors shadow-sm"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    Hapus ({selectedGuruIds.length})
+                  </button>
+                )}
+              </div>
               <span className="text-xs text-slate-500 font-semibold">Total: {absensiGuruList.length} Record</span>
             </div>
 
@@ -1386,55 +1762,102 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
               <table className="w-full text-left text-xs text-slate-600">
                 <thead className="bg-slate-100 text-slate-700 font-semibold uppercase tracking-wider text-[11px]">
                   <tr>
+                    <th className="px-4 py-3 w-10">
+                      <button 
+                        onClick={toggleSelectAllGuru}
+                        className="text-slate-400 hover:text-indigo-600 transition-colors"
+                      >
+                        {selectedGuruIds.length === absensiGuruList.length && absensiGuruList.length > 0 ? (
+                          <CheckSquare className="w-4 h-4 text-indigo-600" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
+                    </th>
                     <th className="px-4 py-3">Nama Guru</th>
                     <th className="px-4 py-3">Tanggal</th>
                     <th className="px-4 py-3">Jam Masuk</th>
                     <th className="px-4 py-3">Jam Keluar</th>
-                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Status Masuk</th>
+                    <th className="px-4 py-3">Status Pulang</th>
                     <th className="px-4 py-3">Keterangan / Lokasi</th>
-                    <th className="px-4 py-3 text-right">Persetujuan</th>
+                    <th className="px-4 py-3 text-right">AKSI</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {absensiGuruList.map(a => (
-                    <tr key={a.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={a.id} className={`hover:bg-slate-50/80 transition-colors ${selectedGuruIds.includes(a.id) ? 'bg-indigo-50/30' : ''}`}>
+                      <td className="px-4 py-3">
+                        <button 
+                          onClick={() => toggleSelectGuru(a.id)}
+                          className="text-slate-400 hover:text-indigo-600 transition-colors"
+                        >
+                          {selectedGuruIds.includes(a.id) ? (
+                            <CheckSquare className="w-4 h-4 text-indigo-600" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                      </td>
                       <td className="px-4 py-3 font-bold text-slate-900">{a.guruNama}</td>
                       <td className="px-4 py-3 font-mono">{a.tanggal}</td>
                       <td className="px-4 py-3 font-mono font-semibold text-emerald-700">{a.jamMasuk || '-'}</td>
                       <td className="px-4 py-3 font-mono font-semibold text-blue-700">{a.jamKeluar || '-'}</td>
                       <td className="px-4 py-3">
-                        <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${
-                          a.status === 'Hadir' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {a.status}
-                        </span>
+                        {(() => {
+                          const { masuk } = getDualStatus(a);
+                          return (
+                            <span className={`inline-block px-2 py-0.5 rounded-full font-bold text-[9px] ${masuk.color}`}>
+                              {masuk.label}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const { pulang } = getDualStatus(a);
+                          return (
+                            <span className={`inline-block px-2 py-0.5 rounded-full font-bold text-[9px] ${pulang.color}`}>
+                              {pulang.label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-slate-500 max-w-xs truncate">
-                        {a.keteranganIzin || a.lokasiIn || '-'}
+                        <LocationWithMapLink text={a.status === 'Hadir' ? (a.lokasiIn || a.lokasiOut || '') : (a.keteranganIzin || a.lokasiIn || '')} />
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {a.statusIzin === 'Pending' ? (
-                          <div className="flex justify-end gap-1">
-                            <button
-                              onClick={() => handleApproveIzin(a.id, 'Disetujui')}
-                              className="px-2 py-1 bg-emerald-500 text-slate-950 font-bold rounded text-[10px]"
-                            >
-                              Setujui
-                            </button>
-                            <button
-                              onClick={() => handleApproveIzin(a.id, 'Ditolak')}
-                              className="px-2 py-1 bg-rose-500 text-white font-bold rounded text-[10px]"
-                            >
-                              Tolak
-                            </button>
-                          </div>
-                        ) : (
-                          <span className={`font-bold text-[10px] px-2 py-0.5 rounded ${
-                            a.statusIzin === 'Disetujui' ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
-                          }`}>
-                            {a.statusIzin}
-                          </span>
-                        )}
+                        <div className="flex items-center justify-end gap-2">
+                          {a.statusIzin === 'Pending' && a.status !== 'Hadir' ? (
+                            <div className="flex justify-end gap-1">
+                              <button
+                                onClick={() => handleApproveIzin(a.id, 'Disetujui')}
+                                className="px-2 py-1 bg-emerald-500 text-slate-950 font-bold rounded text-[10px]"
+                              >
+                                Setujui
+                              </button>
+                              <button
+                                onClick={() => handleApproveIzin(a.id, 'Ditolak')}
+                                className="px-2 py-1 bg-rose-500 text-white font-bold rounded text-[10px]"
+                              >
+                                Tolak
+                              </button>
+                            </div>
+                          ) : (
+                            <span className={`font-bold text-[10px] px-2 py-0.5 rounded ${
+                              (a.status === 'Hadir' || a.statusIzin === 'Disetujui') ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
+                            }`}>
+                              {a.status === 'Hadir' ? 'Disetujui' : a.statusIzin}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleDeleteGuruRecords([a.id])}
+                            className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-transparent hover:border-rose-100 flex items-center justify-center"
+                            title="Hapus Data"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1443,6 +1866,217 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* SUBTAB 4: EDIT REDAKSI TEMPLATE NOTIFIKASI WA PRESENSI */}
+      {subTab === 'redaksi' && (
+        <div className="space-y-6 animate-fade-in text-left">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-indigo-900/20 via-indigo-950/10 to-transparent border border-indigo-500/20 p-6 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
+            <div className="space-y-1">
+              <h2 className="text-lg font-black text-white flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-indigo-400" />
+                Edit Redaksi Notifikasi WA Presensi
+              </h2>
+              <p className="text-xs text-slate-400">
+                Kustomisasi template kalimat notifikasi kehadiran masuk dan pulang siswa yang dikirimkan otomatis ke WhatsApp Wali Murid.
+              </p>
+            </div>
+            
+            {redaksiSaveSuccessMsg && (
+              <div className="px-4 py-2 bg-emerald-950/80 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs font-bold shrink-0 shadow-lg border-l-4 border-l-emerald-400">
+                ✓ {redaksiSaveSuccessMsg}
+              </div>
+            )}
+          </div>
+
+          {/* Subtab Toggle Buttons */}
+          <div className="flex border-b border-slate-800 pb-px gap-2">
+            <button
+              onClick={() => setActiveRedaksiTab('masuk')}
+              className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+                activeRedaksiTab === 'masuk'
+                  ? 'border-indigo-500 text-indigo-400 font-extrabold'
+                  : 'border-transparent text-slate-400 hover:text-white'
+              }`}
+            >
+              <LogIn className="w-4 h-4 text-emerald-400" />
+              Notifikasi Presensi Masuk
+            </button>
+            <button
+              onClick={() => setActiveRedaksiTab('pulang')}
+              className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+                activeRedaksiTab === 'pulang'
+                  ? 'border-blue-500 text-blue-400 font-extrabold'
+                  : 'border-transparent text-slate-400 hover:text-white'
+              }`}
+            >
+              <LogOut className="w-4 h-4 text-blue-400" />
+              Notifikasi Presensi Pulang
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Editor Column */}
+            <div className="lg:col-span-7 space-y-4">
+              <div className="bg-[#121212]/90 border border-slate-800 p-5 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-300">
+                    {activeRedaksiTab === 'masuk' ? 'Template Teks Presensi Masuk' : 'Template Teks Presensi Pulang'}
+                  </span>
+                  <button
+                    onClick={handleResetTemplate}
+                    className="text-[10px] text-slate-400 hover:text-rose-400 font-bold flex items-center gap-1 transition-all cursor-pointer"
+                    title="Kembalikan susunan kata ke setelan default"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Reset ke Default
+                  </button>
+                </div>
+
+                {/* Variable Pills Scrollbox */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-slate-400 font-bold block">
+                    Klik variabel di bawah untuk menyisipkan ke kursor:
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 p-2 bg-[#181818] rounded-xl border border-slate-800">
+                    {Object.keys({
+                      NAMA_SISWA: "Ahmad Rizky",
+                      KELAS: "VII-B",
+                      TANGGAL: "Kamis, 13 Agustus 2026",
+                      JAM_SCAN: "07:12",
+                      STATUS_KEHADIRAN: activeRedaksiTab === 'masuk' ? "Hadir Tepat Waktu" : "Sudah Pulang",
+                      NAMA_SEKOLAH: schoolSettings?.namaSekolah || "SMP Modern Al Fakhir"
+                    }).map(vKey => (
+                      <button
+                        key={vKey}
+                        onClick={() => insertPlaceholder(`{${vKey}}`)}
+                        className="px-2 py-1 bg-indigo-950/50 hover:bg-indigo-900 border border-indigo-500/20 rounded-lg text-[9px] font-mono font-extrabold text-indigo-300 transition-all cursor-pointer"
+                      >
+                        {`{${vKey}}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Editor Textarea */}
+                <div>
+                  <textarea
+                    id={activeRedaksiTab === 'masuk' ? 'template_masuk_input' : 'template_pulang_input'}
+                    value={activeRedaksiTab === 'masuk' ? localTemplateAbsensiMasuk : localTemplateAbsensiPulang}
+                    onChange={e => {
+                      if (activeRedaksiTab === 'masuk') {
+                        setLocalTemplateAbsensiMasuk(e.target.value);
+                      } else {
+                        setLocalTemplateAbsensiPulang(e.target.value);
+                      }
+                    }}
+                    rows={12}
+                    className="w-full bg-[#181818] border border-slate-800 text-slate-200 font-mono text-xs leading-relaxed p-4 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none"
+                    placeholder="Masukkan redaksi notifikasi di sini..."
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2.5 pt-2">
+                  <button
+                    onClick={handleSaveTemplates}
+                    className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-lg cursor-pointer ${
+                      activeRedaksiTab === 'masuk'
+                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/20'
+                        : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20'
+                    }`}
+                  >
+                    <CheckCheck className="w-4 h-4" />
+                    Simpan Perubahan Redaksi
+                  </button>
+                </div>
+              </div>
+
+              {/* Informative Tips Footer */}
+              <div className="p-4 bg-slate-900/30 border border-slate-800/60 rounded-xl text-[11px] text-slate-400 space-y-1.5">
+                <span className="font-extrabold text-slate-200 block">💡 Tips Format WhatsApp:</span>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>Gunakan tanda bintang untuk menebalkan teks, contoh: <code className="text-slate-300 font-mono">*Teks Tebal*</code></li>
+                  <li>Gunakan garis bawah untuk memiringkan teks, contoh: <code className="text-slate-300 font-mono">_Teks Miring_</code></li>
+                  <li>Pastikan Anda tidak mengubah ejaan variabel di dalam kurung kurawal agar sistem dapat menggantinya dengan informasi riil siswa secara otomatis.</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Smartphone Mockup Column */}
+            <div className="lg:col-span-5 flex justify-center">
+               <div className="w-full max-w-[320px] bg-[#0b141a] rounded-[36px] p-3 border-4 border-slate-800 shadow-2xl relative overflow-hidden aspect-[9/18]">
+                 {/* Phone Notch/Speaker */}
+                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-4 bg-slate-800 rounded-b-xl z-20 flex items-center justify-center">
+                   <div className="w-8 h-1.5 bg-slate-900 rounded-full" />
+                 </div>
+ 
+                 {/* Status Bar */}
+                 <div className="flex items-center justify-between text-[10px] text-slate-400 px-4 pt-1.5 pb-2 border-b border-emerald-900/10 z-10 bg-[#075e54]">
+                   <span className="font-semibold text-white">07:12</span>
+                   <div className="flex items-center gap-1.5 text-white">
+                     <span className="text-[8px]">📶</span>
+                     <span className="text-[8px]">🔋 85%</span>
+                   </div>
+                 </div>
+ 
+                 {/* WA Chat Room Header */}
+                 <div className="bg-[#075e54] text-white p-3 flex items-center gap-2 border-b border-[#128c7e]/10">
+                   <div className="w-7 h-7 rounded-full bg-emerald-700/80 border border-emerald-400/25 flex items-center justify-center font-bold text-xs text-white uppercase shadow-sm">
+                     {schoolSettings?.namaSekolah ? schoolSettings.namaSekolah[0] : 'S'}
+                   </div>
+                   <div>
+                     <h5 className="text-[10px] font-extrabold leading-none truncate w-[160px] text-left">
+                       {schoolSettings?.namaSekolah || "SMP Modern Al Fakhir"}
+                     </h5>
+                     <span className="text-[7px] text-emerald-300 block text-left mt-0.5">Online • WhatsApp Gateway</span>
+                   </div>
+                 </div>
+ 
+                 {/* WA Chat Body with Bubble */}
+                 <div className="p-3 space-y-3 bg-[#0b141a] h-[360px] overflow-y-auto flex flex-col justify-end text-left select-none relative">
+                   {/* Background Wallpaper Pattern (Subtle grid simulated) */}
+                   <div className="absolute inset-0 bg-[#0b141a] opacity-35 pointer-events-none" />
+ 
+                   {/* System Date Badge */}
+                   <div className="mx-auto px-2 py-0.5 bg-[#121b22] text-slate-400 text-[8px] rounded-lg shadow border border-slate-800/50 text-center font-bold tracking-wide z-10">
+                     HARI INI
+                   </div>
+ 
+                   {/* Message Bubble Container */}
+                   <div className="bg-[#005c4b] border border-emerald-800/20 text-slate-100 p-3 rounded-2xl rounded-tr-none text-[11px] leading-relaxed shadow-md max-w-[88%] self-end relative z-10 border-l-4 border-l-emerald-500">
+                     <div 
+                       className="whitespace-pre-wrap select-text selection:bg-emerald-600 font-sans"
+                       dangerouslySetInnerHTML={{
+                         __html: formatWhatsAppMarkdown(
+                           parseWaTemplateAbsensi(
+                             activeRedaksiTab === 'masuk' ? localTemplateAbsensiMasuk : localTemplateAbsensiPulang,
+                             {
+                               NAMA_SISWA: "Ahmad Rizky",
+                               KELAS: "VII-B",
+                               TANGGAL: "Kamis, 13 Agustus 2026",
+                               JAM_SCAN: "07:12",
+                               STATUS_KEHADIRAN: activeRedaksiTab === 'masuk' ? "Hadir Tepat Waktu" : "Sudah Pulang",
+                               NAMA_SEKOLAH: schoolSettings?.namaSekolah || "SMP Modern Al Fakhir"
+                             }
+                           )
+                         )
+                       }}
+                     />
+                     {/* Timestamp & Sent Checks */}
+                     <div className="flex items-center justify-end gap-1 text-[7px] text-emerald-300 mt-1.5 font-semibold">
+                       <span>07:12</span>
+                       <span className="text-sky-300">✓✓</span>
+                     </div>
+                   </div>
+                 </div>
+ 
+                 {/* Phone Bottom Pill */}
+                 <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-28 h-1 bg-slate-800 rounded-full z-20" />
+               </div>
+             </div>
+          </div>
         </div>
       )}
 

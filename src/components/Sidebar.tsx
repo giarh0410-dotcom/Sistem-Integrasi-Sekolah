@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
   Users, 
@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   UserCheck,
   ChevronDown,
+  ChevronRight,
   Layers,
   BookOpen,
   Calendar,
@@ -19,9 +20,18 @@ import {
   CreditCard,
   Sliders,
   FileSpreadsheet,
-  QrCode
+  QrCode,
+  Image,
+  Cloud,
+  MessageSquare,
+  Clock,
+  Building,
+  Trophy,
+  Coins,
+  FolderOpen,
+  LayoutList
 } from 'lucide-react';
-import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab } from '../types/school';
+import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab, AdministrasiSubTab, PengaturanSubTab } from '../types/school';
 
 export type TabType = 'dashboard' | 'database' | 'absensi' | 'cbt' | 'administrasi' | 'keuangan' | 'pengaturan';
 
@@ -36,13 +46,18 @@ interface SidebarProps {
   setAbsensiSubTab?: (subTab: AbsensiSubTab) => void;
   cbtSubTab?: CbtSubTab;
   setCbtSubTab?: (subTab: CbtSubTab) => void;
+  administrasiSubTab?: AdministrasiSubTab;
+  setAdministrasiSubTab?: (subTab: AdministrasiSubTab) => void;
   keuanganSubTab?: KeuanganSubTab;
   setKeuanganSubTab?: (subTab: KeuanganSubTab) => void;
+  pengaturanSubTab?: PengaturanSubTab;
+  setPengaturanSubTab?: (subTab: PengaturanSubTab) => void;
   siswaCount: number;
   guruCount: number;
   stafCount: number;
   rombelCount: number;
   mapelCount: number;
+  ekskulCount?: number;
   bankSoalCount?: number;
 }
 
@@ -57,15 +72,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setAbsensiSubTab,
   cbtSubTab = 'bank_soal',
   setCbtSubTab,
+  administrasiSubTab = 'perangkat',
+  setAdministrasiSubTab,
   keuanganSubTab = 'pembayaran',
   setKeuanganSubTab,
+  pengaturanSubTab = 'identitas',
+  setPengaturanSubTab,
   siswaCount,
   guruCount,
   stafCount,
   rombelCount,
   mapelCount,
+  ekskulCount = 0,
   bankSoalCount
 }) => {
+  const [perangkatOpen, setPerangkatOpen] = useState(false);
+
   const allMenuItems: { id: TabType; label: string; icon: React.ReactNode; badge?: string; desc: string }[] = [
     {
       id: 'dashboard',
@@ -96,7 +118,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'administrasi',
       label: 'Administrasi Guru',
       icon: <FileText className="w-5 h-5" />,
-      desc: 'Modul Ajar, ATP, Prota'
+      desc: 'Modul Ajar, Jadwal, Kalender'
     },
     {
       id: 'keuangan',
@@ -123,7 +145,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return item.id === 'keuangan';
     }
     if (currentRole === 'siswa') {
-      return item.id === 'dashboard' || item.id === 'absensi' || item.id === 'cbt' || item.id === 'keuangan';
+      return item.id === 'cbt';
     }
     // Admin gets all
     return true;
@@ -276,6 +298,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           {mapelCount}
                         </span>
                       </button>
+
+                      <button
+                        onClick={() => setDatabaseSubTab('ekskul')}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          databaseSubTab === 'ekskul'
+                            ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Trophy className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Kelas Ekstrakurikuler</span>
+                        </div>
+                        <span className="text-[9px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                          {ekskulCount}
+                        </span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -354,23 +393,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </button>
                       )}
 
-                      {/* 3. Absensi Kelas Per Mapel */}
-                      <button
-                        onClick={() => {
-                          setActiveTab('absensi');
-                          if (setAbsensiSubTab) setAbsensiSubTab('kelas_mapel');
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
-                          absensiSubTab === 'kelas_mapel'
-                            ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 shadow-sm'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
-                          <span>Absensi Kelas Per Mapel</span>
-                        </div>
-                      </button>
 
                       {/* 4. Presensi Guru */}
                       {currentRole !== 'guru' && (
@@ -389,6 +411,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <UserCheck className="w-3.5 h-3.5 text-purple-400" />
                             <span>Presensi Guru</span>
                           </div>
+                        </button>
+                      )}
+
+                      {/* 5. Redaksi Notifikasi WA */}
+                      {currentRole !== 'guru' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('absensi');
+                            if (setAbsensiSubTab) setAbsensiSubTab('redaksi');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            absensiSubTab === 'redaksi'
+                              ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Redaksi Notifikasi WA</span>
+                          </div>
+                          <span className="text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1 py-0.5 rounded font-bold">
+                            Baru
+                          </span>
                         </button>
                       )}
                     </div>
@@ -429,27 +474,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {isActive && (
                     <div className="pl-3 pr-1 py-1 space-y-1 border-l border-slate-800 ml-6 mt-1 transition-all">
                       {/* 1. Bank Soal */}
-                      <button
-                        onClick={() => {
-                          setActiveTab('cbt');
-                          if (setCbtSubTab) setCbtSubTab('bank_soal');
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
-                          cbtSubTab === 'bank_soal'
-                            ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <BookOpen className="w-3.5 h-3.5 text-blue-400" />
-                          <span>Bank Soal Ujian</span>
-                        </div>
-                        {bankSoalCount !== undefined && (
-                          <span className="text-[9px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded font-mono">
-                            {bankSoalCount}
-                          </span>
-                        )}
-                      </button>
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('bank_soal');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'bank_soal'
+                              ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <BookOpen className="w-3.5 h-3.5 text-blue-400" />
+                            <span>Bank Soal Ujian</span>
+                          </div>
+                          {bankSoalCount !== undefined && (
+                            <span className="text-[9px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                              {bankSoalCount}
+                            </span>
+                          )}
+                        </button>
+                      )}
 
                       {/* 2. Jadwal & Kartu Ujian */}
                       {currentRole !== 'guru' && (
@@ -471,28 +518,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </button>
                       )}
 
-                      {/* 3. AI Generator Soal */}
-                      <button
-                        onClick={() => {
-                          setActiveTab('cbt');
-                          if (setCbtSubTab) setCbtSubTab('ai_generator');
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
-                          cbtSubTab === 'ai_generator'
-                            ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20 shadow-sm'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                          <span>AI Generator Soal</span>
-                        </div>
-                        <span className="text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1 py-0.5 rounded font-bold">
-                          AI
-                        </span>
-                      </button>
-
-                      {/* 4. Simulasi CBT Anti-Cheat */}
+                      {/* 3. Simulasi CBT Anti-Cheat */}
                       <button
                         onClick={() => {
                           setActiveTab('cbt');
@@ -507,6 +533,157 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <div className="flex items-center gap-2">
                           <Play className="w-3.5 h-3.5 text-emerald-400" />
                           <span>Simulasi CBT Anti-Cheat</span>
+                        </div>
+                      </button>
+
+                      {/* 4. Hasil Ujian (Firebase) */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('cbt');
+                          if (setCbtSubTab) setCbtSubTab('hasil_ujian');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          cbtSubTab === 'hasil_ujian'
+                            ? 'bg-amber-600/10 text-amber-400 border border-amber-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Hasil Ujian (Firebase)</span>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            if (item.id === 'administrasi') {
+              return (
+                <div key={item.id} className="space-y-1">
+                  <button
+                    onClick={() => {
+                      setActiveTab('administrasi');
+                    }}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-between group ${
+                      isActive
+                        ? 'bg-slate-800/90 text-blue-400 font-bold border border-slate-700/80 shadow-md ring-1 ring-blue-500/20'
+                        : 'hover:bg-slate-800/50 hover:text-white text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`${isActive ? 'text-blue-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                        {item.icon}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold leading-none">{item.label}</div>
+                        <div className={`text-[10px] mt-1 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                          {item.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-transform duration-300 ${isActive ? 'transform rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Dropdown nested items for Administrasi Guru */}
+                  {isActive && (
+                    <div className="pl-3 pr-1 py-1 space-y-1 border-l border-slate-800 ml-6 mt-1 transition-all">
+                      {/* Sub-Dropdown Perangkat Pembelajaran */}
+                      <div>
+                        <button
+                          onClick={() => setPerangkatOpen(!perangkatOpen)}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-bold flex items-center justify-between transition-all ${
+                            ['modul_ajar', 'cp', 'atp', 'kktp', 'prota', 'prosem'].includes(administrasiSubTab || '')
+                              ? 'text-blue-400 bg-blue-600/5'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <FolderOpen className="w-3.5 h-3.5" />
+                            <span>Perangkat Pembelajaran</span>
+                          </div>
+                          {perangkatOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                        </button>
+
+                        {perangkatOpen && (
+                          <div className="pl-4 mt-1 space-y-0.5 border-l border-slate-800/50 ml-1.5">
+                            {[
+                              { id: 'modul_ajar', label: 'Modul Ajar' },
+                              { id: 'cp', label: 'Capaian Pembelajaran (CP)' },
+                              { id: 'atp', label: 'Alur Tujuan (ATP)' },
+                              { id: 'kktp', label: 'KKTP' },
+                              { id: 'prota', label: 'Program Tahunan' },
+                              { id: 'prosem', label: 'Program Semester' },
+                            ].map((sub) => (
+                              <button
+                                key={sub.id}
+                                onClick={() => {
+                                  setActiveTab('administrasi');
+                                  if (setAdministrasiSubTab) setAdministrasiSubTab(sub.id as AdministrasiSubTab);
+                                }}
+                                className={`w-full text-left px-3 py-1.5 rounded-md text-[10px] font-medium transition-all ${
+                                  administrasiSubTab === sub.id
+                                    ? 'text-blue-400 bg-blue-600/10'
+                                    : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/20'
+                                }`}
+                              >
+                                {sub.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('administrasi');
+                          if (setAdministrasiSubTab) setAdministrasiSubTab('jadwal');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          administrasiSubTab === 'jadwal'
+                            ? 'bg-amber-600/10 text-amber-400 border border-amber-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Jadwal Mengajar</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('administrasi');
+                          if (setAdministrasiSubTab) setAdministrasiSubTab('kalender');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          administrasiSubTab === 'kalender'
+                            ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Kalender Pendidikan</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('administrasi');
+                          if (setAdministrasiSubTab) setAdministrasiSubTab('jurnal_guru');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          administrasiSubTab === 'jurnal_guru'
+                            ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Jurnal Guru</span>
                         </div>
                       </button>
                     </div>
@@ -604,6 +781,189 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400" />
                           <span>Rekap & Fonnte WA</span>
                         </div>
+                      </button>
+
+                      {/* 4. Redaksi Notifikasi WA */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('keuangan');
+                          if (setKeuanganSubTab) setKeuanganSubTab('redaksi');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          keuanganSubTab === 'redaksi'
+                            ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Redaksi Notifikasi WA</span>
+                        </div>
+                        <span className="text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1 py-0.5 rounded font-bold">
+                          Baru
+                        </span>
+                      </button>
+
+                      {/* 5. Pembayaran Gaji / Payroll */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('keuangan');
+                          if (setKeuanganSubTab) setKeuanganSubTab('gaji');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          keuanganSubTab === 'gaji'
+                            ? 'bg-rose-600/10 text-rose-400 border border-rose-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Coins className="w-3.5 h-3.5 text-rose-400" />
+                          <span>Pembayaran Gaji (Payroll)</span>
+                        </div>
+                        <span className="text-[9px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1 py-0.5 rounded font-bold animate-pulse">
+                          Gaji
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            if (item.id === 'pengaturan') {
+              return (
+                <div key={item.id} className="space-y-1">
+                  <button
+                    onClick={() => {
+                      setActiveTab('pengaturan');
+                    }}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-between group ${
+                      isActive
+                        ? 'bg-slate-800/90 text-blue-400 font-bold border border-slate-700/80 shadow-md ring-1 ring-blue-500/20'
+                        : 'hover:bg-slate-800/50 hover:text-white text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`${isActive ? 'text-blue-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                        {item.icon}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold leading-none">{item.label}</div>
+                        <div className={`text-[10px] mt-1 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                          {item.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-transform duration-300 ${isActive ? 'transform rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Dropdown nested items for Pengaturan */}
+                  {isActive && (
+                    <div className="pl-3 pr-1 py-1 space-y-1 border-l border-slate-800 ml-6 mt-1 transition-all">
+                      <button
+                        onClick={() => {
+                          setActiveTab('pengaturan');
+                          if (setPengaturanSubTab) setPengaturanSubTab('identitas');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          pengaturanSubTab === 'identitas'
+                            ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Building className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Identitas Sekolah</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('pengaturan');
+                          if (setPengaturanSubTab) setPengaturanSubTab('logo');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          pengaturanSubTab === 'logo'
+                            ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Image className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Logo Sekolah</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('pengaturan');
+                          if (setPengaturanSubTab) setPengaturanSubTab('google_drive');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          pengaturanSubTab === 'google_drive'
+                            ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Google Drive Sync</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('pengaturan');
+                          if (setPengaturanSubTab) setPengaturanSubTab('fonnte');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          pengaturanSubTab === 'fonnte'
+                            ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>Token Fonnte (WA)</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('pengaturan');
+                          if (setPengaturanSubTab) setPengaturanSubTab('jadwal');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          pengaturanSubTab === 'jadwal'
+                            ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Jadwal Masuk/Pulang</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('pengaturan');
+                          if (setPengaturanSubTab) setPengaturanSubTab('sistem');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          pengaturanSubTab === 'sistem'
+                            ? 'bg-rose-600/10 text-rose-400 border border-rose-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-3.5 h-3.5 text-rose-400" />
+                          <span>Sistem & Database</span>
+                        </div>
+                        <span className="text-[9px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1 py-0.5 rounded font-bold">
+                          Reset
+                        </span>
                       </button>
                     </div>
                   )}

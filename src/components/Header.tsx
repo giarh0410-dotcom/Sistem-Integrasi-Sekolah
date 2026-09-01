@@ -8,8 +8,10 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   AlertCircle,
-  Sun,
-  Moon
+  Database,
+  RefreshCw,
+  Cloud,
+  Check
 } from 'lucide-react';
 import { Role, SchoolSettings } from '../types/school';
 import { googleSignIn, googleSignOut } from '../lib/firebase';
@@ -25,6 +27,7 @@ interface HeaderProps {
   onLogout?: () => void;
   theme: 'dark' | 'light';
   setTheme: (theme: 'dark' | 'light') => void;
+  firebaseSyncStatus?: 'idle' | 'saving' | 'saved' | 'error';
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,7 +40,8 @@ export const Header: React.FC<HeaderProps> = ({
   schoolSettings,
   onLogout,
   theme,
-  setTheme
+  setTheme,
+  firebaseSyncStatus = 'idle'
 }) => {
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
@@ -101,8 +105,8 @@ export const Header: React.FC<HeaderProps> = ({
                 v2026
               </span>
             </h1>
-            <p className={`text-[11px] hidden sm:block ${theme === 'light' ? 'text-slate-500' : 'text-slate-500'}`}>
-              {schoolSettings ? `NPSN: ${schoolSettings.npsn} • Akreditasi ${schoolSettings.akreditasi}` : 'Sistem Informasi Manajemen, CBT & Keuangan Terpadu'}
+            <p className={`text-[13px] font-bold hidden sm:block tracking-wide ${theme === 'light' ? 'text-blue-600' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.6)]'}`}>
+              {schoolSettings ? `Akreditasi ${schoolSettings.akreditasi}` : 'Sistem Informasi Manajemen, CBT & Keuangan Terpadu'}
             </p>
           </div>
         </div>
@@ -110,22 +114,63 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Center/Right Controls */}
         <div className="flex items-center gap-3">
 
-          {/* Theme Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer ${
-              theme === 'light'
-                ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
-                : 'bg-[#121212] text-amber-400 border-slate-800 hover:bg-slate-800'
+          {/* Firebase Auto-save Cloud Indicator */}
+          <div 
+            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm ${
+              firebaseSyncStatus === 'saving'
+                ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                : firebaseSyncStatus === 'saved'
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                : firebaseSyncStatus === 'error'
+                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                : theme === 'light'
+                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                : 'bg-blue-500/5 text-blue-400 border-blue-500/10'
             }`}
-            title={theme === 'dark' ? 'Beralih ke Tampilan Terang (Light Mode)' : 'Beralih ke Tampilan Gelap (Dark Mode)'}
+            title="Sistem Sinkronisasi Otomatis Cloud Firebase"
           >
-            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-amber-700" />}
-            <span className="hidden sm:inline">{theme === 'dark' ? 'Terang' : 'Gelap'}</span>
-          </button>
-
-
+            {firebaseSyncStatus === 'saving' ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span className="hidden md:inline">Menyimpan...</span>
+              </>
+            ) : firebaseSyncStatus === 'saved' ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden md:inline">Tersimpan</span>
+              </>
+            ) : firebaseSyncStatus === 'error' ? (
+              <>
+                <AlertCircle className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                <span className="hidden md:inline">Error Sync</span>
+              </>
+            ) : (
+              <>
+                <Database className="w-3.5 h-3.5 text-blue-500" />
+                <span className="hidden md:inline">Firebase Aktif</span>
+              </>
+            )}
+            <span className="relative flex h-2 w-2">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                firebaseSyncStatus === 'saving'
+                  ? 'bg-amber-400'
+                  : firebaseSyncStatus === 'saved'
+                  ? 'bg-emerald-400'
+                  : firebaseSyncStatus === 'error'
+                  ? 'bg-rose-400'
+                  : 'bg-emerald-400'
+              }`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                firebaseSyncStatus === 'saving'
+                  ? 'bg-amber-500'
+                  : firebaseSyncStatus === 'saved'
+                  ? 'bg-emerald-500'
+                  : firebaseSyncStatus === 'error'
+                  ? 'bg-rose-500'
+                  : 'bg-emerald-500'
+              }`}></span>
+            </span>
+          </div>
 
           {/* Google Workspace Sign-In / User Status */}
           <div className="flex items-center gap-2">

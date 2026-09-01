@@ -452,9 +452,16 @@ export interface GoogleDriveExportResult {
 }
 
 export interface JadwalPresensi {
+  // Jadwal Siswa
   jamMasuk: string; // HH:mm format, e.g. "07:00"
   jamToleransi: string; // HH:mm format, e.g. "07:15"
   jamPulang: string; // HH:mm format, e.g. "14:30"
+  
+  // Jadwal Guru & Staf
+  jamMasukGuru?: string;
+  jamToleransiGuru?: string;
+  jamPulangGuru?: string;
+
   hariKerja: string[]; // e.g. ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
   autoSwitchScanMode?: boolean; // Otomatis berpindah mode Masuk/Pulang berdasarkan jam realtime
 }

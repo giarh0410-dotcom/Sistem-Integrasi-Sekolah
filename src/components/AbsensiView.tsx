@@ -305,16 +305,20 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   };
 
   // Helper to calculate status attendance label (Tepat Waktu, Terlambat, Pulang Cepat)
-  const calculateAttendanceStatusLabel = (timeStr: string, mode: 'Masuk' | 'Pulang') => {
+  const calculateAttendanceStatusLabel = (timeStr: string, mode: 'Masuk' | 'Pulang', userType: 'siswa' | 'guru' | 'staf' = 'siswa') => {
     const jadwal = schoolSettings?.jadwalPresensi || localJadwal;
     const parts = timeStr.split(':').map(Number);
     const curH = parts[0] || 0;
     const curM = parts[1] || 0;
     const curTotalSec = curH * 3600 + curM * 60;
 
+    const jMasuk = userType === 'siswa' ? (jadwal.jamMasuk || '07:00') : (jadwal.jamMasukGuru || '06:45');
+    const jToleransi = userType === 'siswa' ? (jadwal.jamToleransi || '07:15') : (jadwal.jamToleransiGuru || '07:00');
+    const jPulang = userType === 'siswa' ? (jadwal.jamPulang || '14:30') : (jadwal.jamPulangGuru || '15:00');
+
     if (mode === 'Masuk') {
-      const [mH, mM] = (jadwal.jamMasuk || '07:00').split(':').map(Number);
-      const [tH, tM] = (jadwal.jamToleransi || '07:15').split(':').map(Number);
+      const [mH, mM] = jMasuk.split(':').map(Number);
+      const [tH, tM] = jToleransi.split(':').map(Number);
       const masukSec = mH * 3600 + mM * 60;
       const toleransiSec = tH * 3600 + tM * 60;
 
@@ -328,7 +332,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
         return { label: `Terlambat (${lateMins} Menit)`, isLate: true };
       }
     } else {
-      const [pH, pM] = (jadwal.jamPulang || '16:00').split(':').map(Number);
+      const [pH, pM] = jPulang.split(':').map(Number);
       const pulangSec = pH * 3600 + pM * 60;
 
       if (curTotalSec < pulangSec) {
@@ -511,7 +515,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
       year: 'numeric'
     });
 
-    const statusInfo = calculateAttendanceStatusLabel(waktu, tipe);
+    const statusInfo = calculateAttendanceStatusLabel(waktu, tipe, 'siswa');
 
     let message = '';
     const template = tipe === 'Masuk' ? config?.templateAbsensiMasuk : config?.templateAbsensiPulang;
@@ -696,7 +700,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   };
 
   // Logic to get separate status for Masuk and Pulang
-  const getDualStatus = (a: AbsensiGuru) => {
+  const getDualStatus = (a: AbsensiGuru, userType: 'guru' | 'staf' = 'guru') => {
     const statusMasuk = { label: '-', color: 'text-slate-400' };
     const statusPulang = { label: '-', color: 'text-slate-400' };
 
@@ -709,7 +713,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     }
 
     if (a.jamMasuk) {
-      const res = calculateAttendanceStatusLabel(a.jamMasuk, 'Masuk');
+      const res = calculateAttendanceStatusLabel(a.jamMasuk, 'Masuk', userType);
       statusMasuk.label = res.label;
       statusMasuk.color = res.isLate ? 'bg-rose-100 text-rose-800' : res.label.includes('Toleransi') ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800';
     } else {
@@ -718,7 +722,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
     }
 
     if (a.jamKeluar) {
-      const res = calculateAttendanceStatusLabel(a.jamKeluar, 'Pulang');
+      const res = calculateAttendanceStatusLabel(a.jamKeluar, 'Pulang', userType);
       statusPulang.label = res.label;
       statusPulang.color = res.label.includes('Pulang Cepat') ? 'bg-orange-100 text-orange-800' : 'bg-emerald-100 text-emerald-800';
     } else {
@@ -731,7 +735,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
 
   // Helper scan processors to keep code modular and readable
   const processSiswaScan = (siswa: Siswa, timeNow: string, today: string) => {
-    const statusInfo = calculateAttendanceStatusLabel(timeNow, scanMode);
+    const statusInfo = calculateAttendanceStatusLabel(timeNow, scanMode, 'siswa');
     const locationStr = gpsCoords ? getFriendlyLocationName(gpsCoords.lat, gpsCoords.lng) : 'Mesin Scan Barcode Utama';
 
     setAbsensiHarian(prev => {
@@ -776,6 +780,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   };
 
   const processGuruScan = (guru: Guru, timeNow: string, today: string) => {
+    const statusInfo = calculateAttendanceStatusLabel(timeNow, scanMode, 'guru');
     const locationStr = gpsCoords ? getFriendlyLocationName(gpsCoords.lat, gpsCoords.lng) : 'Mesin Scan Barcode Utama';
     setAbsensiGuruList(prev => {
       const existingIndex = prev.findIndex(g => g.guruId === guru.id && g.tanggal === today);
@@ -830,6 +835,7 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
   };
 
   const processStafScan = (staf: Staf, timeNow: string, today: string) => {
+    const statusInfo = calculateAttendanceStatusLabel(timeNow, scanMode, 'staf');
     const locationStr = gpsCoords ? getFriendlyLocationName(gpsCoords.lat, gpsCoords.lng) : 'Mesin Scan Barcode Utama';
     setAbsensiGuruList(prev => {
       const existingIndex = prev.findIndex(g => g.guruId === staf.id && g.tanggal === today);
@@ -1315,17 +1321,17 @@ export const AbsensiView: React.FC<AbsensiViewProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-2.5 bg-[#181818] px-4 py-2.5 rounded-xl border border-blue-500/30 text-xs text-slate-300">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="font-bold text-blue-400 flex items-center gap-1.5 shrink-0">
-                  <Clock className="w-4 h-4 text-blue-400" /> Jadwal Presensi Aktif:
+                  <Clock className="w-4 h-4 text-blue-400" /> Jadwal {scanTargetType === 'siswa' ? 'Siswa' : 'Guru & Staf'}:
                 </span>
                 <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
                   <span className="bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 px-2.5 py-0.5 rounded-md font-bold flex items-center gap-1">
-                    <LogIn className="w-3 h-3 text-emerald-400" /> Masuk: {schoolSettings?.jadwalPresensi?.jamMasuk || localJadwal.jamMasuk} WIB
+                    <LogIn className="w-3 h-3 text-emerald-400" /> Masuk: {scanTargetType === 'siswa' ? (schoolSettings?.jadwalPresensi?.jamMasuk || localJadwal.jamMasuk) : (schoolSettings?.jadwalPresensi?.jamMasukGuru || localJadwal.jamMasukGuru || '06:45')} WIB
                   </span>
                   <span className="bg-amber-950/60 border border-amber-500/30 text-amber-300 px-2.5 py-0.5 rounded-md font-bold">
-                    Toleransi: {schoolSettings?.jadwalPresensi?.jamToleransi || localJadwal.jamToleransi} WIB
+                    Toleransi: {scanTargetType === 'siswa' ? (schoolSettings?.jadwalPresensi?.jamToleransi || localJadwal.jamToleransi) : (schoolSettings?.jadwalPresensi?.jamToleransiGuru || localJadwal.jamToleransiGuru || '07:00')} WIB
                   </span>
                   <span className="bg-blue-950/60 border border-blue-500/30 text-blue-300 px-2.5 py-0.5 rounded-md font-bold flex items-center gap-1">
-                    <LogOut className="w-3 h-3 text-blue-400" /> Pulang: {schoolSettings?.jadwalPresensi?.jamPulang || localJadwal.jamPulang} WIB
+                    <LogOut className="w-3 h-3 text-blue-400" /> Pulang: {scanTargetType === 'siswa' ? (schoolSettings?.jadwalPresensi?.jamPulang || localJadwal.jamPulang) : (schoolSettings?.jadwalPresensi?.jamPulangGuru || localJadwal.jamPulangGuru || '15:00')} WIB
                   </span>
                 </div>
               </div>

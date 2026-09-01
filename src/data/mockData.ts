@@ -546,6 +546,9 @@ export const INITIAL_SCHOOL_SETTINGS: SchoolSettings = {
     jamMasuk: '07:00',
     jamToleransi: '07:15',
     jamPulang: '14:30',
+    jamMasukGuru: '06:45',
+    jamToleransiGuru: '07:00',
+    jamPulangGuru: '15:00',
     hariKerja: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'],
     autoSwitchScanMode: true
   },

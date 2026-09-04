@@ -228,7 +228,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       const s = stafList.find(item => item.id === gajiPenerimaId);
       if (s) {
         name = s.nama;
-        nipNik = s.nik || s.nip || '';
+        nipNik = s.nik || s.nik || '';
         jab = s.bagian || 'Staf';
       }
     }
@@ -855,7 +855,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       `Terbilang: _${terbilang(rekapGajiTotals.totalNet)} Rupiah_\n` +
       `─────────────────────────\n` +
       `Bendahara: ${bendaharaNama}\n` +
-      `Kepala Sekolah: ${schoolSettings?.namaKepalaSekolah || schoolSettings?.kepalaSekolah || 'H. Ahmad Fakhri, M.Pd'}`;
+      `Kepala Sekolah: ${schoolSettings?.kepalaSekolah || schoolSettings?.kepalaSekolah || 'H. Ahmad Fakhri, M.Pd'}`;
 
     navigator.clipboard.writeText(text);
     showToast('📋 Ringkasan Rekap Gaji Bulanan berhasil disalin ke Clipboard!');
@@ -1130,14 +1130,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
     type?: 'spp' | 'bebas';
   } | null>(null);
 
-  const [studentTransactions, setStudentTransactions] = useState<Array<{
-    id: string;
-    pembayaran?: string;
-    tagihan: number;
-    tanggal: string;
-    itemId?: string;
-    type?: 'spp' | 'bebas';
-  }>>(() => {
+  const [studentTransactions, setStudentTransactions] = useState<any[]>(() => {
     try {
       const saved = localStorage.getItem(`edu_student_tx_${studentKey}`);
       if (saved !== null) return JSON.parse(saved);
@@ -1164,7 +1157,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
         if (!tx) return false;
         
         // Match by ID
-        if (tx.siswaId && sId && tx.siswaId === sId) return true;
+        if ((tx as any).siswaId && sId && (tx as any).siswaId === sId) return true;
         
         // Match by Name
         if (tx.siswaNama) {
@@ -1299,12 +1292,16 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       const totalPaid = txsForThisBill.reduce((sum, tx) => sum + (tx.nominal || 0), 0);
       const displayTerbayar = Math.max(t.terbayar || 0, totalPaid);
       
-      return {
+      const isLunas = displayTerbayar >= t.nominal;
+      const computedStatus: 'Lunas' | 'Belum Lunas' | 'Dicicil' = isLunas ? 'Lunas' : (displayTerbayar > 0 ? 'Dicicil' : 'Belum Lunas');
+      
+      const res: TagihanKeuangan = {
         ...t,
         terbayar: displayTerbayar,
-        status: displayTerbayar >= t.nominal ? 'Lunas' : (displayTerbayar > 0 ? 'Dicicil' : 'Belum Lunas'),
+        status: computedStatus,
         tanggalBayar: t.tanggalBayar || (txsForThisBill.length > 0 ? txsForThisBill[0].tanggal : undefined)
       };
+      return res;
     });
 
     // 2. Identify "orphan" transactions (transactions without a corresponding bill in tagihanList)
@@ -1314,7 +1311,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       const normName = selectedSiswa.nama.trim().toLowerCase().replace(/\s+/g, ' ');
       
       const txStudent = (tx.siswaNama || '').trim().toLowerCase().replace(/\s+/g, ' ');
-      const isThisStudent = txStudent === normName || (tx.siswaId && tx.siswaId === sId);
+      const isThisStudent = txStudent === normName || ((tx as any).siswaId && (tx as any).siswaId === sId);
       if (!isThisStudent) return false;
       
       const hasMatchingBill = explicitBills.some(b => b.id === tx.tagihanId || b.namaTagihan === tx.pembayaran);
@@ -1332,7 +1329,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       bulanTahun: tahunAjaran,
       nominal: tx.nominal,
       terbayar: tx.nominal,
-      status: 'Lunas',
+      status: 'Lunas' as any,
       tanggalBayar: tx.tanggal,
       jatuhTempo: tx.tanggal
     }));
@@ -2194,7 +2191,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   };
 
   // Re-open receipt modal for any previous transaction
-  const handleReprintTransaction = (tx: { id: string; pembayaran: string; tagihan: number; tanggal: string; tanggalTagihan?: string; tanggalBayar?: string; terbayar?: number; isLunas?: boolean; isDicicil?: boolean }) => {
+  const handleReprintTransaction = (tx: any) => {
     const isPaid = (tx.terbayar && tx.terbayar > 0) || tx.isLunas || tx.isDicicil || (tx.tanggalBayar && tx.tanggalBayar !== '-' && tx.tanggalBayar.trim() !== '');
     const receipt = {
       noNota: generateInvoiceNumber(),
@@ -2419,13 +2416,13 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   useEffect(() => {
     setTagihanList(prevTagihanList => {
       let hasChanged = false;
-      const newList = prevTagihanList.map(tagihan => {
+      const newList: TagihanKeuangan[] = prevTagihanList.map(tagihan => {
         if (!tagihan || tagihan.isDeleted) return tagihan;
         const txsForTagihan = transaksiList.filter(tx => tx && tx.tagihanId === tagihan.id);
         if (txsForTagihan.length > 0) {
           const terbayarFromTx = txsForTagihan.reduce((sum, tx) => sum + (tx.nominal || 0), 0);
           const sisa = tagihan.nominal - terbayarFromTx;
-          const status = sisa <= 0 ? 'Lunas' : (terbayarFromTx > 0 ? 'Dicicil' : 'Belum Lunas');
+          const status: 'Lunas' | 'Belum Lunas' | 'Dicicil' = sisa <= 0 ? 'Lunas' : (terbayarFromTx > 0 ? 'Dicicil' : 'Belum Lunas');
           const latestTx = txsForTagihan[txsForTagihan.length - 1];
           const latestTanggalBayar = latestTx ? latestTx.tanggal : tagihan.tanggalBayar;
           
@@ -2437,7 +2434,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
           // If all transactions were deleted for this bill, revert back to Belum Lunas
           if (!tagihan.id.startsWith('syn-')) {
             hasChanged = true;
-            return { ...tagihan, terbayar: 0, status: 'Belum Lunas', tanggalBayar: '' };
+            return { ...tagihan, terbayar: 0, status: 'Belum Lunas' as const, tanggalBayar: '' };
           }
         }
         return tagihan;
@@ -2662,7 +2659,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
             tipe: quickPayType,
             nominal: inputDibayar,
             tanggal: dateNumeric,
-            metodePembayaran: selectedMetodePembayaran,
+            metodePembayaran: selectedMetodePembayaran as "Cash / Kasir" | "Transfer Bank" | "QRIS",
             penerima: 'Kasir / Bendahara Sekolah'
           };
           setTransaksiList(prev => [globalTrx, ...prev]);
@@ -2755,7 +2752,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
             tipe: quickPayType,
             nominal: inputDibayar,
             tanggal: dateNumeric,
-            metodePembayaran: selectedMetodePembayaran,
+            metodePembayaran: selectedMetodePembayaran as "Cash / Kasir" | "Transfer Bank" | "QRIS",
             penerima: 'Kasir / Bendahara Sekolah'
           };
           setTransaksiList(prev => [globalTrx, ...prev]);
@@ -2851,7 +2848,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
         tipe: 'ukt',
         nominal: payNominal,
         tanggal: dateNumeric,
-        metodePembayaran: selectedMetodePembayaran,
+        metodePembayaran: selectedMetodePembayaran as "Cash / Kasir" | "Transfer Bank" | "QRIS",
         penerima: 'Kasir / Bendahara Sekolah'
       };
       setTransaksiList(prev => [globalTrx, ...prev]);
@@ -3215,7 +3212,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
     const rows = tagihanList.map(t => {
       const txs = transaksiList.filter(tx => tx.tagihanId === t.id);
       const latestTx = txs.length > 0 ? txs[txs.length - 1] : null;
-      const isLunas = t.status === 'Lunas' || t.status === 'LUNAS';
+      const isLunas = t.status === 'Lunas';
       const tglBayar = isLunas ? (t.tanggalBayar || (latestTx ? latestTx.tanggal : new Date().toLocaleDateString('id-ID'))) : '-';
       const invoiceNo = getStableInvoiceNumber(t);
       return [
@@ -3242,7 +3239,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
     const rows = tagihanList.map(t => {
       const txs = transaksiList.filter(tx => tx.tagihanId === t.id);
       const latestTx = txs.length > 0 ? txs[txs.length - 1] : null;
-      const isLunas = t.status === 'Lunas' || t.status === 'LUNAS';
+      const isLunas = t.status === 'Lunas';
       const tglBayar = isLunas ? (t.tanggalBayar || (latestTx ? latestTx.tanggal : new Date().toLocaleDateString('id-ID'))) : '-';
       const invoiceNo = getStableInvoiceNumber(t);
       return [
@@ -4477,7 +4474,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                           <td className="px-4 py-3 whitespace-nowrap">
                             {isLunas || isDicicil ? (
                               <span className="text-[10px] bg-slate-800 text-slate-300 font-semibold px-2 py-1 rounded-md inline-block border border-slate-700/60">
-                                {latestTx?.metodePembayaran || t.metodePembayaran || 'Cash / Kasir'}
+                                {latestTx?.metodePembayaran || (t as any).metodePembayaran || 'Cash / Kasir'}
                               </span>
                             ) : (
                               <span className="text-xs text-slate-500">-</span>
@@ -5659,7 +5656,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                             tipe: editingTagihan.tipe || 'spp',
                             nominal: updatedTerbayar,
                             tanggal: finalTanggalBayar || new Date().toLocaleDateString('id-ID'),
-                            metodePembayaran: editTagihanForm.metodePembayaran || 'Cash / Kasir',
+                            metodePembayaran: (editTagihanForm.metodePembayaran || 'Cash / Kasir') as "Cash / Kasir" | "Transfer Bank" | "QRIS",
                             penerima: 'Kasir / Bendahara Sekolah'
                           };
                           return [newTx, ...baseTx];

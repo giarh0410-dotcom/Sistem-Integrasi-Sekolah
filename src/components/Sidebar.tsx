@@ -30,11 +30,12 @@ import {
   Trophy,
   Coins,
   FolderOpen,
-  LayoutList
+  LayoutList,
+  Store
 } from 'lucide-react';
 import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab, AdministrasiSubTab, PengaturanSubTab } from '../types/school';
 
-export type TabType = 'dashboard' | 'database' | 'absensi' | 'cbt' | 'administrasi' | 'keuangan' | 'pengaturan';
+export type TabType = 'dashboard' | 'database' | 'absensi' | 'cbt' | 'administrasi' | 'keuangan' | 'pengaturan' | 'kasir';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -127,6 +128,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Wallet className="w-5 h-5" />,
       badge: userGoogleToken ? 'Drive Ready' : 'Sheets',
       desc: 'SPP, UKT & Drive'
+    },
+    {
+      id: 'kasir',
+      label: 'Kasir Toko (POS)',
+      icon: <Store className="w-5 h-5" />,
+      badge: 'Minimarket',
+      desc: 'Penjualan & Stok Kasir'
     },
     {
       id: 'pengaturan',
@@ -374,50 +382,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </button>
                       )}
 
-                      {/* 2. Absensi Harian Siswa */}
+
+
+                      {/* Rekap Absensi Terpadu */}
                       {currentRole !== 'guru' && currentRole !== 'petugas_absensi' && (
                         <button
                           onClick={() => {
                             setActiveTab('absensi');
-                            if (setAbsensiSubTab) setAbsensiSubTab('harian_siswa');
+                            if (setAbsensiSubTab) setAbsensiSubTab('rekap_absensi');
                           }}
                           className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
-                            absensiSubTab === 'harian_siswa'
-                              ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                            absensiSubTab === 'rekap_absensi'
+                              ? 'bg-amber-600/10 text-amber-400 border border-amber-500/20 shadow-sm'
                               : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <CalendarCheck className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>Absensi Harian Siswa</span>
+                            <FileSpreadsheet className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Rekap Absensi (Siswa & Guru)</span>
                           </div>
-                        </button>
-                      )}
-
-
-                      {/* 4. Presensi Guru */}
-                      {currentRole !== 'guru' && currentRole !== 'petugas_absensi' && (
-                        <button
-                          onClick={() => {
-                            setActiveTab('absensi');
-                            if (setAbsensiSubTab) setAbsensiSubTab('absensi_guru');
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
-                            absensiSubTab === 'absensi_guru'
-                              ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20 shadow-sm'
-                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <UserCheck className="w-3.5 h-3.5 text-purple-400" />
-                            <span>Presensi Guru</span>
-                          </div>
+                          <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1 py-0.5 rounded font-bold">
+                            Rekap
+                          </span>
                         </button>
                       )}
 
                       
                       {/* Perizinan / Persetujuan Kepala Sekolah */}
-                      {currentRole !== 'petugas_absensi' && (
+                      {currentRole !== 'petugas_absensi' && currentRole !== 'siswa' && (
                         <button
                           onClick={() => {
                             setActiveTab('absensi');
@@ -530,7 +522,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       )}
 
                       {/* 2. Jadwal & Kartu Ujian */}
-                      {currentRole !== 'guru' && (
+                      {currentRole !== 'guru' && currentRole !== 'siswa' && (
                         <button
                           onClick={() => {
                             setActiveTab('cbt');
@@ -568,22 +560,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </button>
 
                       {/* 4. Hasil Ujian (Firebase) */}
-                      <button
-                        onClick={() => {
-                          setActiveTab('cbt');
-                          if (setCbtSubTab) setCbtSubTab('hasil_ujian');
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
-                          cbtSubTab === 'hasil_ujian'
-                            ? 'bg-amber-600/10 text-amber-400 border border-amber-500/20 shadow-sm'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Hasil Ujian (Firebase)</span>
-                        </div>
-                      </button>
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('hasil_ujian');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'hasil_ujian'
+                              ? 'bg-amber-600/10 text-amber-400 border border-amber-500/20 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Hasil Ujian (Firebase)</span>
+                          </div>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

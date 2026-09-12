@@ -71,12 +71,33 @@ interface DatabaseViewProps {
   currentRole?: string;
 }
 
-const normalizeDateForInput = (d: string | undefined): string => {
+const normalizeDateForInput = (d: any): string => {
   if (!d) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
-  const p = d.split(/[\/\-]/);
+  const str = String(d).trim();
+  
+  // Handle Excel Serial Date (e.g. 41581)
+  if (/^\d{4,6}$/.test(str)) {
+    const serial = parseInt(str);
+    try {
+      // Excel serial date to JS Date
+      // 25569 is the number of days between 1900-01-01 and 1970-01-01
+      const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    } catch (e) {
+      console.error("Error normalizing excel date", e);
+    }
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const p = str.split(/[\/\-]/);
   if (p.length === 3 && p[2].length === 4) return `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
-  return d;
+  if (p.length === 3 && p[0].length === 4) return `${p[0]}-${p[1].padStart(2, '0')}-${p[2].padStart(2, '0')}`;
+  return str;
 };
 
 export const DatabaseView: React.FC<DatabaseViewProps> = ({
@@ -527,6 +548,24 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
     alert("✓ Berhasil memperbaiki seluruh format NIK siswa (menghilangkan notasi ilmiah/eksponensial Excel dan merapikannya menjadi 16 digit NIK normal).");
   };
 
+  const handleFixAllDates = () => {
+    setSiswaList(prev => prev.map(s => ({
+      ...s,
+      tanggalLahir: normalizeDateForInput(s.tanggalLahir),
+      tanggalLahirAyah: normalizeDateForInput(s.tanggalLahirAyah),
+      tanggalLahirIbu: normalizeDateForInput(s.tanggalLahirIbu)
+    })));
+    setGuruList(prev => prev.map(g => ({
+      ...g,
+      tanggalLahir: normalizeDateForInput(g.tanggalLahir)
+    })));
+    setStafList(prev => prev.map(st => ({
+      ...st,
+      tanggalLahir: normalizeDateForInput(st.tanggalLahir)
+    })));
+    alert("✓ Berhasil memperbaiki seluruh format Tanggal Lahir (mengonversi format Excel Serial Date menjadi format tanggal standar).");
+  };
+
   // Handle File Import
   const handleTriggerImport = (type: 'siswa' | 'guru' | 'staf') => {
     setImportTargetType(type);
@@ -619,7 +658,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
               const nis = cols[4] || `${1000 + idx}`;
               const nik = cleanNik(cols[5]) || `317100000000000${idx}`;
               const tempatLahir = cols[6] || 'Depok';
-              const tanggalLahir = cols[7] || '2013-01-01';
+              const tanggalLahir = normalizeDateForInput(cols[7] || '2013-01-01');
               const agama = cols[8] || 'Islam';
               const alamat = cols[9] || 'Jl. Sekolah No. 1';
               const rt = cols[10] || '01';
@@ -631,15 +670,15 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
               
               const namaAyah = cols[16] || '';
               const tempatLahirAyah = cols[17] || '';
-              const tanggalLahirAyah = cols[18] || '';
+              const tanggalLahirAyah = normalizeDateForInput(cols[18] || '');
               const pendidikanAyah = cols[19] || '';
               const pekerjaanAyah = cols[20] || '';
               const penghasilanAyah = cols[21] || '';
               const nikAyah = cleanNik(cols[22]) || '';
-
+ 
               const namaIbu = cols[23] || '';
               const tempatLahirIbu = cols[24] || '';
-              const tanggalLahirIbu = cols[25] || '';
+              const tanggalLahirIbu = normalizeDateForInput(cols[25] || '');
               const pendidikanIbu = cols[26] || '';
               const pekerjaanIbu = cols[27] || '';
               const penghasilanIbu = cols[28] || '';
@@ -728,7 +767,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                 telepon: cols[8] || '08123456789',
                 jenisKelamin: (cols[9] === 'P' ? 'P' : 'L') as 'L' | 'P',
                 tempatLahir: cols[10] || 'Jakarta',
-                tanggalLahir: cols[11] || '1985-01-01',
+                tanggalLahir: normalizeDateForInput(cols[11] || '1985-01-01'),
                 agama: cols[12] || 'Islam',
                 alamatLengkap: 'Jl. Pendidikan No. 1',
                 pendidikanTerakhir: cols[13] || 'S1 Pendidikan',
@@ -751,7 +790,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                 telepon: cols[4] || '08123456789',
                 jenisKelamin: (cols[5] === 'P' ? 'P' : 'L') as 'L' | 'P',
                 tempatLahir: cols[6] || 'Jakarta',
-                tanggalLahir: cols[7] || '1990-01-01',
+                tanggalLahir: normalizeDateForInput(cols[7] || '1990-01-01'),
                 agama: cols[8] || 'Islam',
                 alamatLengkap: 'Jl. Pendidikan No. 1',
                 pendidikanTerakhir: cols[9] || 'S1',
@@ -3360,14 +3399,14 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                           <input 
                             type="date" 
                             required 
-                            value={formSiswa.tanggalLahir} 
-                            onChange={e => setFormSiswa({ ...formSiswa, tanggalLahir: e.target.value as any })}
+                            value={normalizeDateForInput(formSiswa.tanggalLahir)} 
+                            onChange={e => setFormSiswa({ ...formSiswa, tanggalLahir: e.target.value })}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
                           />
                           <div className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white flex justify-between items-center group focus-within:border-amber-500 transition-colors">
                             <span>
                               {formSiswa.tanggalLahir 
-                                ? formSiswa.tanggalLahir.split('-').reverse().join('/') 
+                                ? normalizeDateForInput(formSiswa.tanggalLahir).split('-').reverse().join('/') 
                                 : <span className="text-slate-500">dd/mm/yyyy</span>}
                             </span>
                             <Calendar className="w-3.5 h-3.5 text-slate-500 group-hover:text-amber-500 transition-colors" />
@@ -3516,8 +3555,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         <label className="text-[11px] font-bold text-slate-400">Tanggal Lahir Ayah</label>
                         <input 
                           type="date" 
-                          value={formSiswa.tanggalLahirAyah || ''} 
-                          onChange={e => setFormSiswa({ ...formSiswa, tanggalLahirAyah: e.target.value as any })}
+                          value={normalizeDateForInput(formSiswa.tanggalLahirAyah)} 
+                          onChange={e => setFormSiswa({ ...formSiswa, tanggalLahirAyah: e.target.value })}
                           className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
                         />
                       </div>
@@ -3604,8 +3643,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                           <label className="text-[11px] font-bold text-slate-400">Tanggal Lahir Ibu</label>
                           <input 
                             type="date" 
-                            value={formSiswa.tanggalLahirIbu || ''} 
-                            onChange={e => setFormSiswa({ ...formSiswa, tanggalLahirIbu: e.target.value as any })}
+                            value={normalizeDateForInput(formSiswa.tanggalLahirIbu)} 
+                            onChange={e => setFormSiswa({ ...formSiswa, tanggalLahirIbu: e.target.value })}
                             className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
                           />
                         </div>
@@ -3982,16 +4021,54 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         </select>
                       </div>
                     </div>
-                    <div>
-                      <label className="text-[11px] font-bold text-slate-400">Jenis Kelamin</label>
-                      <select 
-                        value={formGuru.jenisKelamin || 'L'} 
-                        onChange={e => setFormGuru({ ...formGuru, jenisKelamin: e.target.value as 'L' | 'P' })}
-                        className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold"
-                      >
-                        <option value="L">Laki-laki (L)</option>
-                        <option value="P">Perempuan (P)</option>
-                      </select>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-400">Tempat Lahir</label>
+                        <input 
+                          type="text" 
+                          value={formGuru.tempatLahir || ''} 
+                          onChange={e => setFormGuru({ ...formGuru, tempatLahir: e.target.value })}
+                          className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-400">Tanggal Lahir</label>
+                        <input 
+                          type="date" 
+                          value={normalizeDateForInput(formGuru.tanggalLahir)} 
+                          onChange={e => setFormGuru({ ...formGuru, tanggalLahir: e.target.value })}
+                          className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-400">Jenis Kelamin</label>
+                        <select 
+                          value={formGuru.jenisKelamin || 'L'} 
+                          onChange={e => setFormGuru({ ...formGuru, jenisKelamin: e.target.value as 'L' | 'P' })}
+                          className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold"
+                        >
+                          <option value="L">Laki-laki (L)</option>
+                          <option value="P">Perempuan (P)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-400">Agama</label>
+                        <select 
+                          value={formGuru.agama || 'Islam'} 
+                          onChange={e => setFormGuru({ ...formGuru, agama: e.target.value as any })}
+                          className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold focus:outline-none focus:border-amber-500"
+                        >
+                          <option value="Islam">Islam</option>
+                          <option value="Kristen">Kristen</option>
+                          <option value="Katolik">Katolik</option>
+                          <option value="Hindu">Hindu</option>
+                          <option value="Buddha">Buddha</option>
+                          <option value="Konghucu">Konghucu</option>
+                        </select>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -4049,9 +4126,10 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                       <input 
                         type="text" 
                         required 
+                        placeholder="317101..."
                         value={formStaf.nik} 
                         onChange={e => setFormStaf({ ...formStaf, nik: e.target.value as any })}
-                        className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white" 
+                        className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
                       />
                     </div>
                     <div>
@@ -4076,24 +4154,45 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                       className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white" 
                     />
                   </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-400">Bagian / Divisi</label>
+                    <select 
+                      value={formStaf.bagian} 
+                      onChange={e => setFormStaf({ ...formStaf, bagian: e.target.value as any })}
+                      className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="Bendahara / Keuangan">Bendahara / Keuangan</option>
+                      <option value="Tata Usaha">Tata Usaha</option>
+                      <option value="Perpustakaan">Perpustakaan</option>
+                      <option value="Sarana & Prasarana (TUK)">Sarana & Prasarana (TUK)</option>
+                      <option value="Kebersihan & Keamanan">Kebersihan & Keamanan</option>
+                      <option value="Teknologi Informasi (IT)">Teknologi Informasi (IT)</option>
+                      <option value="Administrasi Akademik">Administrasi Akademik</option>
+                      <option value="Humas & Layanan Siswa">Humas & Layanan Siswa</option>
+                    </select>
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-[11px] font-bold text-slate-400">Bagian / Divisi</label>
-                      <select 
-                        value={formStaf.bagian} 
-                        onChange={e => setFormStaf({ ...formStaf, bagian: e.target.value as any })}
-                        className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold"
-                      >
-                        <option value="Bendahara / Keuangan">Bendahara / Keuangan</option>
-                        <option value="Tata Usaha">Tata Usaha</option>
-                        <option value="Perpustakaan">Perpustakaan</option>
-                        <option value="Sarana & Prasarana (TUK)">Sarana & Prasarana (TUK)</option>
-                        <option value="Kebersihan & Keamanan">Kebersihan & Keamanan</option>
-                        <option value="Teknologi Informasi (IT)">Teknologi Informasi (IT)</option>
-                        <option value="Administrasi Akademik">Administrasi Akademik</option>
-                        <option value="Humas & Layanan Siswa">Humas & Layanan Siswa</option>
-                      </select>
+                      <label className="text-[11px] font-bold text-slate-400">Tempat Lahir</label>
+                      <input 
+                        type="text" 
+                        value={formStaf.tempatLahir || ''} 
+                        onChange={e => setFormStaf({ ...formStaf, tempatLahir: e.target.value })}
+                        className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
+                      />
                     </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-400">Tanggal Lahir</label>
+                      <input 
+                        type="date" 
+                        value={normalizeDateForInput(formStaf.tanggalLahir)} 
+                        onChange={e => setFormStaf({ ...formStaf, tanggalLahir: e.target.value })}
+                        className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[11px] font-bold text-slate-400">Jenis Kelamin</label>
                       <select 
@@ -4103,6 +4202,21 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                       >
                         <option value="L">Laki-laki (L)</option>
                         <option value="P">Perempuan (P)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-400">Agama</label>
+                      <select 
+                        value={formStaf.agama || 'Islam'} 
+                        onChange={e => setFormStaf({ ...formStaf, agama: e.target.value as any })}
+                        className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold focus:outline-none focus:border-amber-500"
+                      >
+                        <option value="Islam">Islam</option>
+                        <option value="Kristen">Kristen</option>
+                        <option value="Katolik">Katolik</option>
+                        <option value="Hindu">Hindu</option>
+                        <option value="Buddha">Buddha</option>
+                        <option value="Konghucu">Konghucu</option>
                       </select>
                     </div>
                   </div>
@@ -5447,6 +5561,12 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                     <Download className="w-3.5 h-3.5" /> Unduh Template CSV (Kotak Rapi)
                   </button>
                   <button
+                    onClick={handleFixAllDates}
+                    className="w-full py-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 font-bold rounded-lg text-[10px] flex items-center justify-center gap-1.5 transition-all border border-amber-600/30"
+                  >
+                    <CheckCircle2 className="w-3 h-3" /> Perbaiki Format Tanggal (Excel Fix)
+                  </button>
+                  <button
                     onClick={() => {
                       setShowTemplateHubModal(false);
                       handleTriggerImport('siswa');
@@ -5798,7 +5918,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   <div className="bg-[#181818] p-3.5 rounded-xl border border-slate-800/60 space-y-1">
                     <p className="text-[10px] font-bold text-slate-500 uppercase">Tempat, Tanggal Lahir</p>
                     <p className="text-sm font-bold text-white flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-blue-400 shrink-0" /> {selectedSiswaDetail.tempatLahir}, {selectedSiswaDetail.tanggalLahir}
+                      <Calendar className="w-3.5 h-3.5 text-blue-400 shrink-0" /> {selectedSiswaDetail.tempatLahir}, {normalizeDateForInput(selectedSiswaDetail.tanggalLahir).split('-').reverse().join('/')}
                     </p>
                   </div>
 
@@ -5895,7 +6015,15 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
                   <div className="bg-[#181818] p-3.5 rounded-xl border border-slate-800/60 space-y-1">
                     <p className="text-[10px] font-bold text-slate-500 uppercase">Tempat, Tanggal Lahir Ortu</p>
-                    <p className="text-sm font-bold text-white">{selectedSiswaDetail.tempatLahirOrtu || '-'}</p>
+                    <p className="text-sm font-bold text-white">
+                      {selectedSiswaDetail.tempatLahirOrtu || '-'}
+                      {selectedSiswaDetail.tanggalLahirOrtu && (
+                        <>
+                          <span className="text-slate-600 px-1">,</span>
+                          <span className="text-blue-400">{normalizeDateForInput(selectedSiswaDetail.tanggalLahirOrtu).split('-').reverse().join('/')}</span>
+                        </>
+                      )}
+                    </p>
                   </div>
 
                   <div className="bg-[#181818] p-3.5 rounded-xl border border-slate-800/60 space-y-1">

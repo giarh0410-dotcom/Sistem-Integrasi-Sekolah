@@ -37,7 +37,8 @@ import {
   Zap,
   Sliders,
   Clock,
-  Timer
+  Timer,
+  Layers
 } from 'lucide-react';
 import { SchoolSettings, Siswa, Guru, Staf, RombelKelas, MataPelajaranItem, AbsensiSiswaHarian, AbsensiSiswaKelas, FonnteConfig, JadwalPresensi } from '../types/school';
 import { exportAllToGoogleSheets } from '../lib/googleDriveSync';
@@ -61,6 +62,8 @@ interface PengaturanViewProps {
   absensiKelasList?: AbsensiSiswaKelas[];
   activeSubTab: 'identitas' | 'logo' | 'fonnte' | 'jadwal' | 'sistem';
   setActiveSubTab: (tab: 'identitas' | 'logo' | 'fonnte' | 'jadwal' | 'sistem') => void;
+  theme: 'dark' | 'light';
+  setTheme: (theme: 'dark' | 'light') => void;
 }
 
 export const PengaturanView: React.FC<PengaturanViewProps> = ({
@@ -79,7 +82,9 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
   absensiHarian,
   absensiKelasList,
   activeSubTab,
-  setActiveSubTab
+  setActiveSubTab,
+  theme,
+  setTheme
 }) => {
   const [formData, setFormData] = useState<SchoolSettings>({ ...schoolSettings });
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -1456,6 +1461,8 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
           </div>
         </div>
       )}
+
+
 
       {/* SUBTAB 6: SISTEM & DATABASE (RESET) */}
       {activeSubTab === 'sistem' && (

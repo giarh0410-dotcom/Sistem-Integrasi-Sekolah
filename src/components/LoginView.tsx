@@ -287,11 +287,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
       {/* Background Subtle Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none"></div>
 
-      <div className="max-w-md w-full bg-[#121215]/90 backdrop-blur-xl border border-zinc-800/80 rounded-2xl shadow-2xl p-6 sm:p-8 relative z-10 space-y-6">
+      <div className="max-w-md w-full bg-white/10 backdrop-blur-2xl border border-white/25 rounded-2xl shadow-2xl p-6 sm:p-8 relative z-10 space-y-6 text-white">
         
         {/* Header: School Logo & Title */}
-        <div className="flex items-center gap-4 pb-5 border-b border-zinc-800/80">
-          <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-700/60 p-3 flex items-center justify-center shrink-0 shadow-md overflow-hidden">
+        <div className="flex items-center gap-4 pb-5 border-b border-white/15">
+          <div className="w-16 h-16 rounded-2xl bg-white/15 border border-white/30 p-3 flex items-center justify-center shrink-0 shadow-md overflow-hidden">
             <img 
               src={schoolSettings.logoUrl || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%232563eb"/></svg>'} 
               alt={schoolSettings.namaSekolah} 
@@ -304,18 +304,18 @@ export const LoginView: React.FC<LoginViewProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2 mb-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span className="text-[10px] font-semibold text-emerald-300 uppercase tracking-wider">
                 Portal Akademik
               </span>
             </div>
             <h1 className="text-base font-bold text-white tracking-tight">
               {schoolSettings.namaSekolah}
             </h1>
-            <p className="text-[11px] text-zinc-400 font-medium mt-0.5 flex items-center gap-2">
+            <p className="text-[11px] text-zinc-200 font-medium mt-0.5 flex items-center gap-2">
 
 
-              <span className="text-blue-400 font-semibold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 text-[10px]">Akreditasi A</span>
+              <span className="text-blue-200 font-semibold bg-blue-500/20 px-1.5 py-0.5 rounded border border-blue-400/30 text-[10px]">Akreditasi A</span>
             </p>
           </div>
         </div>
@@ -325,9 +325,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
         {/* Quick Role Selection Helper */}
         {!schoolSettings.hideQuickDemoLogin && (
           <div className="space-y-2">
-            <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider flex items-center justify-between">
+            <div className="text-[11px] font-bold text-zinc-300 uppercase tracking-wider flex items-center justify-between">
               <span>Pilih Akun Demo / Akses Cepat</span>
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
               <button
@@ -335,15 +335,15 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 onClick={() => handleFillDemo('kepsek')}
                 className={`px-2.5 py-2 rounded-xl text-left border transition-all cursor-pointer ${
                   selectedRole === 'kepsek'
-                    ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-200 ring-1 ring-indigo-500/30'
-                    : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+                    ? 'bg-indigo-600/40 border-indigo-400/60 text-indigo-100 ring-1 ring-indigo-400/30'
+                    : 'bg-white/5 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <div className="text-[11px] font-bold flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-300"></span>
                   <span>Kepala Sekolah</span>
                 </div>
-                <div className="text-[10px] text-zinc-500 font-mono mt-0.5">kepsek / kepsek123</div>
+                <div className="text-[10px] text-zinc-400 font-mono mt-0.5">kepsek / kepsek123</div>
               </button>
 
               <button
@@ -351,15 +351,15 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 onClick={() => handleFillDemo('admin')}
                 className={`px-2.5 py-2 rounded-xl text-left border transition-all cursor-pointer ${
                   selectedRole === 'admin'
-                    ? 'bg-blue-600/20 border-blue-500/50 text-blue-200 ring-1 ring-blue-500/30'
-                    : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+                    ? 'bg-blue-600/40 border-blue-400/60 text-blue-100 ring-1 ring-blue-400/30'
+                    : 'bg-white/5 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <div className="text-[11px] font-bold flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-300"></span>
                   <span>Administrator</span>
                 </div>
-                <div className="text-[10px] text-zinc-500 font-mono mt-0.5">admin / admin</div>
+                <div className="text-[10px] text-zinc-400 font-mono mt-0.5">admin / admin</div>
               </button>
 
               <button
@@ -367,15 +367,15 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 onClick={() => handleFillDemo('guru')}
                 className={`px-2.5 py-2 rounded-xl text-left border transition-all cursor-pointer ${
                   selectedRole === 'guru'
-                    ? 'bg-purple-600/20 border-purple-500/50 text-purple-200 ring-1 ring-purple-500/30'
-                    : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+                    ? 'bg-purple-600/40 border-purple-400/60 text-purple-100 ring-1 ring-purple-400/30'
+                    : 'bg-white/5 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <div className="text-[11px] font-bold flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-300"></span>
                   <span>Guru / Mapel</span>
                 </div>
-                <div className="text-[10px] text-zinc-500 font-mono mt-0.5">{demoGuruUser}</div>
+                <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{demoGuruUser}</div>
               </button>
 
               <button
@@ -383,15 +383,15 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 onClick={() => handleFillDemo('staf')}
                 className={`px-2.5 py-2 rounded-xl text-left border transition-all cursor-pointer ${
                   selectedRole === 'staf'
-                    ? 'bg-amber-600/20 border-amber-500/50 text-amber-200 ring-1 ring-amber-500/30'
-                    : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+                    ? 'bg-amber-600/40 border-amber-400/60 text-amber-100 ring-1 ring-amber-400/30'
+                    : 'bg-white/5 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <div className="text-[11px] font-bold flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-300"></span>
                   <span>Staf / Keuangan</span>
                 </div>
-                <div className="text-[10px] text-zinc-500 font-mono mt-0.5">{demoStafUser}</div>
+                <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{demoStafUser}</div>
               </button>
 
               <button
@@ -399,15 +399,15 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 onClick={() => handleFillDemo('petugas_absensi')}
                 className={`px-2.5 py-2 rounded-xl text-left border transition-all cursor-pointer ${
                   selectedRole === 'petugas_absensi'
-                    ? 'bg-cyan-600/20 border-cyan-500/50 text-cyan-200 ring-1 ring-cyan-500/30'
-                    : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+                    ? 'bg-cyan-600/40 border-cyan-400/60 text-cyan-100 ring-1 ring-cyan-400/30'
+                    : 'bg-white/5 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <div className="text-[11px] font-bold flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-300"></span>
                   <span>Petugas Absensi</span>
                 </div>
-                <div className="text-[10px] text-zinc-500 font-mono mt-0.5">petugas / petugas123</div>
+                <div className="text-[10px] text-zinc-400 font-mono mt-0.5">petugas / petugas123</div>
               </button>
 
               <button
@@ -415,15 +415,15 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 onClick={() => handleFillDemo('siswa')}
                 className={`px-2.5 py-2 rounded-xl text-left border transition-all cursor-pointer col-span-2 sm:col-span-1 ${
                   selectedRole === 'siswa'
-                    ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-200 ring-1 ring-emerald-500/30'
-                    : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+                    ? 'bg-emerald-600/40 border-emerald-400/60 text-emerald-100 ring-1 ring-emerald-400/30'
+                    : 'bg-white/5 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <div className="text-[11px] font-bold flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-300"></span>
                   <span>Siswa / Wali</span>
                 </div>
-                <div className="text-[10px] text-zinc-500 font-mono mt-0.5">{demoSiswaUser}</div>
+                <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{demoSiswaUser}</div>
               </button>
             </div>
           </div>
@@ -431,7 +431,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
         {/* Error Alert */}
         {errorMessage && (
-          <div className="p-3 bg-red-950/60 border border-red-500/40 rounded-xl text-red-200 text-xs font-medium flex items-center gap-2">
+          <div className="p-3 bg-red-950/80 border border-red-500/50 rounded-xl text-red-200 text-xs font-medium flex items-center gap-2">
             <span>⚠️ {errorMessage}</span>
           </div>
         )}
@@ -439,7 +439,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         {/* Form */}
         <form onSubmit={handleManualLogin} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
+            <label className="block text-xs font-medium text-zinc-200 mb-1">
               Username atau Email
             </label>
             <input
@@ -447,12 +447,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
               value={emailInput}
               onChange={(e) => setEmailInput(e.target.value)}
               placeholder="Masukkan username atau email"
-              className="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+              className="w-full bg-black/30 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
+            <label className="block text-xs font-medium text-zinc-200 mb-1">
               Kata Sandi
             </label>
             <input
@@ -460,14 +460,14 @@ export const LoginView: React.FC<LoginViewProps> = ({
               value={passwordInput}
               onChange={(e) => setPasswordInput(e.target.value)}
               placeholder="••••••••••••"
-              className="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+              className="w-full bg-black/30 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 transition-all"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading || !emailInput.trim() || !passwordInput.trim()}
-            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl text-xs transition-all shadow-lg shadow-blue-600/25 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 group cursor-pointer"
+            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl text-xs transition-all shadow-lg shadow-blue-600/30 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 group cursor-pointer border border-blue-400/30"
           >
             <span>{loading ? 'Memproses Akses...' : 'Masuk ke Dashboard'}</span>
             {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />}
@@ -475,7 +475,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         </form>
 
         {/* Footer */}
-        <div className="pt-3 border-t border-zinc-800/80 flex items-center justify-between text-[10px] text-zinc-500">
+        <div className="pt-3 border-t border-white/15 flex items-center justify-between text-[10px] text-zinc-400">
           <span>Gie Technologi</span>
           <span>v2026.4.1</span>
         </div>

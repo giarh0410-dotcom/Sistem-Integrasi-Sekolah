@@ -76,7 +76,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className={`${theme === 'light' ? 'bg-white text-slate-900 border-slate-200' : 'bg-[#0A0A0A] text-white border-slate-800'} border-b sticky top-0 z-40 shadow-sm transition-colors`}>
+    <header className="bg-[#0A0A0A] text-white border-b border-slate-800 sticky top-0 z-40 shadow-sm transition-colors">
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
         {/* Brand */}

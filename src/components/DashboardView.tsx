@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
-  Users, 
   GraduationCap, 
   UserCheck, 
   CalendarCheck, 
@@ -9,13 +8,9 @@ import {
   Wallet, 
   ArrowUpRight,
   Sparkles,
-  TrendingUp,
-  Clock,
-  BookOpen,
-  Smartphone
+  BookOpen
 } from 'lucide-react';
 import { Siswa, Guru, Staf, AbsensiGuru, AbsensiSiswaHarian, TagihanKeuangan, UjianCBT, Role, SchoolSettings } from '../types/school';
-import { MobilePortalLayout } from './MobilePortalLayout';
 
 interface DashboardViewProps {
   siswaList: Siswa[];
@@ -60,8 +55,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   colorTheme = 'emerald',
   schoolSettings
 }) => {
-  const [viewMode, setViewMode] = useState<'standard' | 'mobile_portal'>('mobile_portal');
-
   // Calculations
   const totalSiswa = siswaList.length;
   const totalGuru = guruList.length;
@@ -77,46 +70,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="space-y-6">
-      
-      {/* Top Layout Mode Switcher */}
-      <div className="flex items-center justify-between bg-slate-900/75 backdrop-blur-md p-3 rounded-2xl border border-slate-800/80 shadow-xl">
-        <div className="flex items-center gap-2">
-          <Smartphone className="w-4 h-4 text-blue-400" />
-          <span className="text-xs font-bold text-white">Mode Tampilan Dashboard:</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setViewMode('mobile_portal')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-              viewMode === 'mobile_portal' 
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30' 
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" /> Portal Mobile (Sesuai Referensi)
-          </button>
-          <button
-            onClick={() => setViewMode('standard')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-              viewMode === 'standard' 
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30' 
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            Dashboard Standar
-          </button>
-        </div>
-      </div>
-
-      {viewMode === 'mobile_portal' ? (
-        <MobilePortalLayout
-          onNavigateTab={onNavigateTab}
-          currentRole={currentRole}
-          schoolSettings={schoolSettings}
-          siswaList={siswaList}
-        />
-      ) : (
-        <div className="space-y-6">
       
       {/* Banner Top Welcome */}
       <div className={`bg-gradient-to-r ${getThemeGradient(colorTheme)} rounded-2xl p-6 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border`}>
@@ -349,9 +302,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
       </div>
-
-      </div>
-      )}
 
     </div>
   );

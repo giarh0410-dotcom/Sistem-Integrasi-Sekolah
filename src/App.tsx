@@ -6,6 +6,7 @@ import { DatabaseView } from './components/DatabaseView';
 import { AbsensiView } from './components/AbsensiView';
 import { CbtView } from './components/CbtView';
 import { AdministrasiGuruView } from './components/AdministrasiGuruView';
+import { SupervisiGuruView } from './components/SupervisiGuruView';
 import { KeuanganView } from './components/KeuanganView';
 import { PengaturanView } from './components/PengaturanView';
 import { LoginView } from './components/LoginView';
@@ -281,10 +282,15 @@ export default function App() {
     return normalizedSettings;
   });
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [colorTheme, setColorTheme] = useState<string>(() => localStorage.getItem('edu_colorTheme') || 'emerald');
 
   useEffect(() => {
     localStorage.setItem('edu_theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('edu_colorTheme', colorTheme);
+  }, [colorTheme]);
 
   // Load database from Firestore upon user login
   useEffect(() => {
@@ -899,6 +905,8 @@ export default function App() {
         theme={theme}
         setTheme={setTheme}
         firebaseSyncStatus={firebaseSyncStatus}
+        colorTheme={colorTheme}
+        setColorTheme={setColorTheme}
       />
 
       {/* Main App Layout */}
@@ -948,6 +956,7 @@ export default function App() {
               userGoogleToken={userGoogleToken}
               currentRole={currentRole}
               userEmail={userEmail}
+              colorTheme={colorTheme}
             />
           )}
 
@@ -1035,6 +1044,13 @@ export default function App() {
               schoolSettings={schoolSettings}
               absensiHarian={absensiHarian}
               stafList={stafList}
+            />
+          )}
+
+          {activeTab === 'supervisi' && (
+            <SupervisiGuruView
+              guruList={guruList}
+              schoolSettings={schoolSettings}
             />
           )}
           

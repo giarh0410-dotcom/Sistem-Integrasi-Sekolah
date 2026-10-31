@@ -11,7 +11,8 @@ import {
   Database,
   RefreshCw,
   Cloud,
-  Check
+  Check,
+  Palette
 } from 'lucide-react';
 import { Role, SchoolSettings } from '../types/school';
 import { googleSignIn, googleSignOut } from '../lib/firebase';
@@ -28,6 +29,8 @@ interface HeaderProps {
   theme: 'dark' | 'light';
   setTheme: (theme: 'dark' | 'light') => void;
   firebaseSyncStatus?: 'idle' | 'saving' | 'saved' | 'error';
+  colorTheme?: string;
+  setColorTheme?: (theme: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -41,7 +44,9 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   theme,
   setTheme,
-  firebaseSyncStatus = 'idle'
+  firebaseSyncStatus = 'idle',
+  colorTheme = 'emerald',
+  setColorTheme
 }) => {
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
@@ -172,7 +177,24 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </div>
 
-
+          {/* Color Theme Selector */}
+          {setColorTheme && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#18181b] border border-slate-800 rounded-lg text-xs text-slate-300 shadow-sm">
+              <Palette className="w-3.5 h-3.5 text-blue-400" />
+              <select
+                value={colorTheme}
+                onChange={(e) => setColorTheme(e.target.value)}
+                className="bg-transparent font-bold text-white focus:outline-none cursor-pointer"
+                title="Pilih Tema Warna Aplikasi"
+              >
+                <option value="emerald" className="bg-slate-900 text-white">🟢 Hijau Emerald</option>
+                <option value="blue" className="bg-slate-900 text-white">🔵 Biru Profesional</option>
+                <option value="indigo" className="bg-slate-900 text-white">🟣 Ungu Indigo</option>
+                <option value="amber" className="bg-slate-900 text-white">🟠 Emas Amber</option>
+                <option value="cyan" className="bg-slate-900 text-white">🩵 Cyan Tech</option>
+              </select>
+            </div>
+          )}
 
             {/* Logout Button */}
             {onLogout && (

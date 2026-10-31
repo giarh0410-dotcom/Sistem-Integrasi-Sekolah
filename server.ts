@@ -23,6 +23,11 @@ const ai = new GoogleGenAI({
 
 // Helper function to safely call Gemini generateContent with fallback models in case of high demand (503/429/etc.)
 async function generateContentWithFallback(options: { model: string; contents: string; config?: any }) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey.trim() === '' || apiKey === 'YOUR_API_KEY' || apiKey.includes('invalid')) {
+    throw new Error('API key not valid or missing');
+  }
+
   const models = [options.model, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
   const uniqueModels = Array.from(new Set(models.filter(Boolean)));
   
@@ -134,10 +139,6 @@ app.post('/api/ai/generate-questions', async (req, res) => {
 
     const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!apiKey) {
-      return res.status(500).json({ success: false, message: 'GEMINI_API_KEY tidak dikonfigurasi.' });
-    }
-
     const tipeSoalMap: Record<string, string> = {
       'pg': '1. Pilihan Ganda (pg)',
       'multiple_choice': '2. Pilihan Ganda Kompleks (multiple_choice) - jawaban benar lebih dari satu.',
@@ -248,10 +249,6 @@ app.post('/api/ai/generate-administrasi', async (req, res) => {
     tahunAjaran = body.tahunAjaran;
 
     const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return res.status(500).json({ success: false, message: 'GEMINI_API_KEY tidak dikonfigurasi.' });
-    }
 
     if (tipe === 'modul_ajar') {
       const prompt = `Anda adalah konsultan Kurikulum Merdeka Kementerian Pendidikan Indonesia.

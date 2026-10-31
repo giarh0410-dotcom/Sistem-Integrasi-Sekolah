@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab, AdministrasiSubTab, PengaturanSubTab } from '../types/school';
 
-export type TabType = 'dashboard' | 'database' | 'absensi' | 'cbt' | 'administrasi' | 'keuangan' | 'pengaturan' | 'kasir';
+export type TabType = 'dashboard' | 'database' | 'absensi' | 'cbt' | 'administrasi' | 'keuangan' | 'kasir' | 'supervisi' | 'pengaturan';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -123,6 +123,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       desc: 'Modul Ajar, Jadwal, Kalender'
     },
     {
+      id: 'supervisi',
+      label: 'Supervisi Guru (PKG)',
+      icon: <ShieldCheck className="w-5 h-5" />,
+      badge: 'Observasi',
+      desc: 'Penilaian Kinerja & Kelas'
+    },
+    {
       id: 'keuangan',
       label: 'Keuangan & Sheets',
       icon: <Wallet className="w-5 h-5" />,
@@ -168,7 +175,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   });
 
   return (
-    <aside className="w-full md:w-64 bg-[#121212] border border-slate-800 text-slate-300 flex-shrink-0 rounded-2xl p-4">
+    <aside className="w-full md:w-64 bg-slate-950/70 backdrop-blur-xl border border-slate-800/80 shadow-2xl text-slate-300 flex-shrink-0 rounded-2xl p-4 relative overflow-hidden before:absolute before:inset-0 before:bg-gradient-to-b before:from-white/5 before:to-transparent before:pointer-events-none">
       <div className="space-y-3">
         {/* Active Role Indicator Box */}
         <div className={`p-3 rounded-xl border flex items-center justify-between ${

@@ -176,7 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return item.id === 'absensi' || item.id === 'administrasi' || item.id === 'cbt';
     }
     if (currentRole === 'guru_bk') {
-      return item.id === 'bimbingan_konseling' || item.id === 'dashboard' || item.id === 'database';
+      return item.id === 'bimbingan_konseling' || item.id === 'dashboard';
     }
     if (currentRole === 'petugas_absensi') {
       return item.id === 'absensi';

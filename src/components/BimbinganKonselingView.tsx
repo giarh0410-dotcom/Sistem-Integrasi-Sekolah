@@ -659,14 +659,27 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1.5">Nama Siswa</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.namaSiswa || ''}
-                    onChange={(e) => setFormData({ ...formData, namaSiswa: e.target.value })}
+                    onChange={(e) => {
+                      const selectedName = e.target.value;
+                      const found = siswaList.find(s => s.nama === selectedName);
+                      setFormData({
+                        ...formData,
+                        namaSiswa: selectedName,
+                        kelas: found ? found.kelas : (formData.kelas || 'X-A')
+                      });
+                    }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-teal-500"
-                    placeholder="Nama lengkap siswa..."
                     required
-                  />
+                  >
+                    <option value="">-- Pilih Siswa dari Database --</option>
+                    {siswaList.map(s => (
+                      <option key={s.id || s.nisn} value={s.nama}>
+                        {s.nama} ({s.kelas} - {s.nisn || s.nis || 'Siswa'})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>

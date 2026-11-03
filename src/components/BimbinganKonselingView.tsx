@@ -22,7 +22,7 @@ import {
   BookOpen,
   MessageSquare
 } from 'lucide-react';
-import { Siswa, SchoolSettings, Role } from '../types/school';
+import { Siswa, SchoolSettings, Role, RombelKelas, Guru } from '../types/school';
 
 export interface KonselingRecord {
   id: string;
@@ -51,6 +51,8 @@ export interface JadwalTemuBK {
 
 interface BimbinganKonselingViewProps {
   siswaList: Siswa[];
+  rombelList?: RombelKelas[];
+  guruList?: Guru[];
   schoolSettings?: SchoolSettings;
   currentRole?: Role;
   subTab?: 'catatan' | 'janji' | 'pelanggaran' | 'karir';
@@ -123,6 +125,8 @@ const INITIAL_APPOINTMENTS: JadwalTemuBK[] = [
 
 export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
   siswaList,
+  rombelList = [],
+  guruList = [],
   schoolSettings,
   currentRole = 'admin',
   subTab,
@@ -684,13 +688,16 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1.5">Kelas</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.kelas || ''}
                     onChange={(e) => setFormData({ ...formData, kelas: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-teal-500"
-                    placeholder="Contoh: X-A / XI-IPA-1"
-                  />
+                  >
+                    <option value="">-- Pilih Kelas dari Database --</option>
+                    {(rombelList && rombelList.length > 0 ? rombelList.map(r => r.namaRombel) : Array.from(new Set(siswaList.map(s => s.kelas)))).map(cls => (
+                      <option key={cls} value={cls}>{cls}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -720,12 +727,18 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1.5">Guru BK / Konselor</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.guruBk || ''}
                     onChange={(e) => setFormData({ ...formData, guruBk: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-teal-500"
-                  />
+                  >
+                    <option value="">-- Pilih Guru / Konselor --</option>
+                    {guruList.map(g => (
+                      <option key={g.id || g.nip} value={g.nama}>
+                        {g.nama} ({g.mataPelajaran || g.nip || 'Guru'})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>

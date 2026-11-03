@@ -1067,6 +1067,8 @@ export default function App() {
           {activeTab === 'bimbingan_konseling' && (
             <BimbinganKonselingView
               siswaList={siswaList}
+              rombelList={rombelList}
+              guruList={guruList}
               schoolSettings={schoolSettings}
               currentRole={currentRole}
               subTab={bimbinganSubTab}

@@ -532,6 +532,31 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
               Akumulasi poin pelanggaran kedisiplinan siswa digunakan sebagai bahan evaluasi pembinaan karakter. Batas maksimal poin peringatan adalah 100 poin sebelum tindakan skorsing atau pengembalian kepada orang tua.
             </p>
 
+            <div className="flex items-center justify-between pb-2">
+              <span className="text-xs text-slate-400">Daftar pelanggaran siswa dan akumulasi poin kedisiplinan.</span>
+              <button
+                onClick={() => {
+                  setFormData({
+                    namaSiswa: '',
+                    kelas: 'X-A',
+                    jenisBimbingan: 'Pelanggaran Kedisiplinan',
+                    tanggal: new Date().toISOString().split('T')[0],
+                    guruBk: 'Dra. Hj. Nurul Hidayah, M.Pd.',
+                    permasalahan: '',
+                    hasilKonseling: '',
+                    tindakLanjut: 'Peringatan lisan 1',
+                    status: 'Dalam Penanganan',
+                    poinPelanggaran: 10
+                  });
+                  setSelectedRecord(null);
+                  setIsModalOpen(true);
+                }}
+                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" /> Catat Pelanggaran Siswa
+              </button>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
@@ -541,6 +566,7 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
                     <th className="py-3 px-4">Jenis Pelanggaran</th>
                     <th className="py-3 px-4 text-center">Poin</th>
                     <th className="py-3 px-4 text-center">Tindakan Pembinaan</th>
+                    <th className="py-3 px-4 text-right">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -555,11 +581,27 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
                           {rec.tindakLanjut}
                         </span>
                       </td>
+                      <td className="py-3 px-4 text-right space-x-2">
+                        <button
+                          onClick={() => handleOpenEdit(rec)}
+                          title="Edit Poin & Pelanggaran"
+                          className="p-1.5 rounded-lg bg-teal-500/10 text-teal-400 hover:bg-teal-500/20 transition-colors"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(rec.id)}
+                          title="Hapus"
+                          className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {konselingList.filter(k => k.poinPelanggaran && k.poinPelanggaran > 0).length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-8 text-center text-slate-500">
+                      <td colSpan={6} className="py-8 text-center text-slate-500">
                         Belum ada catatan pelanggaran kedisiplinan tercatat.
                       </td>
                     </tr>

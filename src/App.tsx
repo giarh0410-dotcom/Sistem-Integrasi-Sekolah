@@ -788,6 +788,8 @@ export default function App() {
     if (role === 'kepsek') {
       setActiveTab('absensi');
       setAbsensiSubTab('perizinan');
+    } else if (role === 'guru_bk') {
+      setActiveTab('bimbingan_konseling');
     } else if (role === 'guru') {
       setActiveTab('absensi');
       setAbsensiSubTab('perizinan');
@@ -812,6 +814,10 @@ export default function App() {
       }
       if (absensiSubTab !== 'perizinan') {
         setAbsensiSubTab('perizinan');
+      }
+    } else if (currentRole === 'guru_bk') {
+      if (activeTab !== 'bimbingan_konseling' && activeTab !== 'dashboard' && activeTab !== 'database') {
+        setActiveTab('bimbingan_konseling');
       }
     } else if (currentRole === 'guru') {
       if (activeTab !== 'absensi' && activeTab !== 'administrasi' && activeTab !== 'cbt') {

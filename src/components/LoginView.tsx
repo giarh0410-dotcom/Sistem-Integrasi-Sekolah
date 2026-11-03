@@ -75,6 +75,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
     } else if (role === 'petugas_absensi') {
       setEmailInput('petugas');
       setPasswordInput('petugas123');
+    } else if (role === 'guru_bk') {
+      setEmailInput('bk');
+      setPasswordInput('bk123');
     } else if (role === 'siswa') {
       setEmailInput(demoSiswaUser);
       setPasswordInput(demoSiswaPass);
@@ -270,6 +273,36 @@ export const LoginView: React.FC<LoginViewProps> = ({
         return;
       }
 
+      // Check Guru BK
+      const isGuruBk = 
+        inputIdOrEmail === 'bk' ||
+        inputIdOrEmail === 'guru_bk' ||
+        inputIdOrEmail === 'bimbingan' ||
+        inputIdOrEmail === 'konseling' ||
+        inputIdOrEmail === 'guru.bk' ||
+        inputIdOrEmail === 'bk@sekolah.sch.id' ||
+        inputIdOrEmail === 'bimbingan.konseling@sekolah.sch.id' ||
+        guruList.some(g => (g.jabatan && (g.jabatan.toLowerCase().includes('bk') || g.jabatan.toLowerCase().includes('bimbingan') || g.jabatan.toLowerCase().includes('konseling'))) && (g.username?.toLowerCase() === inputIdOrEmail || g.email?.toLowerCase() === inputIdOrEmail));
+
+      if (isGuruBk) {
+        const isValidBkPassword = 
+          password === 'bk' ||
+          password === 'bk123' ||
+          password === 'password' ||
+          password === 'password123' ||
+          password === '123456';
+
+        if (!isValidBkPassword) {
+          setErrorMessage('Kata sandi salah untuk akun Guru Bimbingan Konseling ini.');
+          setLoading(false);
+          return;
+        }
+
+        onLoginSuccess('bimbingan.konseling@sekolah.sch.id', 'gmail_oauth_token_active', 'guru_bk');
+        setLoading(false);
+        return;
+      }
+
       if (inputIdOrEmail.includes('@')) {
         onLoginSuccess(emailInput.trim(), 'gmail_oauth_token_active', selectedRole);
         setLoading(false);
@@ -408,6 +441,22 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   <span>Petugas Absensi</span>
                 </div>
                 <div className="text-[10px] text-zinc-400 font-mono mt-0.5">petugas / petugas123</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleFillDemo('guru_bk')}
+                className={`px-2.5 py-2 rounded-xl text-left border transition-all cursor-pointer ${
+                  selectedRole === 'guru_bk'
+                    ? 'bg-teal-600/40 border-teal-400/60 text-teal-100 ring-1 ring-teal-400/30'
+                    : 'bg-white/5 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <div className="text-[11px] font-bold flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-teal-300"></span>
+                  <span>Guru BK</span>
+                </div>
+                <div className="text-[10px] text-zinc-400 font-mono mt-0.5">bk / bk123</div>
               </button>
 
               <button

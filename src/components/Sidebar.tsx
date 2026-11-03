@@ -169,6 +169,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       // Guru ONLY gets: absensi kelas, administrasi guru, cbt ujian (bank soal)
       return item.id === 'absensi' || item.id === 'administrasi' || item.id === 'cbt';
     }
+    if (currentRole === 'guru_bk') {
+      return item.id === 'bimbingan_konseling' || item.id === 'dashboard' || item.id === 'database';
+    }
     if (currentRole === 'petugas_absensi') {
       return item.id === 'absensi';
     }
@@ -188,6 +191,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Active Role Indicator Box */}
         <div className={`p-3 rounded-xl border flex items-center justify-between ${
           currentRole === 'kepsek' ? 'bg-indigo-950/50 border-indigo-700/60 text-indigo-300' :
+          currentRole === 'guru_bk' ? 'bg-teal-950/50 border-teal-700/60 text-teal-300' :
           currentRole === 'guru' ? 'bg-purple-950/40 border-purple-800/60 text-purple-300' :
           currentRole === 'petugas_absensi' ? 'bg-cyan-950/40 border-cyan-800/60 text-cyan-300' :
           currentRole === 'admin' ? 'bg-blue-950/40 border-blue-800/60 text-blue-300' :
@@ -196,6 +200,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }`}>
           <div className="flex items-center gap-2">
             {currentRole === 'kepsek' && <Building className="w-4 h-4 text-indigo-400" />}
+            {currentRole === 'guru_bk' && <HeartHandshake className="w-4 h-4 text-teal-400" />}
             {currentRole === 'guru' && <GraduationCap className="w-4 h-4 text-purple-400" />}
             {currentRole === 'petugas_absensi' && <CalendarCheck className="w-4 h-4 text-cyan-400" />}
             {currentRole === 'admin' && <ShieldCheck className="w-4 h-4 text-blue-400" />}
@@ -204,7 +209,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div>
               <div className="text-[10px] uppercase font-bold text-slate-400 leading-tight">Akses Peran</div>
               <div className="text-xs font-black uppercase tracking-wide">
-                {currentRole === 'kepsek' ? 'Kepala Sekolah' : currentRole === 'guru' ? 'Guru / Pendidik' : currentRole === 'petugas_absensi' ? 'Petugas Absensi' : currentRole === 'staf' ? 'Staf / Tata Usaha' : currentRole === 'siswa' ? 'Siswa / Wali' : 'Administrator'}
+                {currentRole === 'kepsek' ? 'Kepala Sekolah' : currentRole === 'guru_bk' ? 'Guru Bimbingan Konseling' : currentRole === 'guru' ? 'Guru / Pendidik' : currentRole === 'petugas_absensi' ? 'Petugas Absensi' : currentRole === 'staf' ? 'Staf / Tata Usaha' : currentRole === 'siswa' ? 'Siswa / Wali' : 'Administrator'}
               </div>
             </div>
           </div>

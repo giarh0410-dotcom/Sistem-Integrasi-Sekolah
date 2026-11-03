@@ -156,6 +156,7 @@ export default function App() {
   const [administrasiSubTab, setAdministrasiSubTab] = useState<AdministrasiSubTab>('jadwal');
   const [keuanganSubTab, setKeuanganSubTab] = useState<KeuanganSubTab>('pembayaran');
   const [pengaturanSubTab, setPengaturanSubTab] = useState<PengaturanSubTab>('identitas');
+  const [bimbinganSubTab, setBimbinganSubTab] = useState<'catatan' | 'janji' | 'pelanggaran' | 'karir'>('catatan');
 
   // Google OAuth Auth State
   const [userGoogleToken, setUserGoogleToken] = useState<string>('');
@@ -938,6 +939,8 @@ export default function App() {
             setKeuanganSubTab={setKeuanganSubTab}
             pengaturanSubTab={pengaturanSubTab}
             setPengaturanSubTab={setPengaturanSubTab}
+            bimbinganSubTab={bimbinganSubTab}
+            setBimbinganSubTab={setBimbinganSubTab}
             siswaCount={siswaList.length}
             guruCount={guruList.length}
             stafCount={stafList.length}
@@ -1066,6 +1069,8 @@ export default function App() {
               siswaList={siswaList}
               schoolSettings={schoolSettings}
               currentRole={currentRole}
+              subTab={bimbinganSubTab}
+              setSubTab={setBimbinganSubTab}
             />
           )}
           

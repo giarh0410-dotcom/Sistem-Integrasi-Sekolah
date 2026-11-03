@@ -32,7 +32,9 @@ import {
   FolderOpen,
   LayoutList,
   Store,
-  HeartHandshake
+  HeartHandshake,
+  ShieldAlert,
+  Award
 } from 'lucide-react';
 import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab, AdministrasiSubTab, PengaturanSubTab } from '../types/school';
 
@@ -55,6 +57,8 @@ interface SidebarProps {
   setKeuanganSubTab?: (subTab: KeuanganSubTab) => void;
   pengaturanSubTab?: PengaturanSubTab;
   setPengaturanSubTab?: (subTab: PengaturanSubTab) => void;
+  bimbinganSubTab?: 'catatan' | 'janji' | 'pelanggaran' | 'karir';
+  setBimbinganSubTab?: (subTab: 'catatan' | 'janji' | 'pelanggaran' | 'karir') => void;
   siswaCount: number;
   guruCount: number;
   stafCount: number;
@@ -81,6 +85,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setKeuanganSubTab,
   pengaturanSubTab = 'identitas',
   setPengaturanSubTab,
+  bimbinganSubTab = 'catatan',
+  setBimbinganSubTab,
   siswaCount,
   guruCount,
   stafCount,
@@ -868,6 +874,112 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span className="text-[9px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1 py-0.5 rounded font-bold animate-pulse">
                           Gaji
                         </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+
+
+            if (item.id === 'bimbingan_konseling') {
+              return (
+                <div key={item.id} className="space-y-1">
+                  <button
+                    onClick={() => {
+                      setActiveTab('bimbingan_konseling');
+                    }}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-between group ${
+                      isActive
+                        ? 'bg-slate-800/90 text-blue-400 font-bold border border-slate-700/80 shadow-md ring-1 ring-blue-500/20'
+                        : 'hover:bg-slate-800/50 hover:text-white text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`${isActive ? 'text-blue-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                        {item.icon}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold leading-none">{item.label}</div>
+                        <div className={`text-[10px] mt-1 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                          {item.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-transform duration-300 ${isActive ? 'transform rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Dropdown nested items for Bimbingan Konseling */}
+                  {isActive && (
+                    <div className="pl-3 pr-1 py-1 space-y-1 border-l border-slate-800 ml-6 mt-1 transition-all">
+                      <button
+                        onClick={() => {
+                          setActiveTab('bimbingan_konseling');
+                          if (setBimbinganSubTab) setBimbinganSubTab('catatan');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          bimbinganSubTab === 'catatan'
+                            ? 'bg-teal-600/10 text-teal-400 border border-teal-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-3.5 h-3.5 text-teal-400" />
+                          <span>Catatan Sesi Konseling</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('bimbingan_konseling');
+                          if (setBimbinganSubTab) setBimbinganSubTab('janji');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          bimbinganSubTab === 'janji'
+                            ? 'bg-teal-600/10 text-teal-400 border border-teal-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Janji Temu Siswa & Guru BK</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('bimbingan_konseling');
+                          if (setBimbinganSubTab) setBimbinganSubTab('pelanggaran');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          bimbinganSubTab === 'pelanggaran'
+                            ? 'bg-teal-600/10 text-teal-400 border border-teal-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                          <span>Poin Pelanggaran & Tata Tertib</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('bimbingan_konseling');
+                          if (setBimbinganSubTab) setBimbinganSubTab('karir');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          bimbinganSubTab === 'karir'
+                            ? 'bg-teal-600/10 text-teal-400 border border-teal-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Award className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Bimbingan Karir & Studi Lanjut</span>
+                        </div>
                       </button>
                     </div>
                   )}

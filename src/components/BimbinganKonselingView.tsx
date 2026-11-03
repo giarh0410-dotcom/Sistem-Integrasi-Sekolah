@@ -53,6 +53,8 @@ interface BimbinganKonselingViewProps {
   siswaList: Siswa[];
   schoolSettings?: SchoolSettings;
   currentRole?: Role;
+  subTab?: 'catatan' | 'janji' | 'pelanggaran' | 'karir';
+  setSubTab?: (subTab: 'catatan' | 'janji' | 'pelanggaran' | 'karir') => void;
 }
 
 const INITIAL_KONSELING: KonselingRecord[] = [
@@ -122,7 +124,9 @@ const INITIAL_APPOINTMENTS: JadwalTemuBK[] = [
 export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
   siswaList,
   schoolSettings,
-  currentRole = 'admin'
+  currentRole = 'admin',
+  subTab,
+  setSubTab
 }) => {
   const [konselingList, setKonselingList] = useState<KonselingRecord[]>(() => {
     try {
@@ -142,7 +146,8 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
     }
   });
 
-  const [activeTab, setActiveTab] = useState<'catatan' | 'janji' | 'pelanggaran' | 'karir'>('catatan');
+  const [internalActiveTab, setInternalActiveTab] = useState<'catatan' | 'janji' | 'pelanggaran' | 'karir'>('catatan');
+  const activeTab = subTab || internalActiveTab;
   const [searchTerm, setSearchTerm] = useState('');
   const [filterKategori, setFilterKategori] = useState('Semua');
 
@@ -326,28 +331,7 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
         </div>
       </div>
 
-      {/* Sub-Tab Navigation */}
-      <div className="flex flex-wrap gap-2 bg-slate-900/75 backdrop-blur-md p-2 rounded-2xl border border-slate-800">
-        {[
-          { id: 'catatan', label: 'Catatan Sesi Konseling', icon: <FileText className="w-4 h-4" /> },
-          { id: 'janji', label: 'Janji Temu Siswa & Guru BK', icon: <Calendar className="w-4 h-4" /> },
-          { id: 'pelanggaran', label: 'Poin Pelanggaran & Tata Tertib', icon: <ShieldAlert className="w-4 h-4" /> },
-          { id: 'karir', label: 'Bimbingan Karir & Studi Lanjut', icon: <Award className="w-4 h-4" /> }
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === tab.id
-                ? 'bg-teal-600 text-white shadow-lg shadow-teal-600/30 border border-teal-500/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
-      </div>
+
 
       {/* Tab 1: Catatan Sesi Konseling */}
       {activeTab === 'catatan' && (

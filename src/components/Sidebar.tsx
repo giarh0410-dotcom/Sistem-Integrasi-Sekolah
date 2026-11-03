@@ -31,11 +31,12 @@ import {
   Coins,
   FolderOpen,
   LayoutList,
-  Store
+  Store,
+  HeartHandshake
 } from 'lucide-react';
 import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab, AdministrasiSubTab, PengaturanSubTab } from '../types/school';
 
-export type TabType = 'dashboard' | 'database' | 'absensi' | 'cbt' | 'administrasi' | 'keuangan' | 'kasir' | 'supervisi' | 'pengaturan';
+export type TabType = 'dashboard' | 'database' | 'absensi' | 'cbt' | 'administrasi' | 'keuangan' | 'kasir' | 'supervisi' | 'bimbingan_konseling' | 'pengaturan';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -128,6 +129,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <ShieldCheck className="w-5 h-5" />,
       badge: 'Observasi',
       desc: 'Penilaian Kinerja & Kelas'
+    },
+    {
+      id: 'bimbingan_konseling',
+      label: 'Bimbingan Konseling (BK)',
+      icon: <HeartHandshake className="w-5 h-5" />,
+      badge: 'Konseling',
+      desc: 'Sesi, Janji & Pelanggaran'
     },
     {
       id: 'keuangan',

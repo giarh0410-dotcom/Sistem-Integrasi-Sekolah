@@ -7,6 +7,7 @@ import { AbsensiView } from './components/AbsensiView';
 import { CbtView } from './components/CbtView';
 import { AdministrasiGuruView } from './components/AdministrasiGuruView';
 import { SupervisiGuruView } from './components/SupervisiGuruView';
+import { BimbinganKonselingView } from './components/BimbinganKonselingView';
 import { KeuanganView } from './components/KeuanganView';
 import { PengaturanView } from './components/PengaturanView';
 import { LoginView } from './components/LoginView';
@@ -1051,6 +1052,14 @@ export default function App() {
             <SupervisiGuruView
               guruList={guruList}
               schoolSettings={schoolSettings}
+            />
+          )}
+
+          {activeTab === 'bimbingan_konseling' && (
+            <BimbinganKonselingView
+              siswaList={siswaList}
+              schoolSettings={schoolSettings}
+              currentRole={currentRole}
             />
           )}
           

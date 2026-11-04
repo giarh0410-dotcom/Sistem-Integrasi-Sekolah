@@ -184,6 +184,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* Middle Section: Modular Quick Access */}
+      {currentRole !== 'guru_bk' && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Module 1: Quick Actions & Navigation */}
@@ -306,6 +307,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
       </div>
+      )}
 
     </div>
   );

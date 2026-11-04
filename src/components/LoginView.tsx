@@ -226,8 +226,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
         setLoading(false);
         return;
       }
-      if (inputIdOrEmail === 'nurhidayati') {
-        onLoginSuccess('nurhidayati@staf.sch.id', 'gmail_oauth_token_active', 'staf');
+      if (inputIdOrEmail === 'nurhidayati' || inputIdOrEmail === 'keuangan' || inputIdOrEmail === 'tatausaha') {
+        onLoginSuccess('keuangan@staf.sch.id', 'gmail_oauth_token_active', 'staf');
         setLoading(false);
         return;
       }

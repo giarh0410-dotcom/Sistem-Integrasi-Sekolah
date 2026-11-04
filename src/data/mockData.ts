@@ -418,6 +418,22 @@ export const INITIAL_GURU: Guru[] = [
 
 export const INITIAL_STAF: Staf[] = [
   {
+    id: 'staf-keuangan',
+    nik: '3276034211900999',
+    nama: 'Tim Keuangan & Tata Usaha',
+    bagian: 'Bendahara / Keuangan',
+    email: 'keuangan@smpislammodernalfakhir.sch.id',
+    username: 'keuangan',
+    password: 'keuangan123',
+    telepon: '081382083749',
+    jenisKelamin: 'P',
+    tempatLahir: 'Jakarta',
+    tanggalLahir: '1992-05-10',
+    status: 'Tetap',
+    alamatLengkap: 'Jl. Pendidikan No. 123',
+    fotoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+  },
+  {
     id: 'staf-1',
     nik: '3276034211900002',
     nama: 'Nurhidayati, S.Pd',

@@ -182,7 +182,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return item.id === 'absensi';
     }
     if (currentRole === 'staf') {
-      return item.id === 'database' || item.id === 'keuangan';
+      return item.id === 'dashboard' || item.id === 'keuangan';
     }
     if (currentRole === 'siswa') {
       return item.id === 'cbt';

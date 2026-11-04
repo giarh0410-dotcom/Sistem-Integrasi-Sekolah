@@ -798,7 +798,7 @@ export default function App() {
       setActiveTab('absensi');
       setAbsensiSubTab('scan_barcode');
     } else if (role === 'staf') {
-      setActiveTab('database');
+      setActiveTab('dashboard');
     } else if (role === 'siswa') {
       setActiveTab('cbt');
       setCbtSubTab('simulasi_ujian');
@@ -817,7 +817,7 @@ export default function App() {
         setAbsensiSubTab('perizinan');
       }
     } else if (currentRole === 'guru_bk') {
-      if (activeTab !== 'bimbingan_konseling' && activeTab !== 'dashboard' && activeTab !== 'database') {
+      if (activeTab !== 'bimbingan_konseling') {
         setActiveTab('bimbingan_konseling');
       }
     } else if (currentRole === 'guru') {
@@ -832,8 +832,8 @@ export default function App() {
         setActiveTab('absensi');
       }
     } else if (currentRole === 'staf') {
-      if (activeTab !== 'database' && activeTab !== 'keuangan') {
-        setActiveTab('database');
+      if (activeTab !== 'dashboard' && activeTab !== 'keuangan') {
+        setActiveTab('dashboard');
       }
     } else if (currentRole === 'siswa') {
       if (activeTab !== 'cbt') {

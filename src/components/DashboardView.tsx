@@ -119,6 +119,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
       )}
 
+      {/* Guru BK Welcome Banner */}
+      {currentRole === 'guru_bk' && (
+        <div className="bg-gradient-to-r from-slate-900 via-teal-950 to-blue-950 rounded-2xl p-8 text-white shadow-2xl border border-teal-500/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
+          <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="space-y-3 relative z-10">
+            <div className="flex items-center gap-2">
+              <span className="px-3.5 py-1 bg-teal-500/20 border border-teal-400/40 text-teal-300 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                <span>✨</span> Portal Layanan Bimbingan Konseling (BK)
+              </span>
+            </div>
+            <h2 className="text-3xl font-black tracking-tight text-white">
+              Selamat Datang, Guru Bimbingan Konseling (BK)
+            </h2>
+            <p className="text-slate-300 text-sm max-w-2xl leading-relaxed">
+              Pusat manajemen konseling akademik, karir, pribadi, sosial, pencatatan poin pelanggaran kedisiplinan, janji temu siswa, dan rekapitulasi penanganan kasus siswa secara komprehensif.
+            </p>
+          </div>
+          <button
+            onClick={() => onNavigateTab('bimbingan_konseling')}
+            className="px-6 py-3.5 bg-teal-600 hover:bg-teal-500 text-white rounded-2xl font-black text-sm shadow-xl shadow-teal-600/30 flex items-center gap-2.5 transition-all relative z-10 shrink-0 cursor-pointer"
+          >
+            <span>Buka Menu Bimbingan Konseling</span> ➔
+          </button>
+        </div>
+      )}
+
       {/* Grid Quick Stats Cards */}
       {currentRole !== 'guru_bk' && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

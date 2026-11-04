@@ -72,6 +72,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="space-y-6">
       
       {/* Banner Top Welcome */}
+      {currentRole !== 'guru_bk' && (
       <div className={`bg-gradient-to-r ${getThemeGradient(colorTheme)} rounded-2xl p-6 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border`}>
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -116,6 +117,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
       </div>
+      )}
 
       {/* Grid Quick Stats Cards */}
       {currentRole !== 'guru_bk' && (

@@ -118,6 +118,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Grid Quick Stats Cards */}
+      {currentRole !== 'guru_bk' && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
         <div className="bg-slate-900/75 backdrop-blur-md border border-slate-800/80 p-5 rounded-2xl shadow-xl hover:border-slate-700/80 transition-all">
@@ -178,6 +179,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
       </div>
+      )}
 
       {/* Middle Section: Modular Quick Access */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -792,8 +792,8 @@ export default function App() {
     } else if (role === 'guru_bk') {
       setActiveTab('bimbingan_konseling');
     } else if (role === 'guru') {
-      setActiveTab('absensi');
-      setAbsensiSubTab('perizinan');
+      setActiveTab('cbt');
+      setCbtSubTab('bank_soal');
     } else if (role === 'petugas_absensi') {
       setActiveTab('absensi');
       setAbsensiSubTab('scan_barcode');
@@ -822,7 +822,7 @@ export default function App() {
       }
     } else if (currentRole === 'guru') {
       if (activeTab !== 'absensi' && activeTab !== 'administrasi' && activeTab !== 'cbt') {
-        setActiveTab('absensi');
+        setActiveTab('cbt');
       }
       if (absensiSubTab === 'scan_barcode') {
         setAbsensiSubTab('perizinan');

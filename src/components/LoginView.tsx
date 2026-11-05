@@ -232,16 +232,19 @@ export const LoginView: React.FC<LoginViewProps> = ({
         return;
       }
 
-      // Fallback for demo student names (e.g. 'bayu', 'bilal', 'siswa', etc.) when testing login
+      // Fallback for demo student names (e.g. 'bayu', 'bilal', 'siswa', 'cbt', etc.) when testing login
       if (
         inputIdOrEmail === 'bayu' || 
         inputIdOrEmail === 'bilal' || 
         inputIdOrEmail === 'siswa' || 
+        inputIdOrEmail === 'cbt' ||
+        inputIdOrEmail === 'ujian' ||
         inputIdOrEmail.startsWith('siswa') || 
+        inputIdOrEmail.startsWith('cbt') ||
         inputIdOrEmail.startsWith('bayu') || 
         inputIdOrEmail.startsWith('bilal')
       ) {
-        onLoginSuccess(`${inputIdOrEmail}@siswa.sch.id`, 'gmail_oauth_token_active', 'siswa');
+        onLoginSuccess(`alia.syahira@siswa.sch.id`, 'gmail_oauth_token_active', 'siswa');
         setLoading(false);
         return;
       }

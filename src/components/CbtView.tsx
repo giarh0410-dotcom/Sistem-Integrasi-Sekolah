@@ -553,6 +553,13 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
   // --- Bank Soal & Input Soal Manual State ---
   const [selectedBankId, setSelectedBankId] = useState<string>(bankSoalList[0]?.id || '');
+
+  useEffect(() => {
+    if (!bankSoalList.some(b => b.id === selectedBankId) && bankSoalList.length > 0) {
+      setSelectedBankId(bankSoalList[0].id);
+    }
+  }, [bankSoalList, selectedBankId]);
+
   const activeBank = bankSoalList.find(b => b.id === selectedBankId) || bankSoalList[0];
 
   const [showAddSoalModal, setShowAddSoalModal] = useState(false);
@@ -820,6 +827,83 @@ export const CbtView: React.FC<CbtViewProps> = ({
   const [examFinished, setExamFinished] = useState(false);
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [selectedSiswaId, setSelectedSiswaId] = useState<string>('');
+  const [selectedRaporHasil, setSelectedRaporHasil] = useState<HasilUjian | null>(null);
+  const [showKolektifRaporModal, setShowKolektifRaporModal] = useState(false);
+  const [selectedMapelRapor, setSelectedMapelRapor] = useState(availableMapelList[0] || 'Matematika');
+  const [hasilKelasFilter, setHasilKelasFilter] = useState<string>('Semua');
+  const [kolektifKelasFilter, setKolektifKelasFilter] = useState<string>('Semua');
+  const [deleteTargetBankSoal, setDeleteTargetBankSoal] = useState<BankSoal | null>(null);
+
+  const filteredHasilUjianList = useMemo(() => {
+    if (hasilKelasFilter === 'Semua') return hasilUjianList;
+    return hasilUjianList.filter(h => h.kelas && h.kelas.toLowerCase().trim() === hasilKelasFilter.toLowerCase().trim());
+  }, [hasilUjianList, hasilKelasFilter]);
+
+  const filteredSiswaListForKolektif = useMemo(() => {
+    if (kolektifKelasFilter === 'Semua') return siswaList;
+    return siswaList.filter(s => s.kelas && s.kelas.toLowerCase().trim() === kolektifKelasFilter.toLowerCase().trim());
+  }, [siswaList, kolektifKelasFilter]);
+
+  const printRaporRef = useRef<HTMLDivElement>(null);
+  const printKolektifRef = useRef<HTMLDivElement>(null);
+
+  const handlePrintRapor = () => {
+    const printContent = printRaporRef.current;
+    if (!printContent) return;
+    const windowPrint = window.open('', '', 'width=900,height=650');
+    if (!windowPrint) return;
+
+    windowPrint.document.write(`
+      <html>
+        <head>
+          <title>Rapor Hasil Ujian CBT - ${selectedRaporHasil?.siswaNama}</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            @media print {
+              body { margin: 0; padding: 20px; background: white; -webkit-print-color-adjust: exact; }
+              .no-print { display: none !important; }
+            }
+          </style>
+        </head>
+        <body class="bg-white text-slate-900 p-8 font-sans">
+          <div>${printContent.innerHTML}</div>
+          <script>
+            setTimeout(() => { window.print(); window.close(); }, 500);
+          </script>
+        </body>
+      </html>
+    `);
+    windowPrint.document.close();
+  };
+
+  const handlePrintKolektif = () => {
+    const printContent = printKolektifRef.current;
+    if (!printContent) return;
+    const windowPrint = window.open('', '', 'width=900,height=650');
+    if (!windowPrint) return;
+
+    windowPrint.document.write(`
+      <html>
+        <head>
+          <title>Rapor Kolektif Hasil Ujian CBT - ${selectedMapelRapor}</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            @media print {
+              body { margin: 0; padding: 20px; background: white; -webkit-print-color-adjust: exact; }
+              .no-print { display: none !important; }
+            }
+          </style>
+        </head>
+        <body class="bg-white text-slate-900 p-8 font-sans">
+          <div>${printContent.innerHTML}</div>
+          <script>
+            setTimeout(() => { window.print(); window.close(); }, 500);
+          </script>
+        </body>
+      </html>
+    `);
+    windowPrint.document.close();
+  };
 
   // Ambil data siswa aktif secara dinamis & akurat sesuai akun login atau pilihan simulasi
   const activeSiswa = useMemo(() => {
@@ -917,6 +1001,30 @@ export const CbtView: React.FC<CbtViewProps> = ({
       fotoUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80'
     };
   }, [siswaList, currentRole, userEmail, selectedSiswaId]);
+
+  const activeGuru = useMemo(() => {
+    const emailLower = userEmail?.toLowerCase().trim() || '';
+    const emailPrefix = emailLower.split('@')[0];
+
+    const found = (guruList || []).find(g => {
+      const gEmail = g.email?.toLowerCase().trim() || '';
+      const gUsername = g.username?.toLowerCase().trim() || '';
+      return (
+        (gEmail && gEmail === emailLower) ||
+        (gUsername && gUsername === emailLower) ||
+        (emailPrefix && (
+          (gEmail && gEmail === emailPrefix) ||
+          (gUsername && gUsername === emailPrefix)
+        )) ||
+        (emailLower.length > 0 && (
+          (gUsername && emailLower.includes(gUsername)) ||
+          (gEmail && emailLower.includes(gEmail))
+        ))
+      );
+    });
+
+    return found || guruList[0] || { id: 'g-1', nama: 'Siti Rahmawati, S.Si., M.Sc.', mataPelajaran: 'Matematika', nip: '19850115', email: 'siti.rahmawati@guru.sch.id', fotoUrl: '' };
+  }, [guruList, userEmail]);
   
   // Real dynamic timer matching the mockup image (1 Jam 49 Menit 51 Detik)
   const [timeLeft, setTimeLeft] = useState(1 * 3600 + 49 * 60 + 51);
@@ -1114,6 +1222,37 @@ export const CbtView: React.FC<CbtViewProps> = ({
   return (
     <div className="space-y-6">
       
+      {/* Teacher Account Identity Banner */}
+      {currentRole === 'guru' && (
+        <div className="bg-gradient-to-r from-purple-900 to-indigo-900 p-5 rounded-2xl text-white shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 border border-purple-700/50">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-xl overflow-hidden bg-white/20 border-2 border-white/40 flex items-center justify-center shrink-0 shadow-md">
+              {activeGuru?.fotoUrl ? (
+                <img src={activeGuru.fotoUrl} alt={activeGuru.nama} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                <User className="w-7 h-7 text-white" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-emerald-500/30 text-emerald-300 text-[10px] font-bold border border-emerald-400/40">
+                  Guru / Pendidik Aktif
+                </span>
+                <span className="text-[11px] font-mono text-purple-200">NIP: {activeGuru?.nip || activeGuru?.id || '-'}</span>
+              </div>
+              <h4 className="text-base font-extrabold text-white mt-1">{activeGuru?.nama || 'Guru Pengampu'}</h4>
+              <p className="text-xs text-purple-200 font-medium mt-0.5">Mata Pelajaran: {activeGuru?.mataPelajaran || 'Semua Mata Pelajaran'} | Email: {activeGuru?.email || userEmail || '-'}</p>
+            </div>
+          </div>
+          <div className="text-right hidden sm:block">
+            <div className="text-[10px] text-purple-300 font-semibold uppercase tracking-wider">Status Akses Guru</div>
+            <div className="text-xs font-bold text-emerald-400 flex items-center gap-1 justify-end mt-0.5">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Terverifikasi CBT
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#121212] p-5 rounded-xl border border-slate-800 shadow-sm">
         <div>
@@ -1347,20 +1486,36 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 <div
                   key={b.id}
                   onClick={() => setSelectedBankId(b.id)}
-                  className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                  className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-3 relative group ${
                     b.id === activeBank?.id
                       ? 'border-emerald-500 bg-emerald-50/40 text-slate-900 font-semibold shadow-sm'
                       : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100/80 text-slate-700'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-200/80 text-slate-700 font-bold">
+                  <h4 className="text-xs font-extrabold text-slate-900 leading-snug">{b.judul}</h4>
+                  <div className="text-[11px] text-slate-500 font-medium">{b.mataPelajaran} • {b.kelas}</div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200/60">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-200/90 text-slate-700 font-extrabold">
                       {b.kode}
                     </span>
-                    <span className="text-[10px] text-emerald-700 font-bold">{b.jumlahSoal} Soal</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full">
+                        {b.jumlahSoal} Soal
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTargetBankSoal(b);
+                        }}
+                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm border border-rose-200"
+                        title="Hapus Paket Bank Soal"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Hapus
+                      </button>
+                    </div>
                   </div>
-                  <h4 className="text-xs font-bold mt-1.5">{b.judul}</h4>
-                  <div className="text-[11px] text-slate-500 mt-1">{b.mataPelajaran} • {b.kelas}</div>
                 </div>
               ))}
             </div>
@@ -1670,6 +1825,36 @@ export const CbtView: React.FC<CbtViewProps> = ({
               /* Selection Screen: Choose Subject & Bank Soal */
               <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl space-y-8">
+                  
+                  {/* Student Account Identity Banner */}
+                  <div className="bg-gradient-to-r from-blue-900 to-indigo-900 p-5 rounded-2xl text-white shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 border border-blue-700/50">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-xl overflow-hidden bg-white/20 border-2 border-white/40 flex items-center justify-center shrink-0 shadow-md">
+                        {activeSiswa?.fotoUrl ? (
+                          <img src={activeSiswa.fotoUrl} alt={activeSiswa.nama} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <User className="w-7 h-7 text-white" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/30 text-emerald-300 text-[10px] font-bold border border-emerald-400/40">
+                            Peserta Ujian Aktif
+                          </span>
+                          <span className="text-[11px] font-mono text-blue-200">NISN: {activeSiswa?.nisn || '-'}</span>
+                        </div>
+                        <h4 className="text-base font-extrabold text-white mt-1">{activeSiswa?.nama || 'Siswa Peserta'}</h4>
+                        <p className="text-xs text-blue-200 font-medium mt-0.5">Kelas: {activeSiswa?.kelas || '-'} | NIS: {activeSiswa?.nis || '-'}</p>
+                      </div>
+                    </div>
+                    <div className="text-right hidden sm:block">
+                      <div className="text-[10px] text-blue-300 font-semibold uppercase tracking-wider">Status Akun CBT</div>
+                      <div className="text-xs font-bold text-emerald-400 flex items-center gap-1 justify-end mt-0.5">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Terverifikasi
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="text-center space-y-2">
                     <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm">
                       <BookOpen className="w-8 h-8" />
@@ -2108,12 +2293,20 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   Daftar hasil pengerjaan ujian siswa yang telah tersimpan secara aman dan realtime di Firestore cloud database.
                 </p>
               </div>
-              <button
-                onClick={() => alert('Data hasil ujian telah sinkron 100% dengan Cloud Firestore.')}
-                className="px-3.5 py-2 bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
-              >
-                <Cloud className="w-4 h-4" /> Cloud Terhubung
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowKolektifRaporModal(true)}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" /> Rapor Kolektif Per Mapel
+                </button>
+                <button
+                  onClick={() => alert('Data hasil ujian telah sinkron 100% dengan Cloud Firestore.')}
+                  className="px-3.5 py-2 bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                >
+                  <Cloud className="w-4 h-4" /> Cloud Terhubung
+                </button>
+              </div>
             </div>
 
             {/* Overview cards */}
@@ -2155,7 +2348,26 @@ export const CbtView: React.FC<CbtViewProps> = ({
               </div>
             </div>
 
-            {/* Table */}
+            {/* Filter Kelas & Table */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-700 w-full sm:w-auto">
+                <span className="uppercase text-[10px] text-slate-400 font-extrabold">Filter Kelas:</span>
+                <select
+                  value={hasilKelasFilter}
+                  onChange={e => setHasilKelasFilter(e.target.value)}
+                  className="p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                >
+                  <option value="Semua">Semua Kelas ({hasilUjianList.length} Hasil)</option>
+                  {availableKelasList.map(k => (
+                    <option key={k} value={k}>{k}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-xs text-slate-500 font-semibold">
+                Menampilkan <strong className="text-slate-800">{filteredHasilUjianList.length}</strong> dari {hasilUjianList.length} hasil ujian
+              </div>
+            </div>
+
             {hasilUjianList.length === 0 ? (
               <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300">
                 <ShieldCheck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
@@ -2163,6 +2375,12 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
                   Silakan buka tab <strong className="text-slate-600">"Simulasi CBT Anti-Cheat"</strong>, pilih paket bank soal, lalu selesaikan ujian untuk mensimulasikan penyimpanan data otomatis ke Firebase.
                 </p>
+              </div>
+            ) : filteredHasilUjianList.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+                <AlertCircle className="w-10 h-10 text-amber-400 mx-auto mb-2" />
+                <h4 className="font-bold text-slate-700 text-sm">Tidak Ada Hasil Ujian untuk Kelas {hasilKelasFilter}</h4>
+                <p className="text-xs text-slate-400 mt-1">Coba pilih kelas lain atau ubah filter ke "Semua Kelas".</p>
               </div>
             ) : (
               <div className="overflow-x-auto border border-slate-100 rounded-xl">
@@ -2175,10 +2393,11 @@ export const CbtView: React.FC<CbtViewProps> = ({
                       <th className="p-3 text-center">Pelanggaran</th>
                       <th className="p-3 text-center">Status</th>
                       <th className="p-3 text-right">Nilai Akhir</th>
+                      <th className="p-3 text-center">Rapor</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {hasilUjianList.map(h => (
+                    {filteredHasilUjianList.map(h => (
                       <tr key={h.id} className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-slate-800">{h.siswaNama}</td>
                         <td className="p-3 text-slate-500">
@@ -2212,6 +2431,15 @@ export const CbtView: React.FC<CbtViewProps> = ({
                             {h.nilaiTotal} / 100
                           </span>
                         </td>
+                        <td className="p-3 text-center">
+                          <button
+                            onClick={() => setSelectedRaporHasil(h)}
+                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg text-[10px] flex items-center gap-1 mx-auto cursor-pointer"
+                            title="Cetak Rapor Hasil Ujian"
+                          >
+                            <Printer className="w-3 h-3" /> Rapor
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -2219,6 +2447,197 @@ export const CbtView: React.FC<CbtViewProps> = ({
               </div>
             )}
           </div>
+
+          {/* Modal Rapor Hasil Ujian CBT */}
+          {selectedRaporHasil && (
+            <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+                <div className="p-5 border-b border-slate-100 flex items-center justify-between no-print bg-slate-50">
+                  <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
+                    <Printer className="w-5 h-5 text-indigo-600" /> Cetak Rapor Hasil Ujian CBT
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePrintRapor}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <Printer className="w-4 h-4" /> Cetak / Print PDF
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setSelectedRaporHasil(null)}
+                      className="text-slate-400 hover:text-slate-600 font-bold p-1.5 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-white text-slate-900" ref={printRaporRef}>
+                  {/* School Header */}
+                  <div className="text-center border-b-2 border-slate-900 pb-4 space-y-1">
+                    <h2 className="text-lg font-black uppercase tracking-wider">{schoolSettings?.namaSekolah || 'SMP Islam Modern Al Fakhir'}</h2>
+                    <p className="text-xs text-slate-700 font-bold">RAPOR HASIL UJIAN BERBASIS KOMPUTER (CBT) TAHUN AJARAN 2026/2027</p>
+                    <p className="text-[10px] text-slate-500">Akreditasi A (Unggul) • Terverifikasi Cloud Firestore Database</p>
+                  </div>
+
+                  {/* Student Identity */}
+                  <div className="grid grid-cols-2 gap-4 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="space-y-1">
+                      <div><strong className="text-slate-500 w-24 inline-block">Nama Siswa:</strong> <span className="font-bold text-slate-900">{selectedRaporHasil.siswaNama}</span></div>
+                      <div><strong className="text-slate-500 w-24 inline-block">Nomor Induk:</strong> <span className="font-mono">{selectedRaporHasil.nis}</span></div>
+                      <div><strong className="text-slate-500 w-24 inline-block">Kelas:</strong> <span className="font-bold">{selectedRaporHasil.kelas}</span></div>
+                    </div>
+                    <div className="space-y-1 text-right sm:text-left">
+                      <div><strong className="text-slate-500 w-28 inline-block">Waktu Submit:</strong> <span className="font-mono">{new Date(selectedRaporHasil.waktuSubmit).toLocaleString('id-ID')}</span></div>
+                      <div><strong className="text-slate-500 w-28 inline-block">Status Penilaian:</strong> <span className="font-bold text-blue-600">{selectedRaporHasil.statusPenilaian}</span></div>
+                      <div><strong className="text-slate-500 w-28 inline-block">Pelanggaran:</strong> <span className="font-bold text-rose-600">{selectedRaporHasil.pelanggaranCount || 0} Kali</span></div>
+                    </div>
+                  </div>
+
+                  {/* Score Highlight */}
+                  <div className="text-center p-6 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl border border-emerald-200 space-y-2">
+                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-widest block">Nilai Akhir Hasil Ujian CBT</span>
+                    <span className="text-5xl font-black text-emerald-600 block">{selectedRaporHasil.nilaiTotal} / 100</span>
+                    <p className="text-xs text-emerald-700 font-medium">
+                      {selectedRaporHasil.nilaiTotal >= 75 ? 'Ket: Lulus / Kompeten dengan Baik' : 'Ket: Perlu Perbaikan & Remedial'}
+                    </p>
+                  </div>
+
+                  {/* Signatures */}
+                  <div className="pt-8 grid grid-cols-2 gap-8 text-xs text-center">
+                    <div className="space-y-16">
+                      <p className="font-bold">Mengetahui,<br/>Orang Tua / Wali Murid</p>
+                      <p className="font-bold underline">( ______________________ )</p>
+                    </div>
+                    <div className="space-y-16">
+                      <p className="font-bold">Depok, {new Date().toLocaleDateString('id-ID')}<br/>Guru Pengampu / Tim CBT</p>
+                      <p className="font-bold underline">( ______________________ )</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Rapor Kolektif Per Mata Pelajaran */}
+          {showKolektifRaporModal && (
+            <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+                <div className="p-5 border-b border-slate-100 flex items-center justify-between no-print bg-slate-50">
+                  <div className="flex items-center gap-3">
+                    <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
+                      <Printer className="w-5 h-5 text-indigo-600" /> Rapor Kolektif Semua Siswa Per Mata Pelajaran
+                    </h3>
+                    <select
+                      value={selectedMapelRapor}
+                      onChange={e => setSelectedMapelRapor(e.target.value)}
+                      className="p-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 outline-none"
+                    >
+                      {availableMapelList.map(m => (
+                        <option key={m} value={m}>Mapel: {m}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={kolektifKelasFilter}
+                      onChange={e => setKolektifKelasFilter(e.target.value)}
+                      className="p-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 outline-none"
+                    >
+                      <option value="Semua">Semua Kelas</option>
+                      {availableKelasList.map(k => (
+                        <option key={k} value={k}>Kelas: {k}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePrintKolektif}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <Printer className="w-4 h-4" /> Cetak / Print PDF
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setShowKolektifRaporModal(false)}
+                      className="text-slate-400 hover:text-slate-600 font-bold p-1.5 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-white text-slate-900" ref={printKolektifRef}>
+                  {/* Header */}
+                  <div className="text-center border-b-2 border-slate-900 pb-4 space-y-1">
+                    <h2 className="text-lg font-black uppercase tracking-wider">{schoolSettings?.namaSekolah || 'SMP Islam Modern Al Fakhir'}</h2>
+                    <p className="text-xs text-slate-700 font-bold">DAFTAR NILAI & RAPOR KOLEKTIF UJIAN CBT</p>
+                    <p className="text-xs text-indigo-700 font-black">MATA PELAJARAN: {selectedMapelRapor.toUpperCase()} {kolektifKelasFilter !== 'Semua' ? `• KELAS ${kolektifKelasFilter.toUpperCase()}` : ''}</p>
+                    <p className="text-[10px] text-slate-500">Tahun Ajaran 2026/2027 • Semester Ganjil • Terverifikasi Database Firestore</p>
+                  </div>
+
+                  {/* Master Grade Table */}
+                  <div className="overflow-x-auto border border-slate-300 rounded-xl">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-100 border-b border-slate-300 text-slate-800 font-bold uppercase text-[10px]">
+                        <tr>
+                          <th className="p-3 border-r border-slate-300 w-12 text-center">No</th>
+                          <th className="p-3 border-r border-slate-300">Nama Siswa</th>
+                          <th className="p-3 border-r border-slate-300">Kelas</th>
+                          <th className="p-3 border-r border-slate-300">NISN / NIS</th>
+                          <th className="p-3 border-r border-slate-300 text-center">Waktu Submit</th>
+                          <th className="p-3 border-r border-slate-300 text-center">Pelanggaran</th>
+                          <th className="p-3 text-right">Nilai Akhir</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {filteredSiswaListForKolektif.map((siswa, idx) => {
+                          const studentResult = hasilUjianList.find(h => h.siswaId === siswa.id || h.siswaNama.toLowerCase() === siswa.nama.toLowerCase());
+                          const nilai = studentResult ? studentResult.nilaiTotal : '-';
+                          const pelanggaran = studentResult ? (studentResult.pelanggaranCount || 0) : 0;
+                          const waktu = studentResult ? new Date(studentResult.waktuSubmit).toLocaleString('id-ID') : 'Belum Ujian';
+
+                          return (
+                            <tr key={siswa.id} className="hover:bg-slate-50">
+                              <td className="p-3 border-r border-slate-200 text-center font-bold">{idx + 1}</td>
+                              <td className="p-3 border-r border-slate-200 font-bold text-slate-900">{siswa.nama}</td>
+                              <td className="p-3 border-r border-slate-200 text-slate-700">{siswa.kelas}</td>
+                              <td className="p-3 border-r border-slate-200 font-mono text-slate-600">{siswa.nisn || siswa.nis}</td>
+                              <td className="p-3 border-r border-slate-200 text-center font-mono text-[11px] text-slate-600">{waktu}</td>
+                              <td className="p-3 border-r border-slate-200 text-center font-bold">
+                                {pelanggaran > 0 ? <span className="text-rose-600">{pelanggaran}x</span> : <span className="text-emerald-600">Aman</span>}
+                              </td>
+                              <td className="p-3 text-right font-black text-sm">
+                                {typeof nilai === 'number' ? (
+                                  <span className={nilai >= 75 ? 'text-emerald-600' : 'text-amber-600'}>{nilai} / 100</span>
+                                ) : (
+                                  <span className="text-slate-400 font-normal italic">Belum Ujian</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Signatures */}
+                  <div className="pt-8 grid grid-cols-2 gap-8 text-xs text-center">
+                    <div className="space-y-16">
+                      <p className="font-bold">Mengetahui,<br/>Kepala Sekolah</p>
+                      <p className="font-bold underline">( ______________________ )</p>
+                    </div>
+                    <div className="space-y-16">
+                      <p className="font-bold">Depok, {new Date().toLocaleDateString('id-ID')}<br/>Guru Mata Pelajaran {selectedMapelRapor}</p>
+                      <p className="font-bold underline">( ______________________ )</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -3070,6 +3489,61 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-rose-900/40 transition-all cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Ya, Hapus Sesi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal for Bank Soal */}
+      {deleteTargetBankSoal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-rose-500/40 rounded-2xl p-6 w-full max-w-md shadow-2xl shadow-rose-950/30 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-2xl shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-2 flex-1">
+                <h3 className="text-base font-bold text-white">Hapus Paket Bank Soal?</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Apakah Anda yakin ingin menghapus paket bank soal ini dari daftar?
+                </p>
+                <div className="p-3 bg-[#181818] rounded-xl border border-slate-800 space-y-1">
+                  <div className="text-xs font-bold text-rose-300">{deleteTargetBankSoal.judul}</div>
+                  <div className="text-[11px] text-slate-400">
+                    {deleteTargetBankSoal.mataPelajaran} • Kelas {deleteTargetBankSoal.kelas} ({deleteTargetBankSoal.jumlahSoal} Soal)
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetBankSoal(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (bankSoalList.length <= 1) {
+                    alert('Minimal harus menyisakan 1 paket Bank Soal.');
+                    setDeleteTargetBankSoal(null);
+                    return;
+                  }
+                  const nextList = bankSoalList.filter(item => item.id !== deleteTargetBankSoal.id);
+                  setBankSoalList(nextList);
+                  if (selectedBankId === deleteTargetBankSoal.id) {
+                    setSelectedBankId(nextList[0]?.id || '');
+                  }
+                  showToast('Paket Bank Soal berhasil dihapus!');
+                  setDeleteTargetBankSoal(null);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-rose-900/40 transition-all cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Ya, Hapus Paket
               </button>
             </div>
           </div>

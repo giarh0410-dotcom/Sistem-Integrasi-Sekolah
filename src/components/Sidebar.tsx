@@ -568,22 +568,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       )}
 
                       {/* 3. Simulasi CBT Anti-Cheat */}
-                      <button
-                        onClick={() => {
-                          setActiveTab('cbt');
-                          if (setCbtSubTab) setCbtSubTab('simulasi_ujian');
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
-                          cbtSubTab === 'simulasi_ujian'
-                            ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Play className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Simulasi CBT Anti-Cheat</span>
-                        </div>
-                      </button>
+                      {currentRole !== 'guru' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('simulasi_ujian');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'simulasi_ujian'
+                              ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Play className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Simulasi CBT Anti-Cheat</span>
+                          </div>
+                        </button>
+                      )}
 
                       {/* 4. Hasil Ujian (Firebase) */}
                       {currentRole !== 'siswa' && (

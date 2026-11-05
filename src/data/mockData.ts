@@ -66,7 +66,7 @@ export const INITIAL_SISWA: Siswa[] = [
     status: 'Aktif',
     fotoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     kodeBarcode: 'SIS-117899483',
-    email: 'alia.syahira@siswa.sch.id',
+    email: 'aliadina.syahira@gmail.com',
     username: 'alia.syahira',
     password: 'password123'
   },
@@ -101,7 +101,7 @@ export const INITIAL_SISWA: Siswa[] = [
     status: 'Aktif',
     fotoUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
     kodeBarcode: 'SIS-122600683',
-    email: 'alya.salsabila@siswa.sch.id',
+    email: 'alyasalsabila.amani@gmail.com',
     username: 'alya.salsabila',
     password: 'password123'
   },
@@ -131,7 +131,7 @@ export const INITIAL_SISWA: Siswa[] = [
     status: 'Aktif',
     fotoUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
     kodeBarcode: 'SIS-123901126',
-    email: 'giarhermawan.gh@gmail.com',
+    email: 'azahra.habibatul@gmail.com',
     username: 'giarhermawan.gh',
     password: 'password123'
   },
@@ -152,7 +152,7 @@ export const INITIAL_SISWA: Siswa[] = [
     status: 'Aktif',
     fotoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     kodeBarcode: 'SIS-3109281001',
-    email: 'ahmad.fauzan@siswa.sch.id',
+    email: 'ahmad.fauzan.fikri@gmail.com',
     username: 'ahmad.fauzan',
     password: 'password123'
   },
@@ -173,7 +173,7 @@ export const INITIAL_SISWA: Siswa[] = [
     status: 'Aktif',
     fotoUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
     kodeBarcode: 'SIS-3109281002',
-    email: 'nabila.zahra@siswa.sch.id',
+    email: 'nabila.zahra.maharani@gmail.com',
     username: 'nabila.zahra',
     password: 'password123'
   },
@@ -194,7 +194,7 @@ export const INITIAL_SISWA: Siswa[] = [
     status: 'Aktif',
     fotoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
     kodeBarcode: 'SIS-3109281003',
-    email: 'rizky.ramadhan@siswa.sch.id',
+    email: 'rizky.ramadhan.putra@gmail.com',
     username: 'rizky.ramadhan',
     password: 'password123'
   },
@@ -215,7 +215,7 @@ export const INITIAL_SISWA: Siswa[] = [
     status: 'Aktif',
     fotoUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
     kodeBarcode: 'SIS-3109281004',
-    email: 'salsabila.putri@siswa.sch.id',
+    email: 'salsabila.putri.amalia@gmail.com',
     username: 'salsabila.putri',
     password: 'password123'
   },
@@ -236,7 +236,7 @@ export const INITIAL_SISWA: Siswa[] = [
     status: 'Aktif',
     fotoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
     kodeBarcode: 'SIS-3109281005',
-    email: 'dimas.anggara@siswa.sch.id',
+    email: 'dimas.anggara.pratama@gmail.com',
     username: 'dimas.anggara',
     password: 'password123'
   },
@@ -257,7 +257,7 @@ export const INITIAL_SISWA: Siswa[] = [
     status: 'Aktif',
     fotoUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=80',
     kodeBarcode: 'SIS-3109281006',
-    email: 'aulia.rahma@siswa.sch.id',
+    email: 'aulia.rahmawati@gmail.com',
     username: 'aulia.rahma',
     password: 'password123'
   },
@@ -278,7 +278,7 @@ export const INITIAL_SISWA: Siswa[] = [
     status: 'Aktif',
     fotoUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
     kodeBarcode: 'SIS-3109281007',
-    email: 'kevin.pratama@siswa.sch.id',
+    email: 'kevin.pratama.santoso@gmail.com',
     username: 'kevin.pratama',
     password: 'password123'
   },
@@ -299,7 +299,7 @@ export const INITIAL_SISWA: Siswa[] = [
     status: 'Aktif',
     fotoUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
     kodeBarcode: 'SIS-3109281008',
-    email: 'zahra.aulia@siswa.sch.id',
+    email: 'zahra.aulia.salsabila@gmail.com',
     username: 'zahra.aulia',
     password: 'password123'
   }

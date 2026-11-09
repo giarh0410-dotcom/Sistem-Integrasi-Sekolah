@@ -518,6 +518,11 @@ export const CbtView: React.FC<CbtViewProps> = ({
     showToast(`Status sesi diubah menjadi ${nextStatus}!`);
   };
 
+  const handleDeleteHasilUjian = (arg: string | HasilUjian) => {
+    const item = typeof arg === 'string' ? hasilUjianList.find(h => h.id === arg) || null : arg;
+    if (item) setDeleteTargetHasilUjian(item);
+  };
+
   // Modal Kartu Peserta Ujian Printable State
   const [selectedKartuSiswa, setSelectedKartuSiswa] = useState<Siswa | null>(null);
   const printKartuRef = useRef<HTMLDivElement>(null);
@@ -610,21 +615,14 @@ export const CbtView: React.FC<CbtViewProps> = ({
     setShowAddSoalModal(true);
   };
 
+  const [deleteTargetSoal, setDeleteTargetSoal] = useState<{ id: string; pertanyaan: string } | null>(null);
+
   const handleDeleteSoal = (soalId: string) => {
     if (!activeBank) return;
-    if (!window.confirm('Apakah Anda yakin ingin menghapus soal ini dari Bank Soal?')) return;
-
-    setBankSoalList(prev => prev.map(b => {
-      if (b.id === activeBank.id) {
-        const updatedDaftarSoal = b.daftarSoal.filter(s => s.id !== soalId);
-        return {
-          ...b,
-          daftarSoal: updatedDaftarSoal,
-          jumlahSoal: updatedDaftarSoal.length
-        };
-      }
-      return b;
-    }));
+    const soal = activeBank.daftarSoal.find(s => s.id === soalId);
+    if (soal) {
+      setDeleteTargetSoal({ id: soal.id, pertanyaan: soal.pertanyaan });
+    }
   };
 
   const handleAddSoal = (e: React.FormEvent) => {
@@ -833,6 +831,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
   const [hasilKelasFilter, setHasilKelasFilter] = useState<string>('Semua');
   const [kolektifKelasFilter, setKolektifKelasFilter] = useState<string>('Semua');
   const [deleteTargetBankSoal, setDeleteTargetBankSoal] = useState<BankSoal | null>(null);
+  const [deleteTargetHasilUjian, setDeleteTargetHasilUjian] = useState<HasilUjian | 'all' | null>(null);
 
   const filteredHasilUjianList = useMemo(() => {
     if (hasilKelasFilter === 'Semua') return hasilUjianList;
@@ -2301,6 +2300,19 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   <Printer className="w-4 h-4" /> Rapor Kolektif Per Mapel
                 </button>
                 <button
+                  onClick={() => {
+                    if (hasilUjianList.length === 0) {
+                      alert('Tidak ada data hasil ujian untuk dihapus.');
+                      return;
+                    }
+                    setDeleteTargetHasilUjian('all');
+                  }}
+                  className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  title="Hapus Semua Hasil Ujian"
+                >
+                  <Trash2 className="w-4 h-4" /> Hapus Semua
+                </button>
+                <button
                   onClick={() => alert('Data hasil ujian telah sinkron 100% dengan Cloud Firestore.')}
                   className="px-3.5 py-2 bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
                 >
@@ -2393,7 +2405,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                       <th className="p-3 text-center">Pelanggaran</th>
                       <th className="p-3 text-center">Status</th>
                       <th className="p-3 text-right">Nilai Akhir</th>
-                      <th className="p-3 text-center">Rapor</th>
+                      <th className="p-3 text-center">Aksi / Hapus</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -2432,13 +2444,22 @@ export const CbtView: React.FC<CbtViewProps> = ({
                           </span>
                         </td>
                         <td className="p-3 text-center">
-                          <button
-                            onClick={() => setSelectedRaporHasil(h)}
-                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg text-[10px] flex items-center gap-1 mx-auto cursor-pointer"
-                            title="Cetak Rapor Hasil Ujian"
-                          >
-                            <Printer className="w-3 h-3" /> Rapor
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => setSelectedRaporHasil(h)}
+                              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer"
+                              title="Cetak Rapor Hasil Ujian"
+                            >
+                              <Printer className="w-3 h-3" /> Rapor
+                            </button>
+                            <button
+                              onClick={() => handleDeleteHasilUjian(h.id)}
+                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer border border-rose-200"
+                              title="Hapus Hasil Ujian Siswa"
+                            >
+                              <Trash2 className="w-3 h-3" /> Hapus
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -3544,6 +3565,129 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-rose-900/40 transition-all cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Ya, Hapus Paket
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal for Soal */}
+      {deleteTargetSoal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-rose-500/40 rounded-2xl p-6 w-full max-w-md shadow-2xl shadow-rose-950/30 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-2xl shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-2 flex-1">
+                <h3 className="text-base font-bold text-white">Hapus Soal dari Bank Soal?</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Apakah Anda yakin ingin menghapus butir soal ini dari paket bank soal aktif?
+                </p>
+                <div className="p-3 bg-[#181818] rounded-xl border border-slate-800 space-y-1">
+                  <div className="text-xs font-bold text-rose-300 line-clamp-2">{deleteTargetSoal.pertanyaan}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetSoal(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeBank) {
+                    setBankSoalList(prev => prev.map(b => {
+                      if (b.id === activeBank.id) {
+                        const updatedDaftarSoal = b.daftarSoal.filter(s => s.id !== deleteTargetSoal.id);
+                        return {
+                          ...b,
+                          daftarSoal: updatedDaftarSoal,
+                          jumlahSoal: updatedDaftarSoal.length
+                        };
+                      }
+                      return b;
+                    }));
+                    showToast('Soal berhasil dihapus dari Bank Soal!');
+                  }
+                  setDeleteTargetSoal(null);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-rose-900/40 transition-all cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Ya, Hapus Soal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal for Hasil Ujian */}
+      {deleteTargetHasilUjian && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-rose-500/40 rounded-2xl p-6 w-full max-w-md shadow-2xl shadow-rose-950/30 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-2xl shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-2 flex-1">
+                <h3 className="text-base font-bold text-white">
+                  {deleteTargetHasilUjian === 'all' ? 'Hapus SEMUA Hasil Ujian Siswa?' : 'Hapus Hasil Ujian Siswa?'}
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {deleteTargetHasilUjian === 'all'
+                    ? `Apakah Anda yakin ingin menghapus SEMUA (${hasilUjianList.length} lembar) catatan hasil ujian siswa dari database?`
+                    : 'Apakah Anda yakin ingin menghapus catatan hasil ujian siswa ini dari database?'}
+                </p>
+                <div className="p-3 bg-[#181818] rounded-xl border border-slate-800 space-y-1">
+                  {deleteTargetHasilUjian === 'all' ? (
+                    <div className="text-xs font-bold text-rose-300">Total {hasilUjianList.length} Lembar Penilaian CBT</div>
+                  ) : (
+                    <>
+                      <div className="text-xs font-bold text-rose-300">{(deleteTargetHasilUjian as HasilUjian).siswaNama}</div>
+                      <div className="text-[11px] text-slate-400">
+                        Kelas: {(deleteTargetHasilUjian as HasilUjian).kelas} • NIS: {(deleteTargetHasilUjian as HasilUjian).nis}
+                      </div>
+                      <div className="text-[10px] text-slate-500">
+                        Nilai Akhir: {(deleteTargetHasilUjian as HasilUjian).nilaiTotal} / 100 • Submit: {new Date((deleteTargetHasilUjian as HasilUjian).waktuSubmit).toLocaleString('id-ID')}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetHasilUjian(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (deleteTargetHasilUjian === 'all') {
+                    if (setHasilUjianList) {
+                      setHasilUjianList([]);
+                    }
+                    showToast('Semua hasil ujian berhasil dihapus!');
+                  } else {
+                    if (setHasilUjianList) {
+                      setHasilUjianList(prev => prev.filter(h => h.id !== (deleteTargetHasilUjian as HasilUjian).id));
+                    }
+                    showToast('Hasil ujian siswa berhasil dihapus!');
+                  }
+                  setDeleteTargetHasilUjian(null);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-rose-900/40 transition-all cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> {deleteTargetHasilUjian === 'all' ? 'Ya, Hapus Semua' : 'Ya, Hapus Hasil Ujian'}
               </button>
             </div>
           </div>

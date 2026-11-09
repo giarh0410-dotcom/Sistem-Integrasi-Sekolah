@@ -10,6 +10,7 @@ import { SupervisiGuruView } from './components/SupervisiGuruView';
 import { BimbinganKonselingView } from './components/BimbinganKonselingView';
 import { KeuanganView } from './components/KeuanganView';
 import { PengaturanView } from './components/PengaturanView';
+import { RaporView } from './components/RaporView';
 import { LoginView } from './components/LoginView';
 import { PublicSlipGajiView } from './components/PublicSlipGajiView';
 import { KasirPOSView } from './components/pos/KasirPOSView';
@@ -42,6 +43,9 @@ import {
   KeuanganSubTab,
   AdministrasiSubTab,
   PengaturanSubTab,
+  RaporSubTab,
+  RaporSiswa,
+  RaporTahfidzSiswa,
   TarifBiaya,
   Siswa, 
   Guru, 
@@ -79,7 +83,9 @@ import {
   INITIAL_SCHOOL_SETTINGS,
   INITIAL_TARIF_BIAYA,
   INITIAL_EKSKUL,
-  INITIAL_GAJI
+  INITIAL_GAJI,
+  INITIAL_RAPOR,
+  INITIAL_RAPOR_TAHFIDZ
 } from './data/mockData';
 
 import { initAuth, googleSignOut, db } from './lib/firebase';
@@ -157,6 +163,7 @@ export default function App() {
   const [keuanganSubTab, setKeuanganSubTab] = useState<KeuanganSubTab>('pembayaran');
   const [pengaturanSubTab, setPengaturanSubTab] = useState<PengaturanSubTab>('identitas');
   const [bimbinganSubTab, setBimbinganSubTab] = useState<'catatan' | 'janji' | 'pelanggaran' | 'karir'>('catatan');
+  const [raporSubTab, setRaporSubTab] = useState<RaporSubTab>('cetak_rapor');
 
   // Google OAuth Auth State
   const [userGoogleToken, setUserGoogleToken] = useState<string>('');
@@ -227,7 +234,19 @@ export default function App() {
 
   // Main School Master Data
   const [rombelList, setRombelList] = useState<RombelKelas[]>(() => getSavedData('edu_rombelList', INITIAL_ROMBEL));
-  const [siswaList, setSiswaList] = useState<Siswa[]>(() => getSavedData('edu_siswaList', INITIAL_SISWA));
+  const [siswaList, setSiswaList] = useState<Siswa[]>(() => {
+    const saved = getSavedData<Siswa[]>('edu_siswaList', INITIAL_SISWA);
+    let list = saved && saved.length > 0 ? [...saved] : [...INITIAL_SISWA];
+    const kanza = INITIAL_SISWA.find(s => s.id === 'sis-kanza-01');
+    const zhifani = INITIAL_SISWA.find(s => s.id === 'sis-zhifani-01');
+    if (zhifani && !list.some(s => s.id === 'sis-zhifani-01' || s.nisn === '3117517009' || s.nama.toUpperCase().includes('ZHIFANI'))) {
+      list.unshift(zhifani);
+    }
+    if (kanza && !list.some(s => s.id === 'sis-kanza-01' || s.nisn === '0125269826' || s.nama.toUpperCase().includes('KANZA'))) {
+      list.unshift(kanza);
+    }
+    return list;
+  });
   const [guruList, setGuruList] = useState<Guru[]>(() => getSavedData('edu_guruList', INITIAL_GURU));
   const [stafList, setStafList] = useState<Staf[]>(() => getSavedData('edu_stafList', INITIAL_STAF));
   const [mapelList, setMapelList] = useState<MataPelajaranItem[]>(() => getSavedData('edu_mapelList', INITIAL_MAPEL));
@@ -245,6 +264,28 @@ export default function App() {
 
   // Curriculum & Administration State
   const [administrasiList, setAdministrasiList] = useState<AdministrasiGuru[]>(() => getSavedData('edu_administrasiList', INITIAL_ADMINISTRASI));
+
+  // School Report Card (E-Rapor) State
+  const [raporList, setRaporList] = useState<RaporSiswa[]>(() => {
+    const saved = getSavedData<RaporSiswa[]>('edu_raporList', INITIAL_RAPOR);
+    const hasKanzaRapor = saved && saved.some(r => r.id === 'rap-kanza-2025' || r.siswaId === 'sis-kanza-01');
+    if (!hasKanzaRapor) {
+      const kanzaRapor = INITIAL_RAPOR.find(r => r.id === 'rap-kanza-2025');
+      if (kanzaRapor) return [kanzaRapor, ...(saved || [])];
+    }
+    return saved || INITIAL_RAPOR;
+  });
+
+  // School Tahfidz Report Card (Rapor Tahfidz Al-Qur'an) State
+  const [raporTahfidzList, setRaporTahfidzList] = useState<RaporTahfidzSiswa[]>(() => {
+    const saved = getSavedData<RaporTahfidzSiswa[]>('edu_raporTahfidzList', INITIAL_RAPOR_TAHFIDZ);
+    const hasZhifani = saved && saved.some(r => r.id === 'tahfidz-zhifani-2025' || r.siswaNama.includes('Zhifani'));
+    if (!hasZhifani) {
+      const zhifani = INITIAL_RAPOR_TAHFIDZ.find(r => r.id === 'tahfidz-zhifani-2025');
+      if (zhifani) return [zhifani, ...(saved || [])];
+    }
+    return saved || INITIAL_RAPOR_TAHFIDZ;
+  });
 
   // Financial State
   const [tagihanList, setTagihanList] = useState<TagihanKeuangan[]>(() => getSavedData('edu_tagihanList', []));
@@ -264,18 +305,26 @@ export default function App() {
     const syncEmail = rawSyncEmail && (rawSyncEmail.includes('belajar.id') || rawSyncEmail.includes('giar.hermawan4')) 
       ? 'giarh0410@gmail.com' 
       : rawSyncEmail;
-    const admins = saved.adminEmails && saved.adminEmails.length > 0 
-      ? saved.adminEmails.map(e => (e.includes('belajar.id') || e.includes('giar.hermawan4') ? 'giarh0410@gmail.com' : e))
+    const admins = saved && saved.adminEmails && saved.adminEmails.length > 0 
+      ? saved.adminEmails.map((e: string) => (e.includes('belajar.id') || e.includes('giar.hermawan4') ? 'giarh0410@gmail.com' : e))
       : ['giarh0410@gmail.com'];
 
     const normalizedSettings = {
       ...INITIAL_SCHOOL_SETTINGS,
       ...(saved || {}),
+      namaSekolah: INITIAL_SCHOOL_SETTINGS.namaSekolah,
+      npsn: INITIAL_SCHOOL_SETTINGS.npsn,
+      alamat: INITIAL_SCHOOL_SETTINGS.alamat,
+      kelurahan: INITIAL_SCHOOL_SETTINGS.kelurahan,
+      kecamatan: INITIAL_SCHOOL_SETTINGS.kecamatan,
+      kotaKabupaten: INITIAL_SCHOOL_SETTINGS.kotaKabupaten,
+      provinsi: INITIAL_SCHOOL_SETTINGS.provinsi,
+      telepon: INITIAL_SCHOOL_SETTINGS.telepon,
+      email: INITIAL_SCHOOL_SETTINGS.email,
+      website: INITIAL_SCHOOL_SETTINGS.website,
+      kepalaSekolah: INITIAL_SCHOOL_SETTINGS.kepalaSekolah,
       googleSyncEmail: syncEmail,
       adminEmails: admins,
-      namaSekolah: (!saved || !saved.namaSekolah || saved.namaSekolah === 'SEKOLAH MENENGAH ATAS WORKSPACE 2026' || saved.namaSekolah === 'My App' || saved.namaSekolah === 'Untitled' || saved.namaSekolah === 'SMP Modern Al Fakhir' || saved.namaSekolah === 'Sekolah Islam Modern Al Fakhir') 
-        ? INITIAL_SCHOOL_SETTINGS.namaSekolah 
-        : saved.namaSekolah,
       logoUrl: saved && saved.logoUrl && !saved.logoUrl.includes('unsplash') ? saved.logoUrl : INITIAL_SCHOOL_SETTINGS.logoUrl,
     };
     try {
@@ -283,7 +332,7 @@ export default function App() {
     } catch (e) {}
     return normalizedSettings;
   });
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('edu_theme') as 'dark' | 'light') || 'light');
   const [colorTheme, setColorTheme] = useState<string>(() => localStorage.getItem('edu_colorTheme') || 'emerald');
 
   useEffect(() => {
@@ -320,6 +369,8 @@ export default function App() {
           const hasilUjianData = await dbFetchCollection<HasilUjian>('edu_hasilUjianList');
           const settingsData = await dbFetchCollection<SchoolSettings>('edu_schoolSettings');
           const gajiData = await dbFetchCollection<GajiPembayaran>('edu_gajiList');
+          const raporData = await dbFetchCollection<RaporSiswa>('edu_raporList');
+          const tahfidzData = await dbFetchCollection<RaporTahfidzSiswa>('edu_raporTahfidzList');
 
           // Sync data back to React state or seed empty Firestore
           if (rombelData.length > 0) setRombelList(rombelData);
@@ -352,6 +403,12 @@ export default function App() {
           if (ujianData.length > 0) setUjianList(ujianData);
           else await dbSaveCollection('edu_ujianList', ujianList);
 
+          if (raporData.length > 0) setRaporList(raporData);
+          else await dbSaveCollection('edu_raporList', raporList);
+
+          if (tahfidzData.length > 0) setRaporTahfidzList(tahfidzData);
+          else await dbSaveCollection('edu_raporTahfidzList', raporTahfidzList);
+
           const isSystemReset = localStorage.getItem('edu_system_reset') === 'true';
           const isTagihanForceCleared = localStorage.getItem('edu_tagihan_force_clear') === 'true' || isSystemReset;
           const isTransaksiForceCleared = localStorage.getItem('edu_transaksi_force_clear') === 'true' || isSystemReset;
@@ -361,13 +418,13 @@ export default function App() {
           if (isSystemReset) {
             setRombelList([]); setSiswaList([]); setGuruList([]); setStafList([]); setMapelList([]); setEkskulList([]);
             setAbsensiHarian([]); setAbsensiKelasList([]); setAbsensiGuruList([]); setBankSoalList([]); setUjianList([]); setAdministrasiList([]);
-            setTagihanList([]); setTransaksiList([]); setTarifBiayaList([]); setHasilUjianList([]); setGajiList([]);
+            setTagihanList([]); setTransaksiList([]); setTarifBiayaList([]); setHasilUjianList([]); setGajiList([]); setRaporList([]); setRaporTahfidzList([]);
             
             const collectionsToClear = [
               'edu_rombelList', 'edu_siswaList', 'edu_guruList', 'edu_stafList', 'edu_mapelList', 'edu_ekskulList',
               'edu_absensiHarian', 'edu_absensiKelasList', 'edu_absensiGuruList', 'edu_bankSoalList', 'edu_ujianList',
               'edu_administrasiList', 'edu_tagihanList', 'edu_transaksiList', 'edu_tarifBiayaList', 'edu_hasilUjianList',
-              'edu_gajiList'
+              'edu_gajiList', 'edu_raporList', 'edu_raporTahfidzList'
             ];
             
             Promise.all(collectionsToClear.map(c => dbClearCollection(c))).then(() => {
@@ -608,6 +665,20 @@ export default function App() {
   }, [gajiList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
+    localStorage.setItem('edu_raporList', JSON.stringify(raporList));
+    if (isDbLoaded && isLoggedIn) {
+      saveCollectionWithStatus('edu_raporList', raporList);
+    }
+  }, [raporList, isDbLoaded, isLoggedIn]);
+
+  useEffect(() => {
+    localStorage.setItem('edu_raporTahfidzList', JSON.stringify(raporTahfidzList));
+    if (isDbLoaded && isLoggedIn) {
+      saveCollectionWithStatus('edu_raporTahfidzList', raporTahfidzList);
+    }
+  }, [raporTahfidzList, isDbLoaded, isLoggedIn]);
+
+  useEffect(() => {
     localStorage.setItem('edu_schoolSettings', JSON.stringify(schoolSettings));
     if (isDbLoaded && isLoggedIn) {
       saveItemWithStatus('edu_schoolSettings', { id: 'current', ...schoolSettings });
@@ -810,10 +881,10 @@ export default function App() {
   // Auto switch tab if current activeTab is not allowed for current role
   useEffect(() => {
     if (currentRole === 'kepsek') {
-      if (activeTab !== 'absensi') {
+      if (activeTab !== 'absensi' && activeTab !== 'rapor' && activeTab !== 'supervisi') {
         setActiveTab('absensi');
       }
-      if (absensiSubTab !== 'perizinan') {
+      if (activeTab === 'absensi' && absensiSubTab !== 'perizinan') {
         setAbsensiSubTab('perizinan');
       }
     } else if (currentRole === 'guru_bk') {
@@ -821,7 +892,7 @@ export default function App() {
         setActiveTab('bimbingan_konseling');
       }
     } else if (currentRole === 'guru') {
-      if (activeTab !== 'absensi' && activeTab !== 'administrasi' && activeTab !== 'cbt') {
+      if (activeTab !== 'absensi' && activeTab !== 'administrasi' && activeTab !== 'cbt' && activeTab !== 'rapor') {
         setActiveTab('cbt');
       }
       if (absensiSubTab === 'scan_barcode') {
@@ -836,14 +907,14 @@ export default function App() {
         setActiveTab('dashboard');
       }
     } else if (currentRole === 'siswa') {
-      if (activeTab !== 'cbt') {
+      if (activeTab !== 'cbt' && activeTab !== 'rapor') {
         setActiveTab('cbt');
       }
       if (cbtSubTab === 'bank_soal' || cbtSubTab === 'ai_generator') {
         setCbtSubTab('simulasi_ujian');
       }
     }
-  }, [currentRole, userEmail, activeTab, cbtSubTab]);
+  }, [currentRole, userEmail, activeTab, cbtSubTab, absensiSubTab]);
 
   const handleLogout = async () => {
     try {
@@ -939,6 +1010,8 @@ export default function App() {
             setKeuanganSubTab={setKeuanganSubTab}
             pengaturanSubTab={pengaturanSubTab}
             setPengaturanSubTab={setPengaturanSubTab}
+            raporSubTab={raporSubTab}
+            setRaporSubTab={setRaporSubTab}
             bimbinganSubTab={bimbinganSubTab}
             setBimbinganSubTab={setBimbinganSubTab}
             siswaCount={siswaList.length}
@@ -948,11 +1021,12 @@ export default function App() {
             mapelCount={mapelList.length}
             ekskulCount={ekskulList.length}
             bankSoalCount={bankSoalList.length}
+            theme={theme}
           />
         )}
 
         {/* Content View Area */}
-        <main className="flex-1 min-w-0 bg-[#0A0A0A] text-slate-200 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-2xl transition-colors">
+        <main className={`flex-1 min-w-0 ${theme === 'light' ? 'bg-white text-slate-900 border-slate-200 shadow-xl' : 'bg-[#0A0A0A] text-slate-200 border-slate-800 shadow-2xl'} border rounded-2xl p-4 sm:p-6 transition-all duration-300 animate-in fade-in zoom-in-95 duration-300`}>
           {activeTab === 'dashboard' && (
             <DashboardView
               siswaList={siswaList}
@@ -1054,6 +1128,28 @@ export default function App() {
               schoolSettings={schoolSettings}
               absensiHarian={absensiHarian}
               stafList={stafList}
+            />
+          )}
+
+          {activeTab === 'rapor' && (
+            <RaporView
+              raporList={raporList}
+              setRaporList={setRaporList}
+              raporTahfidzList={raporTahfidzList}
+              setRaporTahfidzList={setRaporTahfidzList}
+              siswaList={siswaList}
+              rombelList={rombelList}
+              mapelList={mapelList}
+              ekskulList={ekskulList}
+              absensiHarian={absensiHarian}
+              hasilUjianList={hasilUjianList}
+              guruList={guruList}
+              schoolSettings={schoolSettings}
+              currentRole={currentRole}
+              userEmail={userEmail}
+              subTab={raporSubTab}
+              setSubTab={setRaporSubTab}
+              theme={theme}
             />
           )}
 

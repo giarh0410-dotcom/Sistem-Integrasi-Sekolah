@@ -20,6 +20,7 @@ export type CbtSubTab = 'bank_soal' | 'jadwal_kartu' | 'ai_generator' | 'simulas
 export type KeuanganSubTab = 'pembayaran' | 'pengaturan_biaya' | 'rekap' | 'redaksi' | 'gaji';
 export type AdministrasiSubTab = 'modul_ajar' | 'cp' | 'atp' | 'kktp' | 'prota' | 'prosem' | 'jadwal' | 'kalender' | 'jurnal_guru';
 export type PengaturanSubTab = 'identitas' | 'logo' | 'fonnte' | 'jadwal' | 'sistem';
+export type RaporSubTab = 'cetak_rapor' | 'rapor_tahfidz' | 'input_nilai' | 'leger_nilai' | 'pengaturan_rapor';
 
 export interface TarifBiaya {
   id: string;
@@ -93,6 +94,13 @@ export interface Siswa {
   pendidikanOrtu?: string;
   pekerjaanOrtu?: string;
   nikOrtu?: string;
+
+  statusKeluarga?: string;
+  diterimaDiKelas?: string;
+  diterimaTanggal?: string;
+  pekerjaanWali?: string;
+  alamatWali?: string;
+  teleponRumah?: string;
 }
 
 export interface Guru {
@@ -519,6 +527,7 @@ export interface SchoolSettings {
   alamat: string;
   rtRw: string;
   kelurahan: string;
+  desaKelurahan?: string;
   kecamatan: string;
   kotaKabupaten: string;
   provinsi: string;
@@ -584,3 +593,142 @@ export interface GajiPembayaran {
   catatan?: string;
   penerimaRekening?: string;
 }
+
+export interface NilaiMapelRapor {
+  mapelId: string;
+  namaMapel: string;
+  kelompok: 'Kelompok A (Umum / Wajib)' | 'Kelompok B (Pilihan / Kejuruan)' | 'Muatan Lokal';
+  kkm: number;
+  nilaiFormatif: number; // 0 - 100
+  nilaiSumatif: number; // 0 - 100
+  nilaiAkhir: number; // 0 - 100
+  capaianKompetensi: string;
+  predikat: 'A' | 'B' | 'C' | 'D';
+}
+
+export interface NilaiEkskulRapor {
+  ekskulId?: string;
+  namaEkskul: string;
+  predikat: 'Sangat Baik' | 'Baik' | 'Cukup' | 'Kurang';
+  keterangan: string;
+}
+
+export interface PresensiRapor {
+  sakit: number;
+  izin: number;
+  tanpaKeterangan: number;
+}
+
+export interface RaporSiswa {
+  id: string;
+  siswaId: string;
+  siswaNama: string;
+  nisn: string;
+  nis: string;
+  kelas: string;
+  tingkatKelas?: string;
+  fase: string; // e.g. "Fase D"
+  semester: 'Ganjil' | 'Genap';
+  tahunAjaran: string; // e.g. "2026/2027"
+  kurikulum: 'Kurikulum Merdeka' | 'Kurikulum 2013';
+  tanggalRapor: string; // YYYY-MM-DD
+  tempatPenerbitan: string;
+
+  // Nilai & Penilaian
+  nilaiMapel: NilaiMapelRapor[];
+  nilaiEkskul: NilaiEkskulRapor[];
+  presensi: PresensiRapor;
+
+  // Catatan & Perkembangan
+  catatanWaliKelas: string;
+  projekPancasila?: string;
+  statusKenaikan?: 'Naik ke Kelas Berikutnya' | 'Tinggal di Kelas' | 'Lulus' | 'Sedang Berjalan';
+  kelasTujuan?: string;
+
+  // Penandatangan
+  waliKelasNama: string;
+  waliKelasNip: string;
+  kepalaSekolahNama: string;
+  kepalaSekolahNip: string;
+
+  // Status
+  status: 'Draft' | 'Divalidasi' | 'Diterbitkan';
+  updatedAt?: string;
+}
+
+// ==========================================
+// RAPOR TAHFIDZ (AL-QUR'AN)
+// ==========================================
+
+export interface HafalanSuratItem {
+  id: string;
+  nomor: number;
+  namaSurat: string; // e.g. "AL MULK", "AL QALAM", "AL WAQ'IAH"
+  juz?: string; // e.g. "JUZ 29"
+  nilai?: number | null; // e.g. 85 or null
+  predikat?: string; // e.g. 'ممتاز' | 'جيد جدا' | 'جيد' | 'مقبول' | 'ضعيف' | '-'
+}
+
+export interface AspekPenilaianTahfidz {
+  adabHalaqah: number; // e.g. 86
+  adabPredikat?: string;
+  tajwid: number; // e.g. 80
+  tajwidPredikat?: string;
+  makharijulHuruf: number; // e.g. 81
+  makharijPredikat?: string;
+  nilaiUjianAlQuran: number; // e.g. 82
+  ujianPredikat?: string;
+}
+
+export interface RaporTahfidzSiswa {
+  id: string;
+  siswaId: string;
+  siswaNama: string;
+  nisn: string;
+  nis: string;
+  namaSekolah: string;
+  kelas: string; // e.g. "VIII (delapan)"
+  semester: string; // e.g. "1" or "Ganjil"
+  tahunAjaran: string; // e.g. "2025/2026"
+  halaqah: string; // e.g. "Tahfidz"
+  pembimbingNama: string; // e.g. "Mutiara Indah Pratiwi, S.Pd"
+  pembimbingNip?: string;
+  kepalaSekolahNama: string; // e.g. "Nurhidayati, S. Pd"
+  kepalaSekolahNip?: string;
+  tempatPenerbitan: string; // e.g. "Depok"
+  tanggalPenerbitan: string; // e.g. "22 Desember 2025" atau "2025-12-22"
+
+  // Capaian Hafalan
+  capaianHafalan: HafalanSuratItem[];
+
+  // Aspek Penilaian
+  aspekPenilaian: AspekPenilaianTahfidz;
+
+  // Catatan Guru Pembimbing
+  catatan: string;
+
+  // Status
+  status: 'Draft' | 'Divalidasi' | 'Diterbitkan';
+  updatedAt?: string;
+}
+
+export function getArabicPredikat(nilai?: number | null): string {
+  if (nilai === null || nilai === undefined || isNaN(nilai) || nilai <= 0) return '-';
+  if (nilai >= 90) return 'ممتاز';
+  if (nilai >= 80) return 'جيد جدا';
+  if (nilai >= 70) return 'جيد';
+  if (nilai >= 60) return 'مقبول';
+  return 'ضعيف';
+}
+
+export function getPredikatKeterangan(predikat: string): string {
+  switch (predikat) {
+    case 'ممتاز': return 'Sempurna';
+    case 'جيد جدا': return 'Sangat Baik';
+    case 'جيد': return 'Baik';
+    case 'مقبول': return 'Cukup';
+    case 'ضعيف': return 'Kurang';
+    default: return '-';
+  }
+}
+

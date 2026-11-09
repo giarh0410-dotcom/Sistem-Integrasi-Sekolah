@@ -34,11 +34,12 @@ import {
   Store,
   HeartHandshake,
   ShieldAlert,
-  Award
+  Award,
+  Printer
 } from 'lucide-react';
-import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab, AdministrasiSubTab, PengaturanSubTab } from '../types/school';
+import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab, AdministrasiSubTab, PengaturanSubTab, RaporSubTab } from '../types/school';
 
-export type TabType = 'dashboard' | 'database' | 'absensi' | 'cbt' | 'administrasi' | 'keuangan' | 'kasir' | 'supervisi' | 'bimbingan_konseling' | 'pengaturan';
+export type TabType = 'dashboard' | 'database' | 'absensi' | 'cbt' | 'administrasi' | 'rapor' | 'keuangan' | 'kasir' | 'supervisi' | 'bimbingan_konseling' | 'pengaturan';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -57,6 +58,8 @@ interface SidebarProps {
   setKeuanganSubTab?: (subTab: KeuanganSubTab) => void;
   pengaturanSubTab?: PengaturanSubTab;
   setPengaturanSubTab?: (subTab: PengaturanSubTab) => void;
+  raporSubTab?: RaporSubTab;
+  setRaporSubTab?: (subTab: RaporSubTab) => void;
   bimbinganSubTab?: 'catatan' | 'janji' | 'pelanggaran' | 'karir';
   setBimbinganSubTab?: (subTab: 'catatan' | 'janji' | 'pelanggaran' | 'karir') => void;
   siswaCount: number;
@@ -66,6 +69,7 @@ interface SidebarProps {
   mapelCount: number;
   ekskulCount?: number;
   bankSoalCount?: number;
+  theme?: 'dark' | 'light';
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -85,6 +89,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setKeuanganSubTab,
   pengaturanSubTab = 'identitas',
   setPengaturanSubTab,
+  raporSubTab = 'cetak_rapor',
+  setRaporSubTab,
   bimbinganSubTab = 'catatan',
   setBimbinganSubTab,
   siswaCount,
@@ -93,7 +99,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   rombelCount,
   mapelCount,
   ekskulCount = 0,
-  bankSoalCount
+  bankSoalCount,
+  theme = 'dark'
 }) => {
   const [perangkatOpen, setPerangkatOpen] = useState(false);
 
@@ -127,7 +134,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'administrasi',
       label: 'Administrasi Guru',
       icon: <FileText className="w-5 h-5" />,
+      badge: 'Modul Ajar',
       desc: 'Modul Ajar, Jadwal, Kalender'
+    },
+    {
+      id: 'rapor',
+      label: 'Rapor Sekolah',
+      icon: <Printer className="w-5 h-5" />,
+      badge: 'E-Rapor',
+      desc: currentRole === 'siswa' ? 'Rapor Akademik Saya' : 'Cetak, Leger & Nilai'
     },
     {
       id: 'supervisi',
@@ -168,12 +183,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Filter menu items based on role
   const menuItems = allMenuItems.filter((item) => {
     if (currentRole === 'kepsek') {
-      // Kepala Sekolah ONLY gets: Persetujuan Izin Siswa & Guru
-      return item.id === 'absensi';
+      // Kepala Sekolah gets: Persetujuan Izin & Rapor
+      return item.id === 'absensi' || item.id === 'rapor' || item.id === 'supervisi';
     }
     if (currentRole === 'guru') {
-      // Guru ONLY gets: absensi kelas, administrasi guru, cbt ujian (bank soal)
-      return item.id === 'absensi' || item.id === 'administrasi' || item.id === 'cbt';
+      // Guru gets: absensi kelas, administrasi guru, cbt ujian, rapor sekolah
+      return item.id === 'absensi' || item.id === 'administrasi' || item.id === 'cbt' || item.id === 'rapor';
     }
     if (currentRole === 'guru_bk') {
       return item.id === 'bimbingan_konseling';
@@ -185,14 +200,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return item.id === 'dashboard' || item.id === 'keuangan';
     }
     if (currentRole === 'siswa') {
-      return item.id === 'cbt';
+      return item.id === 'cbt' || item.id === 'rapor';
     }
     // Admin gets all
     return true;
   });
 
   return (
-    <aside className="w-full md:w-64 bg-slate-950/70 backdrop-blur-xl border border-slate-800/80 shadow-2xl text-slate-300 flex-shrink-0 rounded-2xl p-4 relative overflow-hidden before:absolute before:inset-0 before:bg-gradient-to-b before:from-white/5 before:to-transparent before:pointer-events-none">
+    <aside className={`w-full md:w-64 ${theme === 'light' ? 'bg-white text-slate-800 border-slate-200 shadow-xl' : 'bg-slate-950/70 text-slate-300 border-slate-800/80 shadow-2xl'} backdrop-blur-xl border flex-shrink-0 rounded-2xl p-4 relative overflow-hidden transition-all duration-300 animate-in fade-in slide-in-from-left duration-300`}>
       <div className="space-y-3">
         {/* Active Role Indicator Box */}
         <div className={`p-3 rounded-xl border flex items-center justify-between ${
@@ -739,6 +754,150 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <span>Jurnal Guru</span>
                         </div>
                       </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            if (item.id === 'rapor') {
+              return (
+                <div key={item.id} className="space-y-1">
+                  <button
+                    onClick={() => {
+                      setActiveTab('rapor');
+                    }}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-between group ${
+                      isActive
+                        ? 'bg-slate-800/90 text-indigo-400 font-bold border border-slate-700/80 shadow-md ring-1 ring-indigo-500/20'
+                        : 'hover:bg-slate-800/50 hover:text-white text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`${isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                        {item.icon}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold leading-none">{item.label}</div>
+                        <div className={`text-[10px] mt-1 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                          {item.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <ChevronDown className={`w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-transform duration-300 ${isActive ? 'transform rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Dropdown nested items for Rapor */}
+                  {isActive && (
+                    <div className="pl-3 pr-1 py-1 space-y-1 border-l border-slate-800 ml-6 mt-1 transition-all">
+                      {/* 1. Cetak Rapor */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('rapor');
+                          if (setRaporSubTab) setRaporSubTab('cetak_rapor');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          raporSubTab === 'cetak_rapor'
+                            ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Printer className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>{currentRole === 'siswa' ? 'Rapor Akademik' : 'Daftar & Cetak Rapor'}</span>
+                        </div>
+                        <span className="text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1 py-0.5 rounded font-bold">
+                          A4
+                        </span>
+                      </button>
+
+                      {/* Rapor Tahfidz (Al-Qur'an) */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('rapor');
+                          if (setRaporSubTab) setRaporSubTab('rapor_tahfidz');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          raporSubTab === 'rapor_tahfidz'
+                            ? 'bg-emerald-600/15 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Rapor Tahfidz (Al-Qur'an)</span>
+                        </div>
+                        <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1 py-0.5 rounded font-bold">
+                          Hafalan
+                        </span>
+                      </button>
+
+                      {/* 2. Input Nilai Massal (Guru / Admin) */}
+                      {currentRole !== 'siswa' && currentRole !== 'kepsek' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('rapor');
+                            if (setRaporSubTab) setRaporSubTab('input_nilai');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            raporSubTab === 'input_nilai'
+                              ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Sliders className="w-3.5 h-3.5 text-blue-400" />
+                            <span>Input Nilai Massal</span>
+                          </div>
+                          <span className="text-[9px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1 py-0.5 rounded font-bold">
+                            Mapel
+                          </span>
+                        </button>
+                      )}
+
+                      {/* 3. Leger & Ranking */}
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('rapor');
+                            if (setRaporSubTab) setRaporSubTab('leger_nilai');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            raporSubTab === 'leger_nilai'
+                              ? 'bg-amber-600/10 text-amber-400 border border-amber-500/20 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Leger & Ranking</span>
+                          </div>
+                          <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1 py-0.5 rounded font-bold">
+                            Kelas
+                          </span>
+                        </button>
+                      )}
+
+                      {/* 4. Format & Titimangsa */}
+                      {currentRole !== 'siswa' && currentRole !== 'kepsek' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('rapor');
+                            if (setRaporSubTab) setRaporSubTab('pengaturan_rapor');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            raporSubTab === 'pengaturan_rapor'
+                              ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Settings className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Format & Titimangsa</span>
+                          </div>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

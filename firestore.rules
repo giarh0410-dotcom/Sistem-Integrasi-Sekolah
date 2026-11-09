@@ -90,6 +90,12 @@ service cloud.firestore {
     match /edu_schoolSettings/{settingsId} {
       allow read, write: if isSignedIn();
     }
+    match /edu_raporList/{raporId} {
+      allow read, write: if isSignedIn();
+    }
+    match /edu_raporTahfidzList/{tahfidzId} {
+      allow read, write: if isSignedIn();
+    }
     
     // Test collection for connectivity check
     match /test/connection {

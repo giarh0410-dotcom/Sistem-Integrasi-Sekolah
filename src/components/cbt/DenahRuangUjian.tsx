@@ -1,0 +1,2040 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Plus,
+  Minus,
+  Trash2,
+  Printer,
+  Search,
+  Users,
+  Edit2,
+  Sparkles,
+  ArrowLeftRight,
+  Check,
+  X,
+  RotateCcw,
+  Settings2,
+  LayoutGrid,
+  Armchair,
+  UserPlus,
+  UserMinus,
+  AlertCircle,
+  CheckCircle2
+} from 'lucide-react';
+import { Siswa, Guru, RombelKelas, SchoolSettings, Role } from '../../types/school';
+import { dbFetchCollection, dbSaveCollection } from '../../lib/firebaseSync';
+
+export interface DenahKursi {
+  nomorKursi: number;
+  siswaId?: string;
+  namaSiswa: string;
+  kelasSiswa?: string;
+  nomorPeserta?: string;
+}
+
+export interface DenahRuangItem {
+  id: string;
+  namaRuang: string;
+  pengawas: string;
+  jumlahKursi: number;
+  kursiPerMeja: 1 | 2 | 4;
+  judulUjian: string;
+  labelPintu: string;
+  labelJendela: string;
+  ketentuanTambahan: string;
+  kursiList: DenahKursi[];
+  updatedAt?: string;
+}
+
+interface DenahRuangUjianProps {
+  siswaList: Siswa[];
+  guruList?: Guru[];
+  rombelList?: RombelKelas[];
+  schoolSettings?: SchoolSettings;
+  currentRole?: Role;
+  userEmail?: string;
+}
+
+const DEFAULT_JUDUL_UJIAN = 'SUMATIF AKHIR SEMESTER (SAS) GANJIL TAHUN PELAJARAN 2026/2027';
+
+function createEmptySeats(count: number, existing: DenahKursi[] = []): DenahKursi[] {
+  const safeCount = Math.min(Math.max(Math.round(count) || 1, 1), 80);
+  const byNo = new Map<number, DenahKursi>();
+  existing.forEach(s => byNo.set(s.nomorKursi, s));
+  const result: DenahKursi[] = [];
+  for (let i = 1; i <= safeCount; i++) {
+    const prev = byNo.get(i);
+    if (prev) {
+      result.push({ ...prev, nomorKursi: i });
+    } else {
+      result.push({
+        nomorKursi: i,
+        namaSiswa: '',
+        kelasSiswa: '',
+        nomorPeserta: ''
+      });
+    }
+  }
+  return result;
+}
+
+function buildDefaultRooms(siswaList: Siswa[], guruList: Guru[]): DenahRuangItem[] {
+  const activeSiswa = siswaList.filter(s => s.status === 'Aktif');
+  const rooms: DenahRuangItem[] = [];
+  for (let r = 1; r <= 6; r++) {
+    const jumlahKursi = 16;
+    const kursiList: DenahKursi[] = [];
+    for (let k = 1; k <= jumlahKursi; k++) {
+      const globalIdx = (r - 1) * jumlahKursi + (k - 1);
+      const s = activeSiswa[globalIdx];
+      kursiList.push({
+        nomorKursi: k,
+        siswaId: s?.id,
+        namaSiswa: s?.nama || '',
+        kelasSiswa: s?.kelas || '',
+        nomorPeserta: s?.nis || ''
+      });
+    }
+    const pengawas = guruList[(r - 1) % Math.max(guruList.length, 1)]?.nama || `Pengawas Ruang ${r}`;
+    rooms.push({
+      id: `denah-ruang-${r}`,
+      namaRuang: `Ruang ${r}`,
+      pengawas,
+      jumlahKursi,
+      kursiPerMeja: 4,
+      judulUjian: DEFAULT_JUDUL_UJIAN,
+      labelPintu: 'Pintu (di sebelah kiri)',
+      labelJendela: 'Jendela (samping kiri)',
+      ketentuanTambahan: 'Jaga ketertiban dan ikuti arahan pengawas.',
+      kursiList,
+      updatedAt: new Date().toISOString()
+    });
+  }
+  return rooms;
+}
+
+// Inline SVG illustrations faithful to the attached Al Fakhir Exam Seating Blueprint
+const PottedPlantSvg: React.FC<{ className?: string }> = ({ className = 'w-10 h-10' }) => (
+  <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+    <ellipse cx="32" cy="48" rx="13" ry="9" fill="#9a4b1f" stroke="#1e293b" strokeWidth="2.5" />
+    <ellipse cx="32" cy="44" rx="11" ry="4" fill="#c26227" stroke="#1e293b" strokeWidth="2" />
+    <g fill="#4ade80" stroke="#14532d" strokeWidth="2" strokeLinejoin="round">
+      <path d="M32 32 C26 18, 22 10, 32 6 C42 10, 38 18, 32 32 Z" />
+      <path d="M32 32 C18 26, 10 22, 6 32 C10 42, 18 38, 32 32 Z" />
+      <path d="M32 32 C46 26, 54 22, 58 32 C54 42, 46 38, 32 32 Z" />
+      <path d="M32 32 C22 22, 14 14, 14 14 C14 14, 24 14, 32 32 Z" fill="#22c55e" />
+      <path d="M32 32 C42 22, 50 14, 50 14 C50 14, 40 14, 32 32 Z" fill="#22c55e" />
+      <path d="M32 32 C24 40, 14 44, 16 48 C22 48, 28 42, 32 32 Z" fill="#16a34a" />
+      <path d="M32 32 C40 40, 50 44, 48 48 C42 48, 36 42, 32 32 Z" fill="#16a34a" />
+    </g>
+    <circle cx="32" cy="31" r="4" fill="#facc15" stroke="#713f12" strokeWidth="1.5" />
+  </svg>
+);
+
+const DoorSvg: React.FC<{ className?: string }> = ({ className = 'w-11 h-24' }) => (
+  <svg viewBox="0 0 48 110" className={className} aria-hidden="true">
+    <polygon points="4,4 42,24 42,88 4,106" fill="#c77d33" stroke="#1e293b" strokeWidth="3" strokeLinejoin="round" />
+    <polygon points="10,14 36,28 36,82 10,96" fill="#d99345" stroke="#78350f" strokeWidth="1.5" />
+    <circle cx="32" cy="57" r="3.5" fill="#e2e8f0" stroke="#1e293b" strokeWidth="1.5" />
+    <path d="M32 57 L20 50" stroke="#e2e8f0" strokeWidth="3.5" strokeLinecap="round" />
+    <path d="M32 57 L20 50" stroke="#1e293b" strokeWidth="1.2" strokeLinecap="round" />
+  </svg>
+);
+
+const WindowPaneSvg: React.FC<{ className?: string }> = ({ className = 'w-7 h-20' }) => (
+  <svg viewBox="0 0 32 90" className={className} aria-hidden="true">
+    <polygon points="4,4 28,12 28,78 4,86" fill="#e0f2fe" stroke="#1e3a8a" strokeWidth="2.5" strokeLinejoin="round" />
+    <polygon points="8,10 24,15 24,75 8,80" fill="url(#winGrad)" stroke="#38bdf8" strokeWidth="1.2" />
+    <line x1="10" y1="30" x2="22" y2="22" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" opacity="0.85" />
+    <line x1="10" y1="54" x2="22" y2="44" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" opacity="0.7" />
+    <defs>
+      <linearGradient id="winGrad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stopColor="#bae6fd" />
+        <stop offset="50%" stopColor="#38bdf8" />
+        <stop offset="100%" stopColor="#e0f2fe" />
+      </linearGradient>
+    </defs>
+  </svg>
+);
+
+const LegendChairIcon: React.FC = () => (
+  <svg viewBox="0 0 40 40" className="w-8 h-8 shrink-0" aria-hidden="true">
+    <rect x="7" y="5" width="26" height="10" rx="5" fill="#1d4ed8" stroke="#0f172a" strokeWidth="2.2" />
+    <rect x="6" y="13" width="28" height="20" rx="6" fill="#2563eb" stroke="#0f172a" strokeWidth="2.2" />
+    <rect x="10" y="16" width="20" height="8" rx="3" fill="#60a5fa" opacity="0.45" />
+  </svg>
+);
+
+export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
+  siswaList,
+  guruList = [],
+  rombelList = [],
+  schoolSettings,
+  currentRole = 'admin',
+  userEmail = ''
+}) => {
+  const canEdit = currentRole !== 'siswa';
+
+  const [rooms, setRooms] = useState<DenahRuangItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('edu_denahRuangList');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return buildDefaultRooms(siswaList, guruList);
+  });
+
+  const [selectedRoomId, setSelectedRoomId] = useState<string>(() => rooms[0]?.id || 'denah-ruang-1');
+  const [viewMode, setViewMode] = useState<'detail' | 'overview'>('detail');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [swapSourceSeat, setSwapSourceSeat] = useState<number | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Seat edit modal state
+  const [editingSeatNo, setEditingSeatNo] = useState<number | null>(null);
+  const [seatSearchStudent, setSeatSearchStudent] = useState('');
+  const [seatFilterKelas, setSeatFilterKelas] = useState('Semua');
+  const [seatManualNama, setSeatManualNama] = useState('');
+  const [seatManualKelas, setSeatManualKelas] = useState('');
+  const [seatManualNoPeserta, setSeatManualNoPeserta] = useState('');
+  const [seatSelectedSiswaId, setSeatSelectedSiswaId] = useState<string | undefined>(undefined);
+
+  // Room settings modal
+  const [showRoomModal, setShowRoomModal] = useState(false);
+  const [isAddingRoom, setIsAddingRoom] = useState(false);
+  const [roomForm, setRoomForm] = useState({
+    namaRuang: '',
+    pengawas: '',
+    jumlahKursi: 16,
+    kursiPerMeja: 4 as 1 | 2 | 4,
+    judulUjian: DEFAULT_JUDUL_UJIAN,
+    labelPintu: 'Pintu (di sebelah kiri)',
+    labelJendela: 'Jendela (samping kiri)',
+    ketentuanTambahan: 'Jaga ketertiban dan ikuti arahan pengawas.'
+  });
+
+  // Auto-fill modal
+  const [showAutoFillModal, setShowAutoFillModal] = useState(false);
+  const [autoFillScope, setAutoFillScope] = useState<'active' | 'all'>('active');
+  const [autoFillOrder, setAutoFillOrder] = useState<'abjad' | 'zigzag' | 'acak'>('abjad');
+  const [autoFillSelectedClasses, setAutoFillSelectedClasses] = useState<string[]>([]);
+
+  // Delete room confirm modal
+  const [deleteConfirmRoom, setDeleteConfirmRoom] = useState<DenahRuangItem | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3500);
+  };
+
+  // Fetch from Firestore on mount
+  useEffect(() => {
+    let mounted = true;
+    const loadRemote = async () => {
+      try {
+        const remote = await dbFetchCollection<DenahRuangItem>('edu_denahRuangList');
+        if (mounted && Array.isArray(remote) && remote.length > 0) {
+          const sorted = [...remote].sort((a, b) => a.namaRuang.localeCompare(b.namaRuang, undefined, { numeric: true }));
+          setRooms(sorted);
+          localStorage.setItem('edu_denahRuangList', JSON.stringify(sorted));
+          setSelectedRoomId(prev => sorted.some(r => r.id === prev) ? prev : sorted[0].id);
+        }
+      } catch (err) {
+        console.error('Gagal mengambil denah ruang dari Firestore:', err);
+      }
+    };
+    loadRemote();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const persistRooms = (nextRooms: DenahRuangItem[]) => {
+    setRooms(nextRooms);
+    try {
+      localStorage.setItem('edu_denahRuangList', JSON.stringify(nextRooms));
+      dbSaveCollection('edu_denahRuangList', nextRooms).catch(console.error);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const activeRoom = useMemo(() => {
+    return rooms.find(r => r.id === selectedRoomId) || rooms[0];
+  }, [rooms, selectedRoomId]);
+
+  // All available classes from siswaList + rombelList
+  const kelasList = useMemo(() => {
+    const set = new Set<string>();
+    rombelList.forEach(r => {
+      if (r.namaRombel) set.add(r.namaRombel);
+    });
+    siswaList.forEach(s => {
+      if (s.kelas) set.add(s.kelas);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [rombelList, siswaList]);
+
+  // Map of where every student (by siswaId or lowercase nama) is seated across ALL rooms
+  const seatedLookup = useMemo(() => {
+    const byId = new Map<string, { roomId: string; roomName: string; seatNo: number }>();
+    const byName = new Map<string, { roomId: string; roomName: string; seatNo: number }>();
+    rooms.forEach(r => {
+      r.kursiList.forEach(k => {
+        if (k.namaSiswa && k.namaSiswa.trim()) {
+          if (k.siswaId) {
+            byId.set(k.siswaId, { roomId: r.id, roomName: r.namaRuang, seatNo: k.nomorKursi });
+          }
+          byName.set(k.namaSiswa.trim().toLowerCase(), { roomId: r.id, roomName: r.namaRuang, seatNo: k.nomorKursi });
+        }
+      });
+    });
+    return { byId, byName };
+  }, [rooms]);
+
+  // Search matches across all rooms
+  const searchMatches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    const results: { roomId: string; roomName: string; seatNo: number; nama: string; kelas: string }[] = [];
+    rooms.forEach(r => {
+      r.kursiList.forEach(k => {
+        const matchNama = (k.namaSiswa || '').toLowerCase().includes(q);
+        const matchNis = (k.nomorPeserta || '').toLowerCase().includes(q);
+        const matchKelas = (k.kelasSiswa || '').toLowerCase().includes(q);
+        if (k.namaSiswa && (matchNama || matchNis || matchKelas)) {
+          results.push({
+            roomId: r.id,
+            roomName: r.namaRuang,
+            seatNo: k.nomorKursi,
+            nama: k.namaSiswa,
+            kelas: k.kelasSiswa || ''
+          });
+        }
+      });
+    });
+    return results;
+  }, [rooms, searchQuery]);
+
+  // Logged-in student auto highlight
+  const myStudentName = useMemo(() => {
+    if (currentRole !== 'siswa' || !userEmail) return '';
+    const found = siswaList.find(s =>
+      (s.email && s.email.toLowerCase() === userEmail.toLowerCase()) ||
+      (s.username && userEmail.toLowerCase().includes(s.username.toLowerCase()))
+    );
+    return found?.nama || '';
+  }, [currentRole, userEmail, siswaList]);
+
+  // Update chair count directly on active room
+  const handleChangeChairCount = (newCount: number) => {
+    if (!canEdit || !activeRoom) return;
+    const clamped = Math.min(Math.max(Math.round(newCount) || 1, 1), 80);
+    const updated = rooms.map(r => {
+      if (r.id !== activeRoom.id) return r;
+      return {
+        ...r,
+        jumlahKursi: clamped,
+        kursiList: createEmptySeats(clamped, r.kursiList),
+        updatedAt: new Date().toISOString()
+      };
+    });
+    persistRooms(updated);
+  };
+
+  // Add 1 new table (+kursiPerMeja chairs) to active room
+  const handleAddTable = () => {
+    if (!canEdit || !activeRoom) return;
+    const perTable = activeRoom.kursiPerMeja || 4;
+    if (activeRoom.jumlahKursi >= 80) {
+      showToast('Kapasitas maksimum 80 kursi per ruang telah tercapai.');
+      return;
+    }
+    const nextCount = Math.min(activeRoom.jumlahKursi + perTable, 80);
+    const nextTableNo = Math.ceil(nextCount / perTable);
+    const updated = rooms.map(r => {
+      if (r.id !== activeRoom.id) return r;
+      return {
+        ...r,
+        jumlahKursi: nextCount,
+        kursiList: createEmptySeats(nextCount, r.kursiList),
+        updatedAt: new Date().toISOString()
+      };
+    });
+    persistRooms(updated);
+    showToast(`Meja ${nextTableNo} (+${nextCount - activeRoom.jumlahKursi} kursi) berhasil ditambahkan ke ${activeRoom.namaRuang}.`);
+  };
+
+  // Remove a specific table (1-based tableIndex) and re-number remaining seats cleanly
+  const handleRemoveTable = (tableIndex: number) => {
+    if (!canEdit || !activeRoom) return;
+    const perTable = activeRoom.kursiPerMeja || 4;
+    const totalTables = Math.ceil(activeRoom.kursiList.length / perTable);
+    if (totalTables <= 1) {
+      showToast('Minimal harus ada 1 meja di dalam ruang ujian.');
+      return;
+    }
+    const startIdx = (tableIndex - 1) * perTable;
+    const endIdx = startIdx + perTable;
+    const remainingSeats = activeRoom.kursiList
+      .filter((_, idx) => idx < startIdx || idx >= endIdx)
+      .map((seat, idx) => ({ ...seat, nomorKursi: idx + 1 }));
+
+    const updated = rooms.map(r =>
+      r.id === activeRoom.id
+        ? {
+            ...r,
+            jumlahKursi: remainingSeats.length,
+            kursiList: remainingSeats,
+            updatedAt: new Date().toISOString()
+          }
+        : r
+    );
+    persistRooms(updated);
+    setSwapSourceSeat(null);
+    showToast(`Meja ${tableIndex} berhasil dihapus dari ${activeRoom.namaRuang}.`);
+  };
+
+  const handleChangeChairsPerTable = (perTable: 1 | 2 | 4) => {
+    if (!canEdit || !activeRoom) return;
+    const updated = rooms.map(r =>
+      r.id === activeRoom.id
+        ? { ...r, kursiPerMeja: perTable, updatedAt: new Date().toISOString() }
+        : r
+    );
+    persistRooms(updated);
+  };
+
+  // Click on a blue chair
+  const handleSeatClick = (seat: DenahKursi) => {
+    if (!canEdit || !activeRoom) return;
+
+    // If swap mode is active, perform swap
+    if (swapSourceSeat !== null) {
+      if (swapSourceSeat === seat.nomorKursi) {
+        setSwapSourceSeat(null);
+        return;
+      }
+      const updated = rooms.map(r => {
+        if (r.id !== activeRoom.id) return r;
+        const src = r.kursiList.find(k => k.nomorKursi === swapSourceSeat);
+        const dst = r.kursiList.find(k => k.nomorKursi === seat.nomorKursi);
+        if (!src || !dst) return r;
+        return {
+          ...r,
+          kursiList: r.kursiList.map(k => {
+            if (k.nomorKursi === swapSourceSeat) {
+              return {
+                nomorKursi: swapSourceSeat,
+                siswaId: dst.siswaId,
+                namaSiswa: dst.namaSiswa,
+                kelasSiswa: dst.kelasSiswa,
+                nomorPeserta: dst.nomorPeserta
+              };
+            }
+            if (k.nomorKursi === seat.nomorKursi) {
+              return {
+                nomorKursi: seat.nomorKursi,
+                siswaId: src.siswaId,
+                namaSiswa: src.namaSiswa,
+                kelasSiswa: src.kelasSiswa,
+                nomorPeserta: src.nomorPeserta
+              };
+            }
+            return k;
+          }),
+          updatedAt: new Date().toISOString()
+        };
+      });
+      persistRooms(updated);
+      showToast(`Posisi Kursi #${swapSourceSeat} berhasil ditukar dengan Kursi #${seat.nomorKursi}.`);
+      setSwapSourceSeat(null);
+      return;
+    }
+
+    // Open seat editor modal
+    setEditingSeatNo(seat.nomorKursi);
+    setSeatManualNama(seat.namaSiswa || '');
+    setSeatManualKelas(seat.kelasSiswa || '');
+    setSeatManualNoPeserta(seat.nomorPeserta || '');
+    setSeatSelectedSiswaId(seat.siswaId);
+    setSeatSearchStudent('');
+    setSeatFilterKelas('Semua');
+  };
+
+  const handleSaveSeatEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeRoom || editingSeatNo === null) return;
+    const updated = rooms.map(r => {
+      if (r.id !== activeRoom.id) return r;
+      return {
+        ...r,
+        kursiList: r.kursiList.map(k =>
+          k.nomorKursi === editingSeatNo
+            ? {
+                nomorKursi: editingSeatNo,
+                siswaId: seatSelectedSiswaId,
+                namaSiswa: seatManualNama.trim(),
+                kelasSiswa: seatManualKelas.trim(),
+                nomorPeserta: seatManualNoPeserta.trim()
+              }
+            : k
+        ),
+        updatedAt: new Date().toISOString()
+      };
+    });
+    persistRooms(updated);
+    setEditingSeatNo(null);
+    showToast(`Kursi #${editingSeatNo} di ${activeRoom.namaRuang} berhasil diperbarui.`);
+  };
+
+  const handleClearSingleSeat = () => {
+    if (!activeRoom || editingSeatNo === null) return;
+    const updated = rooms.map(r => {
+      if (r.id !== activeRoom.id) return r;
+      return {
+        ...r,
+        kursiList: r.kursiList.map(k =>
+          k.nomorKursi === editingSeatNo
+            ? { nomorKursi: editingSeatNo, namaSiswa: '', kelasSiswa: '', nomorPeserta: '' }
+            : k
+        ),
+        updatedAt: new Date().toISOString()
+      };
+    });
+    persistRooms(updated);
+    setEditingSeatNo(null);
+    showToast(`Kursi #${editingSeatNo} dikosongkan.`);
+  };
+
+  const handlePickStudentForSeat = (s: Siswa) => {
+    setSeatSelectedSiswaId(s.id);
+    setSeatManualNama(s.nama);
+    setSeatManualKelas(s.kelas);
+    setSeatManualNoPeserta(s.nis || s.nisn || '');
+  };
+
+  // Room Add / Edit Modal Handlers
+  const openAddRoomModal = () => {
+    const nextIdx = rooms.length + 1;
+    setIsAddingRoom(true);
+    setRoomForm({
+      namaRuang: `Ruang ${nextIdx}`,
+      pengawas: guruList[(nextIdx - 1) % Math.max(guruList.length, 1)]?.nama || `Pengawas Ruang ${nextIdx}`,
+      jumlahKursi: 16,
+      kursiPerMeja: 4,
+      judulUjian: activeRoom?.judulUjian || DEFAULT_JUDUL_UJIAN,
+      labelPintu: 'Pintu (di sebelah kiri)',
+      labelJendela: 'Jendela (samping kiri)',
+      ketentuanTambahan: activeRoom?.ketentuanTambahan || 'Jaga ketertiban dan ikuti arahan pengawas.'
+    });
+    setShowRoomModal(true);
+  };
+
+  const openEditRoomModal = () => {
+    if (!activeRoom) return;
+    setIsAddingRoom(false);
+    setRoomForm({
+      namaRuang: activeRoom.namaRuang,
+      pengawas: activeRoom.pengawas,
+      jumlahKursi: activeRoom.jumlahKursi,
+      kursiPerMeja: activeRoom.kursiPerMeja,
+      judulUjian: activeRoom.judulUjian,
+      labelPintu: activeRoom.labelPintu,
+      labelJendela: activeRoom.labelJendela,
+      ketentuanTambahan: activeRoom.ketentuanTambahan
+    });
+    setShowRoomModal(true);
+  };
+
+  const handleSaveRoomModal = (e: React.FormEvent) => {
+    e.preventDefault();
+    const safeKursi = Math.min(Math.max(Number(roomForm.jumlahKursi) || 16, 1), 80);
+    if (isAddingRoom) {
+      const newRoom: DenahRuangItem = {
+        id: `denah-ruang-${Date.now()}`,
+        namaRuang: roomForm.namaRuang.trim() || `Ruang ${rooms.length + 1}`,
+        pengawas: roomForm.pengawas.trim() || 'Pengawas Ujian',
+        jumlahKursi: safeKursi,
+        kursiPerMeja: roomForm.kursiPerMeja,
+        judulUjian: roomForm.judulUjian.trim() || DEFAULT_JUDUL_UJIAN,
+        labelPintu: roomForm.labelPintu.trim() || 'Pintu (di sebelah kiri)',
+        labelJendela: roomForm.labelJendela.trim() || 'Jendela (samping kiri)',
+        ketentuanTambahan: roomForm.ketentuanTambahan.trim() || 'Jaga ketertiban dan ikuti arahan pengawas.',
+        kursiList: createEmptySeats(safeKursi),
+        updatedAt: new Date().toISOString()
+      };
+      const next = [...rooms, newRoom];
+      persistRooms(next);
+      setSelectedRoomId(newRoom.id);
+      setShowRoomModal(false);
+      showToast(`Berhasil menambahkan ${newRoom.namaRuang} (${safeKursi} kursi).`);
+    } else if (activeRoom) {
+      const next = rooms.map(r => {
+        if (r.id !== activeRoom.id) {
+          // Keep exam title synced across rooms for consistent header banner
+          return { ...r, judulUjian: roomForm.judulUjian.trim() || r.judulUjian };
+        }
+        return {
+          ...r,
+          namaRuang: roomForm.namaRuang.trim() || r.namaRuang,
+          pengawas: roomForm.pengawas.trim() || r.pengawas,
+          jumlahKursi: safeKursi,
+          kursiPerMeja: roomForm.kursiPerMeja,
+          judulUjian: roomForm.judulUjian.trim() || DEFAULT_JUDUL_UJIAN,
+          labelPintu: roomForm.labelPintu.trim() || 'Pintu (di sebelah kiri)',
+          labelJendela: roomForm.labelJendela.trim() || 'Jendela (samping kiri)',
+          ketentuanTambahan: roomForm.ketentuanTambahan.trim() || 'Jaga ketertiban dan ikuti arahan pengawas.',
+          kursiList: createEmptySeats(safeKursi, r.kursiList),
+          updatedAt: new Date().toISOString()
+        };
+      });
+      persistRooms(next);
+      setShowRoomModal(false);
+      showToast(`Pengaturan ${roomForm.namaRuang} berhasil disimpan.`);
+    }
+  };
+
+  const handleConfirmDeleteRoom = () => {
+    if (!deleteConfirmRoom || rooms.length <= 1) return;
+    const next = rooms.filter(r => r.id !== deleteConfirmRoom.id);
+    persistRooms(next);
+    if (selectedRoomId === deleteConfirmRoom.id) {
+      setSelectedRoomId(next[0].id);
+    }
+    showToast(`${deleteConfirmRoom.namaRuang} telah dihapus.`);
+    setDeleteConfirmRoom(null);
+  };
+
+  // Auto-Fill Student Seating
+  const handleRunAutoFill = () => {
+    const activeStudents = siswaList.filter(s => s.status === 'Aktif');
+    let pool = autoFillSelectedClasses.length > 0
+      ? activeStudents.filter(s => autoFillSelectedClasses.includes(s.kelas))
+      : [...activeStudents];
+
+    if (pool.length === 0) {
+      showToast('Tidak ada data siswa yang cocok untuk diisi otomatis.');
+      return;
+    }
+
+    if (autoFillOrder === 'abjad') {
+      pool.sort((a, b) => a.nama.localeCompare(b.nama));
+    } else if (autoFillOrder === 'acak') {
+      pool = [...pool].sort(() => Math.random() - 0.5);
+    } else if (autoFillOrder === 'zigzag') {
+      // Group by class and interleave so adjacent seats come from different classes
+      const byClass = new Map<string, Siswa[]>();
+      pool.forEach(s => {
+        const arr = byClass.get(s.kelas) || [];
+        arr.push(s);
+        byClass.set(s.kelas, arr);
+      });
+      const queues = Array.from(byClass.values()).map(arr => arr.sort((a, b) => a.nama.localeCompare(b.nama)));
+      const interleaved: Siswa[] = [];
+      let keepGoing = true;
+      while (keepGoing) {
+        keepGoing = false;
+        for (const q of queues) {
+          if (q.length > 0) {
+            interleaved.push(q.shift()!);
+            keepGoing = true;
+          }
+        }
+      }
+      pool = interleaved;
+    }
+
+    if (autoFillScope === 'active' && activeRoom) {
+      const updated = rooms.map(r => {
+        if (r.id !== activeRoom.id) return r;
+        const nextSeats: DenahKursi[] = r.kursiList.map((k, idx) => {
+          const s = pool[idx];
+          return {
+            nomorKursi: k.nomorKursi,
+            siswaId: s?.id,
+            namaSiswa: s?.nama || '',
+            kelasSiswa: s?.kelas || '',
+            nomorPeserta: s?.nis || ''
+          };
+        });
+        return { ...r, kursiList: nextSeats, updatedAt: new Date().toISOString() };
+      });
+      persistRooms(updated);
+      showToast(`Berhasil mengisi otomatis ${Math.min(pool.length, activeRoom.jumlahKursi)} siswa ke ${activeRoom.namaRuang}.`);
+    } else {
+      let cursor = 0;
+      const updated = rooms.map(r => {
+        const nextSeats: DenahKursi[] = r.kursiList.map(k => {
+          const s = pool[cursor++];
+          return {
+            nomorKursi: k.nomorKursi,
+            siswaId: s?.id,
+            namaSiswa: s?.nama || '',
+            kelasSiswa: s?.kelas || '',
+            nomorPeserta: s?.nis || ''
+          };
+        });
+        return { ...r, kursiList: nextSeats, updatedAt: new Date().toISOString() };
+      });
+      persistRooms(updated);
+      showToast(`Berhasil mendistribusikan ${Math.min(pool.length, cursor)} siswa ke ${rooms.length} ruang ujian.`);
+    }
+    setShowAutoFillModal(false);
+  };
+
+  const handleClearActiveRoomSeats = () => {
+    if (!canEdit || !activeRoom) return;
+    const updated = rooms.map(r =>
+      r.id === activeRoom.id
+        ? { ...r, kursiList: createEmptySeats(r.jumlahKursi), updatedAt: new Date().toISOString() }
+        : r
+    );
+    persistRooms(updated);
+    showToast(`Seluruh kursi di ${activeRoom.namaRuang} telah dikosongkan.`);
+  };
+
+  // Group seats of activeRoom into tables based on kursiPerMeja
+  const activeRoomTables = useMemo(() => {
+    if (!activeRoom) return [];
+    const perTable = activeRoom.kursiPerMeja || 4;
+    const tables: { tableIndex: number; seats: DenahKursi[] }[] = [];
+    for (let i = 0; i < activeRoom.kursiList.length; i += perTable) {
+      tables.push({
+        tableIndex: Math.floor(i / perTable) + 1,
+        seats: activeRoom.kursiList.slice(i, i + perTable)
+      });
+    }
+    return tables;
+  }, [activeRoom]);
+
+  const filledCountActive = useMemo(() => {
+    if (!activeRoom) return 0;
+    return activeRoom.kursiList.filter(k => k.namaSiswa && k.namaSiswa.trim() !== '').length;
+  }, [activeRoom]);
+
+  const totalCapacityAll = useMemo(() => rooms.reduce((sum, r) => sum + r.jumlahKursi, 0), [rooms]);
+  const totalFilledAll = useMemo(
+    () => rooms.reduce((sum, r) => sum + r.kursiList.filter(k => k.namaSiswa.trim() !== '').length, 0),
+    [rooms]
+  );
+
+  // Filtered students for seat picker modal
+  const filteredModalStudents = useMemo(() => {
+    const q = seatSearchStudent.trim().toLowerCase();
+    return siswaList
+      .filter(s => s.status === 'Aktif')
+      .filter(s => seatFilterKelas === 'Semua' || s.kelas === seatFilterKelas)
+      .filter(s => !q || s.nama.toLowerCase().includes(q) || (s.nis || '').toLowerCase().includes(q) || (s.kelas || '').toLowerCase().includes(q))
+      .sort((a, b) => a.nama.localeCompare(b.nama));
+  }, [siswaList, seatSearchStudent, seatFilterKelas]);
+
+  const renderChairButton = (seat: DenahKursi, orientation: 'top' | 'bottom' | 'left' | 'right' | 'single') => {
+    const isFilled = Boolean(seat.namaSiswa && seat.namaSiswa.trim());
+    const isSwapSource = swapSourceSeat === seat.nomorKursi;
+    const q = searchQuery.trim().toLowerCase();
+    const isSearchHit = Boolean(q && isFilled && (
+      seat.namaSiswa.toLowerCase().includes(q) ||
+      (seat.nomorPeserta || '').toLowerCase().includes(q) ||
+      (seat.kelasSiswa || '').toLowerCase().includes(q)
+    ));
+    const isMySeat = Boolean(myStudentName && isFilled && seat.namaSiswa.toLowerCase() === myStudentName.toLowerCase());
+
+    const shortName = isFilled
+      ? seat.namaSiswa.split(' ').slice(0, 2).join(' ')
+      : 'Kosong';
+
+    const shapeClasses =
+      orientation === 'left'
+        ? 'rounded-l-2xl rounded-r-md'
+        : orientation === 'right'
+        ? 'rounded-r-2xl rounded-l-md'
+        : orientation === 'top'
+        ? 'rounded-t-2xl rounded-b-md'
+        : 'rounded-b-2xl rounded-t-md';
+
+    return (
+      <button
+        key={seat.nomorKursi}
+        type="button"
+        onClick={() => handleSeatClick(seat)}
+        title={isFilled ? `Kursi #${seat.nomorKursi}: ${seat.namaSiswa} (${seat.kelasSiswa || '-'})${canEdit ? ' — Klik untuk edit' : ''}` : `Kursi #${seat.nomorKursi}: Kosong${canEdit ? ' — Klik untuk pilih siswa' : ''}`}
+        className={`group relative transition-all duration-150 border-2 text-left flex flex-col justify-center ${shapeClasses} ${
+          isSwapSource
+            ? 'bg-amber-500 border-amber-900 text-white ring-4 ring-amber-300 scale-105 z-20'
+            : isSearchHit || isMySeat
+            ? 'bg-emerald-600 border-emerald-950 text-white ring-4 ring-emerald-300 scale-105 z-20'
+            : isFilled
+            ? 'bg-gradient-to-b from-[#2563eb] to-[#1d4ed8] hover:from-[#3b82f6] hover:to-[#1d4ed8] border-slate-900 text-white shadow-[0_3px_0_#0f172a]'
+            : 'bg-gradient-to-b from-[#60a5fa]/75 to-[#3b82f6]/85 hover:from-[#3b82f6] hover:to-[#2563eb] border-slate-800/80 border-dashed text-white/95 shadow-[0_2px_0_#1e3a8a]'
+        } ${canEdit ? 'cursor-pointer active:translate-y-0.5' : 'cursor-default'} ${
+          orientation === 'left' || orientation === 'right'
+            ? 'w-[96px] min-h-[56px] px-2 py-1.5'
+            : orientation === 'single'
+            ? 'w-full min-h-[58px] px-2.5 py-1.5'
+            : 'w-[132px] min-h-[48px] px-2 py-1.5'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-1">
+          <span className="text-[10px] font-black tracking-tight bg-slate-950/35 px-1.5 py-0.2 rounded tabular-nums">
+            #{String(seat.nomorKursi).padStart(2, '0')}
+          </span>
+          {seat.kelasSiswa && (
+            <span className="text-[9px] font-bold text-sky-100 truncate max-w-[66px]">
+              {seat.kelasSiswa.split(' - ')[0]}
+            </span>
+          )}
+        </div>
+        <div className={`text-[11px] leading-tight mt-0.5 truncate ${isFilled ? 'font-extrabold text-white' : 'font-semibold text-blue-50 italic'}`}>
+          {shortName}
+        </div>
+        {seat.nomorPeserta && isFilled && (
+          <div className="text-[9px] text-blue-100/90 font-mono truncate tabular-nums">
+            {seat.nomorPeserta}
+          </div>
+        )}
+      </button>
+    );
+  };
+
+  if (!activeRoom) return null;
+
+  const schoolDisplayName = (schoolSettings?.namaSekolah || 'SMP ISLAM MODERN AL FAKHIR').toUpperCase();
+
+  return (
+    <div className="space-y-5">
+      {/* Floating Toast */}
+      {toastMsg && (
+        <div className="fixed bottom-6 right-6 z-[120] bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-2xl border border-emerald-400/50 flex items-center gap-2.5 text-xs font-bold print:hidden">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
+
+      {/* Control Toolbar (hidden on print) */}
+      <div className="bg-[#121212] rounded-2xl p-4 sm:p-5 border border-slate-800 shadow-xl space-y-4 print:hidden">
+        {/* Top Row: View Mode + Actions */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <LayoutGrid className="w-5 h-5 text-sky-400" />
+              <span>Denah Ruang & Penempatan Duduk Peserta Ujian</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
+              Total {rooms.length} ruang ujian · {totalFilledAll} dari {totalCapacityAll} kursi terisi · Klik kursi biru mana saja untuk mengedit nama siswa
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Mode Switcher */}
+            <div className="flex items-center bg-slate-900 border border-slate-700 rounded-xl p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode('detail')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  viewMode === 'detail'
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Detail Kursi ({activeRoom.namaRuang})
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('overview')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  viewMode === 'overview'
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Ringkasan Semua Ruang ({rooms.length})
+              </button>
+            </div>
+
+            {canEdit && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAutoFillSelectedClasses([]);
+                    setShowAutoFillModal(true);
+                  }}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-md whitespace-nowrap"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Isi Otomatis</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={openAddRoomModal}
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-md whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Tambah Ruang</span>
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+            >
+              <Printer className="w-3.5 h-3.5 text-sky-400" />
+              <span>Cetak Denah</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Room Tabs + Student Search */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {rooms.map(r => {
+              const filled = r.kursiList.filter(k => k.namaSiswa.trim() !== '').length;
+              const isSelected = r.id === activeRoom.id;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedRoomId(r.id);
+                    setSwapSourceSeat(null);
+                    if (viewMode === 'overview') setViewMode('detail');
+                  }}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-2 ${
+                    isSelected
+                      ? 'bg-sky-600/20 border-sky-400 text-sky-200 shadow-sm'
+                      : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                  }`}
+                >
+                  <span>{r.namaRuang}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono tabular-nums ${
+                    isSelected ? 'bg-sky-500/30 text-white' : 'bg-slate-800 text-slate-400'
+                  }`}>
+                    {filled}/{r.jumlahKursi}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Student Search Locator */}
+          <div className="relative w-full lg:w-72">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Cari nama siswa / NIS duduk di mana..."
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Search Results Quick Jump Strip */}
+        {searchQuery.trim() && (
+          <div className="bg-slate-900/90 border border-slate-700 rounded-xl p-3 text-xs">
+            {searchMatches.length === 0 ? (
+              <div className="text-slate-400 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-400" />
+                <span>Siswa "{searchQuery}" belum ditempatkan di kursi ruang ujian mana pun.</span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-emerald-400 font-bold">Ditemukan ({searchMatches.length}):</span>
+                {searchMatches.slice(0, 8).map(m => (
+                  <button
+                    key={`${m.roomId}-${m.seatNo}`}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRoomId(m.roomId);
+                      setViewMode('detail');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-200 hover:bg-emerald-600/35 font-semibold cursor-pointer"
+                  >
+                    {m.nama} → {m.roomName} · Kursi #{String(m.seatNo).padStart(2, '0')}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Active Room Quick Seat Count & Layout Bar (Editable by Admin/Guru) */}
+        {canEdit && viewMode === 'detail' && (
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/80">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Add / Remove Table Controls */}
+              <div className="flex items-center gap-2 bg-slate-900 border border-amber-500/40 rounded-xl px-3 py-1.5">
+                <span className="text-xs font-bold text-amber-300 tabular-nums">
+                  {activeRoomTables.length} Meja
+                </span>
+                <button
+                  type="button"
+                  onClick={handleAddTable}
+                  disabled={activeRoom.jumlahKursi >= 80}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-xs font-extrabold flex items-center gap-1 cursor-pointer transition-all shadow-sm whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Tambah Meja</span>
+                </button>
+                {activeRoomTables.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTable(activeRoomTables.length)}
+                    className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-red-900/70 text-slate-300 hover:text-red-200 flex items-center justify-center cursor-pointer transition-colors"
+                    title={`Hapus Meja ${activeRoomTables.length}`}
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Chair Count Stepper */}
+              <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5">
+                <Armchair className="w-4 h-4 text-sky-400" />
+                <span className="text-xs font-bold text-slate-300">Jumlah Kursi:</span>
+                <button
+                  type="button"
+                  onClick={() => handleChangeChairCount(activeRoom.jumlahKursi - 1)}
+                  className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center cursor-pointer"
+                  title="Kurangi 1 kursi"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  max={80}
+                  value={activeRoom.jumlahKursi}
+                  onChange={e => handleChangeChairCount(Number(e.target.value))}
+                  className="w-12 text-center bg-slate-950 border border-slate-700 rounded-lg py-0.5 text-xs font-extrabold text-sky-300 tabular-nums"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleChangeChairCount(activeRoom.jumlahKursi + 1)}
+                  className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center cursor-pointer"
+                  title="Tambah 1 kursi"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                <div className="hidden xl:flex items-center gap-1 ml-1 pl-2 border-l border-slate-700">
+                  {[12, 16, 20, 24, 32].map(preset => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => handleChangeChairCount(preset)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                        activeRoom.jumlahKursi === preset
+                          ? 'bg-sky-600 text-white'
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Chairs per Table Selector */}
+              <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5">
+                <span className="text-xs font-bold text-slate-300">Kursi / Meja:</span>
+                {([4, 2, 1] as const).map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => handleChangeChairsPerTable(n)}
+                    className={`px-2.5 py-0.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                      activeRoom.kursiPerMeja === n
+                        ? 'bg-amber-500 text-slate-950'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (swapSourceSeat !== null) {
+                    setSwapSourceSeat(null);
+                  } else {
+                    setSwapSourceSeat(activeRoom.kursiList[0]?.nomorKursi || 1);
+                    showToast('Mode Tukar Kursi aktif: klik kursi lain untuk menukar posisi duduk.');
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 cursor-pointer transition-all ${
+                  swapSourceSeat !== null
+                    ? 'bg-amber-500 text-slate-950 border-amber-400'
+                    : 'bg-slate-900 text-slate-300 border-slate-700 hover:text-white hover:border-slate-500'
+                }`}
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5" />
+                <span>{swapSourceSeat !== null ? `Tukar dari #${swapSourceSeat} (Batal)` : 'Tukar Kursi'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={openEditRoomModal}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-500 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Settings2 className="w-3.5 h-3.5 text-sky-400" />
+                <span>Edit Ruang & Header</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleClearActiveRoomSeats}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-amber-300 border border-slate-700 hover:bg-amber-500/15 flex items-center gap-1.5 cursor-pointer"
+                title="Kosongkan semua nama siswa di ruang ini"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Kosongkan</span>
+              </button>
+
+              {rooms.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmRoom(activeRoom)}
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-red-950/50 text-red-300 border border-red-800/60 hover:bg-red-900/60 flex items-center gap-1 cursor-pointer"
+                  title="Hapus Ruang Ini"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* =====================================================================
+          PRINTABLE POSTER AREA — FAITHFUL TO AL FAKHIR SEATING PLAN REFERENCE
+         ===================================================================== */}
+      <div
+        id="printable-denah-ruang"
+        className="bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-300 p-4 sm:p-6 overflow-x-auto"
+      >
+        <div className="min-w-[1140px] space-y-4">
+          {/* 1. NAVY HEADER BANNER (Matching Reference Image) */}
+          <div className="bg-gradient-to-r from-[#082f63] via-[#0c3f7e] to-[#082f63] rounded-2xl px-6 py-4 flex items-center gap-5 shadow-md border-2 border-[#06234a]">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white p-1.5 flex items-center justify-center shrink-0 shadow-md">
+              <img
+                src={schoolSettings?.logoUrl || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%230c3f7e"/><text x="50" y="60" font-size="40" fill="white" text-anchor="middle" font-weight="bold">AF</text></svg>'}
+                alt={schoolDisplayName}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <div className="flex-1 text-center pr-0 sm:pr-16">
+              <h1 className="text-lg sm:text-2xl font-black text-white tracking-wide uppercase leading-tight">
+                DENAH PENEMPATAN DUDUK PESERTA UJIAN
+                {viewMode === 'detail' ? ` — ${activeRoom.namaRuang.toUpperCase()}` : ''}
+              </h1>
+              <p className="text-sm sm:text-lg font-extrabold text-[#fde047] uppercase tracking-wide mt-0.5">
+                {activeRoom.judulUjian || DEFAULT_JUDUL_UJIAN}
+              </p>
+              <p className="text-base sm:text-xl font-black text-white uppercase tracking-wider mt-0.5">
+                {schoolDisplayName}
+              </p>
+            </div>
+          </div>
+
+          {/* 2. MAIN BODY: LEFT CALLOUTS + FLOORPLAN ROOM + RIGHT LEGEND/RULES */}
+          <div className="grid grid-cols-[120px_1fr_220px] gap-3 items-stretch">
+            {/* LEFT CALLOUT LABELS (Pintu & Jendela) */}
+            <div className="relative flex flex-col justify-start pt-6 gap-28 select-none">
+              <div className="flex items-center gap-1">
+                <div className="bg-[#dc2626] text-white rounded-xl px-2 py-2 text-center shadow-md border border-red-800 w-full">
+                  <div className="text-xs font-black leading-tight">Pintu</div>
+                  <div className="text-[10px] font-bold text-red-100 leading-tight mt-0.5">
+                    {activeRoom.labelPintu.replace(/^Pintu\s*/i, '') || '(di sebelah kiri)'}
+                  </div>
+                </div>
+                <span className="text-red-600 font-black text-xl leading-none -mr-2">→</span>
+              </div>
+
+              <div className="flex items-center gap-1 mt-10">
+                <div className="bg-[#1d4ed8] text-white rounded-xl px-2 py-2 text-center shadow-md border border-blue-900 w-full">
+                  <div className="text-xs font-black leading-tight">Jendela</div>
+                  <div className="text-[10px] font-bold text-blue-100 leading-tight mt-0.5">
+                    {activeRoom.labelJendela.replace(/^Jendela\s*/i, '') || '(samping kiri)'}
+                  </div>
+                </div>
+                <span className="text-red-600 font-black text-xl leading-none -mr-2">→</span>
+              </div>
+            </div>
+
+            {/* CENTER FLOORPLAN ROOM FRAME */}
+            <div className="relative rounded-lg border-[8px] border-[#64748b] shadow-[inset_0_0_0_2px_#1e293b,0_10px_25px_rgba(15,23,42,0.12)] bg-[#f8fafc] bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] [background-size:36px_36px] min-h-[540px] flex flex-col justify-between p-5">
+              {/* Left-wall architectural Door & Windows */}
+              <div className="absolute -left-[6px] top-3 z-10 pointer-events-none flex flex-col items-start gap-2">
+                <DoorSvg className="w-10 h-24 drop-shadow" />
+                <div className="flex flex-col gap-1.5 mt-1">
+                  <WindowPaneSvg className="w-7 h-20" />
+                  <WindowPaneSvg className="w-7 h-20" />
+                  <WindowPaneSvg className="w-7 h-20" />
+                </div>
+              </div>
+
+              {/* TOP ZONE: Corner Plants + Meja Pengawas */}
+              <div className="relative flex items-start justify-between pl-14 pr-4 pt-1 pb-4">
+                <PottedPlantSvg className="w-11 h-11" />
+
+                {/* Meja Pengawas */}
+                <div className="flex flex-col items-center">
+                  {/* Black supervisor chair behind desk */}
+                  <div className="w-16 h-7 rounded-t-xl bg-gradient-to-b from-slate-600 to-slate-900 border-2 border-slate-950 -mb-2 z-0 shadow" />
+                  <div className="relative z-10 bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 rounded-lg px-7 py-2.5 shadow-[0_5px_0_#92591b] flex items-center gap-3 min-w-[270px] justify-center">
+                    <PottedPlantSvg className="w-7 h-7 -ml-3 shrink-0" />
+                    <div className="text-center">
+                      <div className="bg-white/95 px-4 py-0.5 rounded-md border border-amber-700/20 text-xs font-black tracking-wider text-slate-900 uppercase">
+                        MEJA PENGAWAS
+                      </div>
+                      <div className="text-[11px] font-bold text-amber-950 mt-0.5">
+                        {activeRoom.pengawas}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <PottedPlantSvg className="w-11 h-11" />
+              </div>
+
+              {/* MIDDLE ZONE: SEATING CLUSTERS OR OVERVIEW ROOMS */}
+              {viewMode === 'detail' ? (
+                <div className="flex-1 flex flex-col items-center justify-center pl-14 pr-4 py-3 gap-5">
+                  {activeRoom.kursiPerMeja === 4 ? (
+                    /* 4-SEAT CLUSTER TABLES (Exact Match to Reference Image, Zero Overlap!) */
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-7 w-full place-items-center">
+                      {activeRoomTables.map(table => {
+                        const [topSeat, leftSeat, rightSeat, bottomSeat] = table.seats;
+                        return (
+                          <div key={table.tableIndex} className="group/table flex flex-col items-center gap-1.5">
+                            {/* Top Chair */}
+                            <div className="min-h-[48px] flex items-end justify-center">
+                              {topSeat && renderChairButton(topSeat, 'top')}
+                            </div>
+
+                            {/* Middle Row: Left Chair + Wooden Table + Right Chair */}
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-[96px] flex justify-end shrink-0">
+                                {leftSeat && renderChairButton(leftSeat, 'left')}
+                              </div>
+
+                              {/* Wooden Cluster Table */}
+                              <div className="relative w-[112px] h-[82px] shrink-0 rounded-xl bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_5px_0_#92591b] flex flex-col items-center justify-center p-2">
+                                {canEdit && activeRoomTables.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveTable(table.tableIndex)}
+                                    title={`Hapus Meja ${table.tableIndex}`}
+                                    className="print:hidden opacity-0 group-hover/table:opacity-100 focus:opacity-100 transition-opacity absolute -top-2.5 -right-2.5 w-5 h-5 rounded-full bg-red-600 hover:bg-red-500 text-white border border-white shadow flex items-center justify-center cursor-pointer z-20"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                )}
+                                <div className="bg-white/95 px-2.5 py-0.5 rounded-lg border border-amber-700/20 text-xs font-black text-slate-900 shadow-sm whitespace-nowrap">
+                                  Meja {table.tableIndex}
+                                </div>
+                                <div className="text-[10px] font-bold text-amber-950 mt-1 tabular-nums whitespace-nowrap">
+                                  {table.seats.filter(s => s.namaSiswa.trim()).length}/{table.seats.length} Peserta
+                                </div>
+                              </div>
+
+                              <div className="w-[96px] flex justify-start shrink-0">
+                                {rightSeat && renderChairButton(rightSeat, 'right')}
+                              </div>
+                            </div>
+
+                            {/* Bottom Chair */}
+                            <div className="min-h-[48px] flex items-start justify-center">
+                              {bottomSeat && renderChairButton(bottomSeat, 'bottom')}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Direct + Tambah Meja Card on Canvas (Hidden on Print) */}
+                      {canEdit && activeRoom.jumlahKursi < 80 && (
+                        <button
+                          type="button"
+                          onClick={handleAddTable}
+                          className="print:hidden w-[220px] h-[140px] rounded-2xl border-2 border-dashed border-amber-500/80 bg-amber-50/70 hover:bg-amber-100/90 hover:border-amber-600 text-amber-900 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-[0.98]"
+                        >
+                          <div className="w-10 h-10 rounded-full bg-amber-500 text-white flex items-center justify-center shadow">
+                            <Plus className="w-5 h-5" />
+                          </div>
+                          <span className="text-xs font-black">
+                            Tambah Meja {activeRoomTables.length + 1}
+                          </span>
+                          <span className="text-[10px] font-semibold text-amber-800">
+                            +{Math.min(activeRoom.kursiPerMeja, 80 - activeRoom.jumlahKursi)} Kursi Peserta
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  ) : activeRoom.kursiPerMeja === 2 ? (
+                    /* 2-SEAT EXAM DESKS */
+                    <div className="grid grid-cols-3 gap-5 w-full">
+                      {activeRoomTables.map(table => (
+                        <div key={table.tableIndex} className="group/table flex flex-col items-center gap-1.5">
+                          <div className="relative w-full rounded-xl bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_4px_0_#92591b] py-2 px-3 flex items-center justify-between">
+                            {canEdit && activeRoomTables.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveTable(table.tableIndex)}
+                                title={`Hapus Meja ${table.tableIndex}`}
+                                className="print:hidden opacity-0 group-hover/table:opacity-100 focus:opacity-100 transition-opacity absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 hover:bg-red-500 text-white border border-white shadow flex items-center justify-center cursor-pointer z-20"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                            <span className="bg-white/95 px-2.5 py-0.5 rounded text-[11px] font-black text-slate-900">
+                              Meja {table.tableIndex}
+                            </span>
+                            <span className="text-[10px] font-bold text-amber-950 tabular-nums">
+                              {table.seats.filter(s => s.namaSiswa.trim()).length}/{table.seats.length}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5 w-full">
+                            {table.seats.map(seat => renderChairButton(seat, 'single'))}
+                          </div>
+                        </div>
+                      ))}
+
+                      {canEdit && activeRoom.jumlahKursi < 80 && (
+                        <button
+                          type="button"
+                          onClick={handleAddTable}
+                          className="print:hidden min-h-[104px] rounded-xl border-2 border-dashed border-amber-500/80 bg-amber-50/70 hover:bg-amber-100/90 text-amber-900 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer"
+                        >
+                          <Plus className="w-5 h-5 text-amber-600" />
+                          <span className="text-xs font-black">Tambah Meja {activeRoomTables.length + 1}</span>
+                          <span className="text-[10px] font-semibold text-amber-800">+2 Kursi</span>
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    /* 1-SEAT INDIVIDUAL DESKS */
+                    <div className="grid grid-cols-4 gap-3.5 w-full">
+                      {activeRoom.kursiList.map(seat => (
+                        <div key={seat.nomorKursi} className="group/table flex flex-col items-center gap-1">
+                          <div className="relative w-full h-7 rounded-lg bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_3px_0_#92591b] flex items-center justify-center">
+                            {canEdit && activeRoom.kursiList.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveTable(seat.nomorKursi)}
+                                title={`Hapus Meja ${seat.nomorKursi}`}
+                                className="print:hidden opacity-0 group-hover/table:opacity-100 focus:opacity-100 transition-opacity absolute -top-2 -right-2 w-4 h-4 rounded-full bg-red-600 hover:bg-red-500 text-white border border-white shadow flex items-center justify-center cursor-pointer z-20"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+                            <span className="bg-white/95 px-2 py-0.2 rounded text-[10px] font-black text-slate-900">
+                              Meja {seat.nomorKursi}
+                            </span>
+                          </div>
+                          {renderChairButton(seat, 'single')}
+                        </div>
+                      ))}
+
+                      {canEdit && activeRoom.jumlahKursi < 80 && (
+                        <button
+                          type="button"
+                          onClick={handleAddTable}
+                          className="print:hidden min-h-[90px] rounded-xl border-2 border-dashed border-amber-500/80 bg-amber-50/70 hover:bg-amber-100/90 text-amber-900 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer"
+                        >
+                          <Plus className="w-5 h-5 text-amber-600" />
+                          <span className="text-xs font-black">Tambah Meja</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* OVERVIEW MODE: ALL ROOMS POSTER (Matches Reference Image 6-Room Overview!) */
+                <div className="flex-1 flex items-center justify-center pl-10 pr-3 py-4">
+                  <div className="grid grid-cols-3 gap-x-8 gap-y-10 w-full place-items-center">
+                    {rooms.map(r => {
+                      const filled = r.kursiList.filter(k => k.namaSiswa.trim() !== '').length;
+                      const isCurrent = r.id === activeRoom.id;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedRoomId(r.id);
+                            setViewMode('detail');
+                          }}
+                          className={`group flex flex-col items-center gap-1 cursor-pointer transition-transform hover:scale-105 ${
+                            isCurrent ? 'scale-[1.03]' : ''
+                          }`}
+                          title={`Klik untuk membuka & mengedit denah kursi ${r.namaRuang}`}
+                        >
+                          {/* Top decorative blue chair */}
+                          <div className="w-12 h-5 rounded-t-xl bg-[#1d4ed8] border-2 border-slate-900" />
+                          <div className="flex items-center gap-1">
+                            {/* Left decorative blue chair */}
+                            <div className="w-6 h-12 rounded-l-xl bg-[#1d4ed8] border-2 border-slate-900" />
+                            {/* Room Wood Table */}
+                            <div className={`w-40 h-24 rounded-xl bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 shadow-[0_5px_0_#92591b] flex flex-col items-center justify-center p-2 ${
+                              isCurrent ? 'border-sky-600 ring-4 ring-sky-300' : 'border-slate-900'
+                            }`}>
+                              <div className="bg-white px-4 py-1 rounded-lg text-sm font-black text-slate-900 shadow-sm">
+                                {r.namaRuang}
+                              </div>
+                              <div className="text-[11px] font-extrabold text-amber-950 mt-1 tabular-nums">
+                                {filled} / {r.jumlahKursi} Kursi
+                              </div>
+                              <div className="text-[9px] font-semibold text-amber-950/90 truncate max-w-[140px]">
+                                {r.pengawas}
+                              </div>
+                            </div>
+                            {/* Right decorative blue chair */}
+                            <div className="w-6 h-12 rounded-r-xl bg-[#1d4ed8] border-2 border-slate-900" />
+                          </div>
+                          {/* Bottom decorative blue chair */}
+                          <div className="w-12 h-5 rounded-b-xl bg-[#1d4ed8] border-2 border-slate-900" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Bottom Room Wall Baseboard Bar */}
+              <div className="mt-2 pt-2 border-t border-slate-300/80 flex items-center justify-between text-[11px] font-bold text-slate-600 pl-10">
+                <span>
+                  {viewMode === 'detail'
+                    ? `${activeRoom.namaRuang} · Terisi ${filledCountActive} dari ${activeRoom.jumlahKursi} Kursi`
+                    : `Total ${rooms.length} Ruang Ujian · ${totalFilledAll} / ${totalCapacityAll} Peserta`}
+                </span>
+                <span className="print:hidden text-sky-700 font-semibold">
+                  {canEdit
+                    ? viewMode === 'detail'
+                      ? 'Tip: Klik kursi biru untuk mengubah nama siswa'
+                      : 'Tip: Klik salah satu ruang untuk mengatur kursi & siswa'
+                    : 'Mode Lihat Denah Peserta'}
+                </span>
+              </div>
+            </div>
+
+            {/* RIGHT SIDEBAR: KETERANGAN & KETENTUAN (Exact Match to Reference Image!) */}
+            <div className="flex flex-col gap-4">
+              {/* Box 1: Keterangan */}
+              <div className="rounded-2xl border-2 border-[#0a366b] overflow-hidden bg-white shadow-sm">
+                <div className="bg-[#0a366b] text-white px-4 py-2 text-sm font-black tracking-wide">
+                  Keterangan :
+                </div>
+                <div className="p-3.5 space-y-3 text-xs font-bold text-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-8 rounded-md bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shrink-0" />
+                    <div className="leading-tight">
+                      : Meja Peserta<br />
+                      <span className="text-slate-600">({activeRoom.kursiPerMeja} Peserta)</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <LegendChairIcon />
+                    <div>: Kursi Peserta</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-6 rounded bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shrink-0" />
+                    <div>: Meja Pengawas</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <DoorSvg className="w-8 h-10 shrink-0" />
+                    <div>: Pintu Masuk</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <WindowPaneSvg className="w-8 h-9 shrink-0 -rotate-90" />
+                    <div className="leading-tight">
+                      : Jendela<br />
+                      <span className="text-slate-600">(di sisi kiri)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Box 2: Ketentuan */}
+              <div className="rounded-2xl border-2 border-[#a16207] overflow-hidden bg-[#fef9c3] shadow-sm flex-1 flex flex-col">
+                <div className="bg-[#facc15] text-slate-950 px-4 py-2 text-sm font-black tracking-wide border-b border-[#ca8a04] text-center">
+                  Ketentuan :
+                </div>
+                <ol className="p-3.5 space-y-2.5 text-xs font-bold text-slate-900 list-decimal list-inside leading-snug">
+                  <li>
+                    Setiap meja peserta diisi oleh{' '}
+                    <span className="text-red-600 font-black">{activeRoom.kursiPerMeja} peserta</span> ujian.
+                  </li>
+                  <li>
+                    Total kapasitas {activeRoom.namaRuang} :{' '}
+                    <span className="tabular-nums">
+                      {activeRoomTables.length} meja
+                    </span>{' '}
+                    ={' '}
+                    <span className="text-red-600 font-black tabular-nums">
+                      {activeRoom.jumlahKursi} kursi
+                    </span>{' '}
+                    <span className="text-slate-700 font-semibold">
+                      (terisi {filledCountActive} siswa).
+                    </span>
+                  </li>
+                  <li>{activeRoom.ketentuanTambahan || 'Jaga ketertiban dan ikuti arahan pengawas.'}</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* =====================================================================
+          SEATING ROSTER TABLE (Quick Editable List Below Blueprint)
+         ===================================================================== */}
+      {viewMode === 'detail' && (
+        <div className="bg-[#121212] rounded-2xl p-5 border border-slate-800 shadow-xl space-y-3 print:hidden">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+              <Users className="w-4 h-4 text-sky-400" />
+              <span>Daftar Penempatan Duduk — {activeRoom.namaRuang}</span>
+            </h4>
+            <span className="text-xs text-slate-400 tabular-nums">
+              {filledCountActive} terisi · {activeRoom.jumlahKursi - filledCountActive} kosong
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {activeRoom.kursiList.map(seat => {
+              const tableNo = Math.floor((seat.nomorKursi - 1) / (activeRoom.kursiPerMeja || 4)) + 1;
+              const isFilled = Boolean(seat.namaSiswa.trim());
+              return (
+                <button
+                  key={seat.nomorKursi}
+                  type="button"
+                  onClick={() => handleSeatClick(seat)}
+                  className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-2 ${
+                    isFilled
+                      ? 'bg-slate-900/90 border-slate-700 hover:border-sky-500'
+                      : 'bg-slate-950/60 border-slate-800 border-dashed hover:border-sky-500/70'
+                  } ${canEdit ? 'cursor-pointer' : 'cursor-default'}`}
+                >
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold text-sky-400 tabular-nums">
+                      Kursi #{String(seat.nomorKursi).padStart(2, '0')} · Meja {tableNo}
+                    </div>
+                    <div className={`text-xs mt-0.5 truncate ${isFilled ? 'font-bold text-white' : 'text-slate-500 italic'}`}>
+                      {isFilled ? seat.namaSiswa : 'Belum diisi'}
+                    </div>
+                    {isFilled && (
+                      <div className="text-[10px] text-slate-400 truncate tabular-nums">
+                        {seat.kelasSiswa || '-'} {seat.nomorPeserta ? `· ${seat.nomorPeserta}` : ''}
+                      </div>
+                    )}
+                  </div>
+                  {canEdit && (
+                    <Edit2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          MODAL 1: EDIT KURSI & PILIH SISWA
+         ===================================================================== */}
+      {editingSeatNo !== null && (
+        <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+          <div className="bg-[#141923] border border-slate-700 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/80">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <UserPlus className="w-4 h-4 text-sky-400" />
+                  <span>Edit Kursi #{String(editingSeatNo).padStart(2, '0')} — {activeRoom.namaRuang}</span>
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Pilih siswa dari database sekolah atau ketik nama peserta secara manual
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingSeatNo(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSeatEdit} className="p-5 space-y-4 overflow-y-auto">
+              {/* Manual / Selected Fields */}
+              <div className="space-y-3 bg-slate-900/70 p-3.5 rounded-xl border border-slate-800">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                    Nama Siswa / Peserta Ujian
+                  </label>
+                  <input
+                    type="text"
+                    value={seatManualNama}
+                    onChange={e => {
+                      setSeatManualNama(e.target.value);
+                      setSeatSelectedSiswaId(undefined);
+                    }}
+                    placeholder="Ketik nama siswa atau pilih dari daftar di bawah..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Kelas</label>
+                    <input
+                      type="text"
+                      value={seatManualKelas}
+                      onChange={e => setSeatManualKelas(e.target.value)}
+                      placeholder="Contoh: VIII - Al Biruni"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">NIS / No. Peserta</label>
+                    <input
+                      type="text"
+                      value={seatManualNoPeserta}
+                      onChange={e => setSeatManualNoPeserta(e.target.value)}
+                      placeholder="Opsional"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Pick from Database Siswa */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-200">Pilih Cepat dari Database Siswa</span>
+                  <span className="text-[10px] text-slate-400 tabular-nums">{filteredModalStudents.length} siswa</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={seatSearchStudent}
+                      onChange={e => setSeatSearchStudent(e.target.value)}
+                      placeholder="Cari nama / NIS..."
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-sky-400"
+                    />
+                  </div>
+                  <select
+                    value={seatFilterKelas}
+                    onChange={e => setSeatFilterKelas(e.target.value)}
+                    className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-sky-400"
+                  >
+                    <option value="Semua">Semua Kelas</option>
+                    {kelasList.map(k => (
+                      <option key={k} value={k}>{k}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                  {filteredModalStudents.length === 0 ? (
+                    <div className="text-center py-6 text-xs text-slate-500">
+                      Tidak ada siswa ditemukan. Anda tetap bisa mengetik nama manual di atas.
+                    </div>
+                  ) : (
+                    filteredModalStudents.map(s => {
+                      const alreadyAt = seatedLookup.byId.get(s.id) || seatedLookup.byName.get(s.nama.trim().toLowerCase());
+                      const isSelectedHere = seatSelectedSiswaId === s.id || seatManualNama.trim().toLowerCase() === s.nama.trim().toLowerCase();
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => handlePickStudentForSeat(s)}
+                          className={`w-full px-3 py-2 rounded-xl border text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                            isSelectedHere
+                              ? 'bg-sky-600/25 border-sky-400 text-white'
+                              : 'bg-slate-900/70 border-slate-800 hover:border-slate-600 text-slate-200'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold truncate">{s.nama}</div>
+                            <div className="text-[10px] text-slate-400 tabular-nums">
+                              {s.kelas} · NIS: {s.nis || '-'}
+                            </div>
+                          </div>
+                          {alreadyAt ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 whitespace-nowrap shrink-0">
+                              Di {alreadyAt.roomName} #{alreadyAt.seatNo}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-emerald-400 font-semibold whitespace-nowrap shrink-0">
+                              Belum duduk
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Action Footer */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-800">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleClearSingleSeat}
+                    className="px-3 py-2 rounded-xl text-xs font-bold bg-red-950/60 hover:bg-red-900/70 text-red-200 border border-red-800/60 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <UserMinus className="w-3.5 h-3.5" />
+                    <span>Kosongkan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const seatNo = editingSeatNo;
+                      setEditingSeatNo(null);
+                      setSwapSourceSeat(seatNo);
+                      showToast(`Klik kursi tujuan di denah untuk menukar posisi dengan Kursi #${seatNo}.`);
+                    }}
+                    className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5" />
+                    <span>Tukar Kursi</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingSeatNo(null)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white flex items-center gap-1.5 cursor-pointer shadow-lg"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Simpan Kursi</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          MODAL 2: TAMBAH / EDIT PENGATURAN RUANG & HEADER DENAH
+         ===================================================================== */}
+      {showRoomModal && (
+        <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+          <div className="bg-[#141923] border border-slate-700 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/80">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Settings2 className="w-4 h-4 text-sky-400" />
+                <span>{isAddingRoom ? 'Tambah Ruang Ujian Baru' : `Edit Pengaturan ${activeRoom.namaRuang}`}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowRoomModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRoomModal} className="p-5 space-y-3.5">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Nama Ruang</label>
+                  <input
+                    type="text"
+                    required
+                    value={roomForm.namaRuang}
+                    onChange={e => setRoomForm(f => ({ ...f, namaRuang: e.target.value }))}
+                    placeholder="Contoh: Ruang 1 / Lab CBT"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Nama Pengawas</label>
+                  <input
+                    type="text"
+                    value={roomForm.pengawas}
+                    onChange={e => setRoomForm(f => ({ ...f, pengawas: e.target.value }))}
+                    placeholder="Nama guru pengawas..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                    Jumlah Kursi (1–80)
+                    <span className="ml-1.5 text-amber-400 font-semibold tabular-nums">
+                      ≈ {Math.max(1, Math.ceil((roomForm.jumlahKursi || 1) / (roomForm.kursiPerMeja || 4)))} Meja
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={80}
+                    required
+                    value={roomForm.jumlahKursi}
+                    onChange={e => setRoomForm(f => ({ ...f, jumlahKursi: Number(e.target.value) }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-sky-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Jumlah Kursi per Meja</label>
+                  <select
+                    value={roomForm.kursiPerMeja}
+                    onChange={e => setRoomForm(f => ({ ...f, kursiPerMeja: Number(e.target.value) as 1 | 2 | 4 }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-sky-400"
+                  >
+                    <option value={4}>4 Kursi per Meja (Cluster seperti contoh)</option>
+                    <option value={2}>2 Kursi per Meja (Meja Ganda)</option>
+                    <option value={1}>1 Kursi per Meja (Meja Tunggal)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">Judul Ujian (Banner Kuning)</label>
+                <input
+                  type="text"
+                  value={roomForm.judulUjian}
+                  onChange={e => setRoomForm(f => ({ ...f, judulUjian: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Label Pintu</label>
+                  <input
+                    type="text"
+                    value={roomForm.labelPintu}
+                    onChange={e => setRoomForm(f => ({ ...f, labelPintu: e.target.value }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Label Jendela</label>
+                  <input
+                    type="text"
+                    value={roomForm.labelJendela}
+                    onChange={e => setRoomForm(f => ({ ...f, labelJendela: e.target.value }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">Ketentuan Poin 3</label>
+                <input
+                  type="text"
+                  value={roomForm.ketentuanTambahan}
+                  onChange={e => setRoomForm(f => ({ ...f, ketentuanTambahan: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowRoomModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white cursor-pointer shadow-lg"
+                >
+                  {isAddingRoom ? 'Buat Ruang' : 'Simpan Perubahan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          MODAL 3: ISI OTOMATIS SISWA KE KURSI UJIAN
+         ===================================================================== */}
+      {showAutoFillModal && (
+        <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+          <div className="bg-[#141923] border border-slate-700 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/80">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-400" />
+                <span>Isi Kursi Ujian Otomatis dari Database</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAutoFillModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-200 mb-1.5">Target Pengisian</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAutoFillScope('active')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
+                      autoFillScope === 'active'
+                        ? 'bg-emerald-600/20 border-emerald-400 text-emerald-200'
+                        : 'bg-slate-900 border-slate-700 text-slate-400'
+                    }`}
+                  >
+                    {activeRoom.namaRuang} Saja
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAutoFillScope('all')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
+                      autoFillScope === 'all'
+                        ? 'bg-emerald-600/20 border-emerald-400 text-emerald-200'
+                        : 'bg-slate-900 border-slate-700 text-slate-400'
+                    }`}
+                  >
+                    Semua {rooms.length} Ruang
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-200 mb-1.5">Pola Urutan Duduk</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'abjad', label: 'Urut A–Z' },
+                    { id: 'zigzag', label: 'Selang Kelas' },
+                    { id: 'acak', label: 'Acak' }
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setAutoFillOrder(opt.id as any)}
+                      className={`py-2 px-2 rounded-xl border text-xs font-bold cursor-pointer ${
+                        autoFillOrder === opt.id
+                          ? 'bg-sky-600/25 border-sky-400 text-sky-200'
+                          : 'bg-slate-900 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-200 mb-1.5">
+                  Filter Kelas (Kosongkan untuk semua kelas)
+                </label>
+                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                  {kelasList.map(k => {
+                    const checked = autoFillSelectedClasses.includes(k);
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() =>
+                          setAutoFillSelectedClasses(prev =>
+                            prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]
+                          )
+                        }
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer ${
+                          checked
+                            ? 'bg-sky-600 text-white border-sky-400'
+                            : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                        }`}
+                      >
+                        {checked ? `✓ ${k}` : k}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAutoFillModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRunAutoFill}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shadow-lg"
+                >
+                  Terapkan Penempatan
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          MODAL 4: KONFIRMASI HAPUS RUANG
+         ===================================================================== */}
+      {deleteConfirmRoom && (
+        <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+          <div className="bg-[#141923] border border-slate-700 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <h3 className="text-sm font-bold text-white">Hapus {deleteConfirmRoom.namaRuang}?</h3>
+            <p className="text-xs text-slate-400">
+              Data penempatan kursi pada ruang ini akan dihapus secara permanen.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmRoom(null)}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteRoom}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-500 text-white cursor-pointer"
+              >
+                Ya, Hapus Ruang
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

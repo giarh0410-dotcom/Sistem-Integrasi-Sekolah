@@ -5,6 +5,63 @@
     background-color: #0b0f19 !important;
     color: #f3f4f6 !important;
     min-height: 100vh;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+}
+
+@keyframes glossy-sheen {
+  0% {
+    transform: translateX(-140%) skewX(-22deg);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.55;
+  }
+  45% {
+    transform: translateX(220%) skewX(-22deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(220%) skewX(-22deg);
+    opacity: 0;
+  }
+}
+
+@keyframes glossy-orb-drift {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(24px, -18px, 0) scale(1.06);
+  }
+}
+
+@keyframes glossy-orb-drift-reverse {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-22px, 16px, 0) scale(1.05);
+  }
+}
+
+.animate-glossy-sheen {
+  animation: glossy-sheen 7s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.animate-glossy-orb {
+  animation: glossy-orb-drift 12s ease-in-out infinite;
+}
+
+.animate-glossy-orb-reverse {
+  animation: glossy-orb-drift-reverse 15s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-glossy-sheen,
+  .animate-glossy-orb,
+  .animate-glossy-orb-reverse {
+    animation: none !important;
   }
 }
 
@@ -20,7 +77,9 @@
   #printable-rekap-gaji,
   #printable-rekap-gaji *,
   #printable-supervisi,
-  #printable-supervisi * {
+  #printable-supervisi *,
+  #printable-denah-ruang,
+  #printable-denah-ruang * {
     visibility: visible !important;
   }
 
@@ -29,6 +88,8 @@
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .fixed {
@@ -40,14 +101,15 @@
   #printable-receipt,
   #printable-slip-gaji,
   #printable-rekap-gaji,
-  #printable-supervisi {
+  #printable-supervisi,
+  #printable-denah-ruang {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 15px !important;
+    padding: 12px !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;

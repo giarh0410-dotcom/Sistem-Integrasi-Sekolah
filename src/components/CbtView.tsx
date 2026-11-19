@@ -58,6 +58,7 @@ import {
   SchoolSettings
 } from '../types/school';
 import { dbFetchCollection, dbSaveCollection } from '../lib/firebaseSync';
+import { DenahRuangUjian } from './cbt/DenahRuangUjian';
 
 interface CbtViewProps {
   bankSoalList: BankSoal[];
@@ -2022,10 +2023,24 @@ export const CbtView: React.FC<CbtViewProps> = ({
           <span className="text-xs px-3 py-1.5 rounded-lg font-bold bg-slate-800/80 text-blue-400 border border-slate-700/60">
             {subTab === 'bank_soal' && `Bank Soal (${bankSoalList.length})`}
             {subTab === 'jadwal_kartu' && 'Jadwal & Kartu Ujian'}
+            {subTab === 'denah_ruang' && 'Denah Ruang Ujian'}
             {subTab === 'simulasi_ujian' && 'Simulasi CBT Anti-Cheat'}
+            {subTab === 'hasil_ujian' && 'Hasil Ujian (Firebase)'}
           </span>
         </div>
       </div>
+
+      {/* SUBTAB DENAH RUANG UJIAN */}
+      {subTab === 'denah_ruang' && (
+        <DenahRuangUjian
+          siswaList={siswaList}
+          guruList={guruList}
+          rombelList={rombelList}
+          schoolSettings={schoolSettings}
+          currentRole={currentRole}
+          userEmail={userEmail}
+        />
+      )}
 
       {/* SUBTAB JADWAL & KARTU PESERTA UJIAN */}
       {subTab === 'jadwal_kartu' && (

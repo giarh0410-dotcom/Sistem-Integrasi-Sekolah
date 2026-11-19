@@ -13,8 +13,9 @@ import {
   Lock,
   Globe,
   ArrowRight,
-  Sparkles,
-  FileSpreadsheet
+  Eye,
+  EyeOff,
+  AlertCircle
 } from 'lucide-react';
 import { Role, SchoolSettings, Guru, Staf, Siswa } from '../types/school';
 
@@ -39,6 +40,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role>('admin');
 
   // Dynamic demo helpers based on current lists
@@ -318,99 +320,168 @@ export const LoginView: React.FC<LoginViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-100 flex items-center justify-center p-4 sm:p-6 antialiased selection:bg-blue-600 selection:text-white relative overflow-hidden">
-      
-      {/* Background Subtle Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none"></div>
+    <div className="min-h-screen bg-gradient-to-br from-[#050b18] via-[#09152b] to-[#040812] text-slate-100 flex items-center justify-center p-4 sm:p-6 antialiased selection:bg-sky-500/40 selection:text-white relative overflow-hidden">
 
-      <div className="max-w-md w-full bg-white/10 backdrop-blur-2xl border border-white/25 rounded-2xl shadow-2xl p-6 sm:p-8 relative z-10 space-y-6 text-white">
-        
-        {/* Header: School Logo & Title */}
-        <div className="flex items-center gap-4 pb-5 border-b border-white/15">
-          <div className="w-16 h-16 rounded-2xl bg-white/15 border border-white/30 p-3 flex items-center justify-center shrink-0 shadow-md overflow-hidden">
-            <img 
-              src={schoolSettings.logoUrl || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%232563eb"/></svg>'} 
-              alt={schoolSettings.namaSekolah} 
-              className="w-full h-full object-contain"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%232563eb"/><text x="50" y="58" font-size="45" fill="white" text-anchor="middle" font-weight="bold">S</text></svg>';
-              }}
-            />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              <span className="text-[10px] font-semibold text-emerald-300 uppercase tracking-wider">
-                Portal Akademik
-              </span>
-            </div>
-            <h1 className="text-base font-bold text-white tracking-tight">
-              {schoolSettings.namaSekolah}
-            </h1>
-            <p className="text-[11px] text-zinc-200 font-medium mt-0.5 flex items-center gap-2">
+      {/* Luminous Ambient Refraction Backdrop so Glass Card Reflects Light */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        {/* Primary sapphire crystal light behind upper-left of card */}
+        <div className="animate-glossy-orb absolute top-[14%] left-[22%] w-[440px] h-[440px] rounded-full bg-gradient-to-br from-sky-400/35 via-blue-600/25 to-transparent blur-[110px]" />
+        {/* Secondary cobalt-teal light behind lower-right of card */}
+        <div className="animate-glossy-orb-reverse absolute bottom-[10%] right-[18%] w-[460px] h-[380px] rounded-full bg-gradient-to-tl from-cyan-400/25 via-indigo-500/25 to-transparent blur-[120px]" />
+        {/* Focused halo directly behind card center for vivid frosted refraction */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[320px] rounded-full bg-gradient-to-r from-blue-500/25 via-sky-300/20 to-indigo-500/25 blur-[95px]" />
+        {/* Crisp top studio overhead reflection beam */}
+        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[780px] h-[260px] rounded-full bg-gradient-to-b from-white/12 via-sky-200/8 to-transparent blur-[80px]" />
+        {/* Subtle fine architectural sheen grid */}
+        <div className="absolute inset-0 opacity-[0.06] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.85)_1px,transparent_0)] [background-size:28px_28px]" />
+      </div>
 
+      {/* Glossy Liquid-Glass Login Card */}
+      <div className="max-w-md w-full relative z-10 rounded-[28px] p-[1px] bg-gradient-to-b from-white/55 via-sky-200/25 to-white/10 shadow-[0_32px_80px_-14px_rgba(2,6,23,0.9),0_0_55px_-12px_rgba(56,189,248,0.3)]">
+        <div className="relative overflow-hidden rounded-[27px] bg-gradient-to-br from-white/[0.17] via-slate-900/55 to-slate-950/75 backdrop-blur-3xl backdrop-saturate-150 p-6 sm:p-8 space-y-6 text-white shadow-[inset_0_1.5px_1px_rgba(255,255,255,0.6),inset_0_-1px_1px_rgba(255,255,255,0.12)]">
 
-              <span className="text-blue-200 font-semibold bg-blue-500/20 px-1.5 py-0.5 rounded border border-blue-400/30 text-[10px]">Akreditasi A</span>
-            </p>
-          </div>
-        </div>
+          {/* Curved Top Optical Gloss Reflection */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-24 -left-16 -right-16 h-52 rounded-[100%] bg-gradient-to-b from-white/[0.22] via-white/[0.06] to-transparent blur-[1px]"
+          />
 
+          {/* Top Edge Specular Highlight Line */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute top-0 left-6 right-6 h-[1.5px] bg-gradient-to-r from-transparent via-white/85 to-transparent"
+          />
 
-
-
-
-        {/* Error Alert */}
-        {errorMessage && (
-          <div className="p-3 bg-red-950/80 border border-red-500/50 rounded-xl text-red-200 text-xs font-medium flex items-center gap-2">
-            <span>⚠️ {errorMessage}</span>
-          </div>
-        )}
-
-        {/* Form */}
-        <form onSubmit={handleManualLogin} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-zinc-200 mb-1">
-              Username atau Email
-            </label>
-            <input
-              type="text"
-              value={emailInput}
-              onChange={(e) => setEmailInput(e.target.value)}
-              placeholder="Masukkan username atau email"
-              className="w-full bg-black/30 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-zinc-200 mb-1">
-              Kata Sandi
-            </label>
-            <input
-              type="password"
-              value={passwordInput}
-              onChange={(e) => setPasswordInput(e.target.value)}
-              placeholder="••••••••••••"
-              className="w-full bg-black/30 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 transition-all"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading || !emailInput.trim() || !passwordInput.trim()}
-            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl text-xs transition-all shadow-lg shadow-blue-600/30 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 group cursor-pointer border border-blue-400/30"
+          {/* Animated Diagonal Glass Sheen Sweep */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 overflow-hidden rounded-[27px]"
           >
-            <span>{loading ? 'Memproses Akses...' : 'Masuk ke Dashboard'}</span>
-            {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />}
-          </button>
-        </form>
+            <div className="animate-glossy-sheen absolute -top-10 bottom-0 w-36 bg-gradient-to-r from-transparent via-white/[0.18] to-transparent blur-[2px]" />
+          </div>
 
-        {/* Footer */}
-        <div className="pt-3 border-t border-white/15 flex items-center justify-between text-[10px] text-zinc-400">
-          <span>Gie Technologi</span>
-          <span>v2026.4.1</span>
+          {/* Header: School Logo & Title */}
+          <div className="relative z-10 flex items-center gap-4 pb-5 border-b border-white/20">
+            <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-b from-white/30 via-white/12 to-white/5 border border-white/40 p-2.5 flex items-center justify-center shrink-0 shadow-[0_10px_24px_rgba(2,6,23,0.45),inset_0_1.5px_1px_rgba(255,255,255,0.75)] overflow-hidden">
+              {/* Mini gloss dome over logo frame */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/35 to-transparent"
+              />
+              <img
+                src={schoolSettings.logoUrl || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%232563eb"/></svg>'}
+                alt={schoolSettings.namaSekolah}
+                referrerPolicy="no-referrer"
+                className="relative z-10 w-full h-full object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.4)]"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%232563eb"/><text x="50" y="58" font-size="45" fill="white" text-anchor="middle" font-weight="bold">S</text></svg>';
+                }}
+              />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold text-sky-200/95 tracking-wide flex items-center gap-1.5">
+                <span>Portal Akademik</span>
+                <span aria-hidden="true" className="text-white/40">·</span>
+                <span className="text-emerald-300 font-semibold">Akreditasi A</span>
+              </div>
+              <h1 className="text-lg font-bold text-white tracking-tight leading-snug mt-0.5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
+                {schoolSettings.namaSekolah}
+              </h1>
+              <p className="text-xs text-slate-300/90 mt-0.5">
+                Masuk untuk mengakses sistem sekolah
+              </p>
+            </div>
+          </div>
+
+          {/* Error Alert */}
+          {errorMessage && (
+            <div
+              role="alert"
+              className="relative z-10 p-3.5 bg-red-500/20 backdrop-blur-md border border-red-300/40 rounded-2xl text-red-100 text-xs font-medium flex items-start gap-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
+            >
+              <AlertCircle className="w-4 h-4 text-red-300 shrink-0 mt-0.5" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleManualLogin} className="relative z-10 space-y-4">
+            <div>
+              <label htmlFor="login-username" className="block text-xs font-semibold text-slate-100 mb-1.5 tracking-[0.01em]">
+                Username atau Email
+              </label>
+              <div className="relative group">
+                <UserCheck className="w-4 h-4 text-slate-300/80 group-focus-within:text-sky-300 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  id="login-username"
+                  type="text"
+                  autoComplete="username"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="Masukkan username atau email"
+                  className="w-full bg-slate-950/45 hover:bg-slate-950/55 border border-white/25 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-400 shadow-[inset_0_2px_6px_rgba(0,0,0,0.45),0_1px_0_rgba(255,255,255,0.16)] focus:outline-none focus:border-sky-300/80 focus:bg-slate-950/60 focus:ring-2 focus:ring-sky-400/35 transition-all duration-150"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="login-password" className="block text-xs font-semibold text-slate-100 mb-1.5 tracking-[0.01em]">
+                Kata Sandi
+              </label>
+              <div className="relative group">
+                <Lock className="w-4 h-4 text-slate-300/80 group-focus-within:text-sky-300 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  id="login-password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full bg-slate-950/45 hover:bg-slate-950/55 border border-white/25 rounded-2xl pl-10 pr-11 py-3 text-sm text-white placeholder-slate-400 shadow-[inset_0_2px_6px_rgba(0,0,0,0.45),0_1px_0_rgba(255,255,255,0.16)] focus:outline-none focus:border-sky-300/80 focus:bg-slate-950/60 focus:ring-2 focus:ring-sky-400/35 transition-all duration-150"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(prev => !prev)}
+                  aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !emailInput.trim() || !passwordInput.trim()}
+              className="relative overflow-hidden w-full py-3.5 px-5 mt-1 rounded-2xl text-sm font-semibold text-white bg-gradient-to-b from-sky-400 via-blue-600 to-blue-700 hover:from-sky-300 hover:via-blue-500 hover:to-blue-600 border border-sky-200/45 shadow-[0_14px_30px_-6px_rgba(37,99,235,0.7),inset_0_1.5px_1px_rgba(255,255,255,0.75),inset_0_-2px_5px_rgba(15,23,42,0.4)] active:scale-[0.985] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150 flex items-center justify-center gap-2 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+            >
+              {/* Upper liquid gloss reflection dome on button */}
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-1 top-0.5 h-[48%] rounded-t-xl bg-gradient-to-b from-white/40 via-white/12 to-transparent"
+              />
+              {/* Hover gloss light swipe */}
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-[-20deg]"
+              />
+              <span className="relative z-10 drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)] whitespace-nowrap">
+                {loading ? 'Memproses Akses...' : 'Masuk ke Dashboard'}
+              </span>
+              {!loading && (
+                <ArrowRight className="relative z-10 w-4 h-4 group-hover:translate-x-0.5 transition-transform drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]" />
+              )}
+            </button>
+          </form>
+
+          {/* Footer */}
+          <div className="relative z-10 pt-4 border-t border-white/15 flex items-center justify-between text-[11px] text-slate-300/80 tabular-nums">
+            <span className="font-medium">Gie Technologi</span>
+            <span>v2026.4.1</span>
+          </div>
+
         </div>
-
       </div>
     </div>
   );

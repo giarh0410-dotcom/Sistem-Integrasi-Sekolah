@@ -96,6 +96,9 @@ service cloud.firestore {
     match /edu_raporTahfidzList/{tahfidzId} {
       allow read, write: if isSignedIn();
     }
+    match /edu_denahRuangList/{denahId} {
+      allow read, write: if isSignedIn();
+    }
     
     // Test collection for connectivity check
     match /test/connection {

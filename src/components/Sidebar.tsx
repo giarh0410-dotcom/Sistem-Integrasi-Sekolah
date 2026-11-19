@@ -35,7 +35,8 @@ import {
   HeartHandshake,
   ShieldAlert,
   Award,
-  Printer
+  Printer,
+  LayoutGrid
 } from 'lucide-react';
 import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab, AdministrasiSubTab, PengaturanSubTab, RaporSubTab } from '../types/school';
 
@@ -581,6 +582,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           </div>
                         </button>
                       )}
+
+                      {/* 2b. Denah Ruang Ujian */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('cbt');
+                          if (setCbtSubTab) setCbtSubTab('denah_ruang');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          cbtSubTab === 'denah_ruang'
+                            ? 'bg-sky-600/15 text-sky-300 border border-sky-500/30 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <LayoutGrid className="w-3.5 h-3.5 text-sky-400" />
+                          <span>Denah Ruang Ujian</span>
+                        </div>
+                      </button>
 
                       {/* 3. Simulasi CBT Anti-Cheat */}
                       {currentRole !== 'guru' && (

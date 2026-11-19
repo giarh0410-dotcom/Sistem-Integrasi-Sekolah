@@ -567,6 +567,19 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
   const activeBank = bankSoalList.find(b => b.id === selectedBankId) || bankSoalList[0];
 
+  // --- Tambah / Edit Paket Bank Soal State ---
+  const [showAddBankModal, setShowAddBankModal] = useState(false);
+  const [editingBankId, setEditingBankId] = useState<string | null>(null);
+  const [bankJudul, setBankJudul] = useState('');
+  const [bankKode, setBankKode] = useState('');
+  const [bankMapel, setBankMapel] = useState('');
+  const [bankKelas, setBankKelas] = useState('');
+  const [bankDurasi, setBankDurasi] = useState(90);
+  const [bankImportedSoal, setBankImportedSoal] = useState<SoalCBT[]>([]);
+  const [bankImportFileName, setBankImportFileName] = useState('');
+  const [bankFormError, setBankFormError] = useState('');
+  const [filterBankByGuruMapel, setFilterBankByGuruMapel] = useState(false);
+
   const [showAddSoalModal, setShowAddSoalModal] = useState(false);
   const [editingSoalId, setEditingSoalId] = useState<string | null>(null);
   const [newTipe, setNewTipe] = useState<TipeSoal>('pg');
@@ -677,12 +690,569 @@ export const CbtView: React.FC<CbtViewProps> = ({
     alert(editingSoalId ? 'Soal berhasil diperbarui!' : 'Soal baru berhasil ditambahkan ke Bank Soal!');
   };
 
-  // --- AI Generator State ---
-  const [aiMapel, setAiMapel] = useState(availableMapelList[0] || 'Informatika / TIK');
+  // --- In-Bank AI Question Generator State & Handlers ---
+  const [showAiModalInBank, setShowAiModalInBank] = useState(false);
+  const [inBankAiMapel, setInBankAiMapel] = useState('');
+  const [inBankAiKelas, setInBankAiKelas] = useState('');
+  const [inBankAiTopik, setInBankAiTopik] = useState('');
+  const [inBankAiJumlah, setInBankAiJumlah] = useState(10);
+  const [inBankAiTipeSoal, setInBankAiTipeSoal] = useState<string[]>(['pg', 'multiple_choice', 'isian', 'esai']);
+  const [inBankAiKesulitan, setInBankAiKesulitan] = useState('Sedang (C3: Aplikasi Konsep)');
+  const [inBankAiInstruksi, setInBankAiInstruksi] = useState('');
+  const [inBankAiBobot, setInBankAiBobot] = useState(10);
+  const [inBankAiLoading, setInBankAiLoading] = useState(false);
+  const [inBankAiGeneratedList, setInBankAiGeneratedList] = useState<SoalCBT[]>([]);
+  const [inBankAiSelectedIndices, setInBankAiSelectedIndices] = useState<number[]>([]);
+  const [inBankAiToast, setInBankAiToast] = useState<string | null>(null);
+
+  // Mapping Topik Kurikulum Merdeka Lengkap Berdasarkan Mata Pelajaran
+  const SUBJECT_TOPIC_MAP: Record<string, string[]> = {
+    'bahasa_jepang': [
+      'Huruf Hiragana & Katakana Dasar (Gojuon, Dakuten & Handakuten)',
+      'Aisatsu (Salam Sapaan, Ucapan Terima Kasih & Permintaan Maaf)',
+      'Jikoshoukai (Perkenalan Diri, Asal Daerah, Kelas & Usia)',
+      'Partikel Dasar Bahasa Jepang (は / が / を / に / で / の / へ)',
+      'Kata Tunjuk Benda & Tempat (Kore, Sore, Are & Koko, Soko, Asoko)',
+      'Angka, Jam (Jikan), Hari, Tanggal & Jadwal Pelajaran Sekolah',
+      'Kata Sifat Golongan -i (I-Keiyoushi) & Golongan -na (Na-Keiyoushi)',
+      'Kata Kerja Bentuk -masu / -masen (Aktivitas Sehari-hari)',
+      'Kazoku (Anggota Keluarga) & Shumi (Hobi / Kegemaran)',
+      'Kanji Dasar JLPT N5 (Angka, Hari, Orang, Sekolah & Alam)'
+    ],
+    'bahasa_arab': [
+      'Ta\'aruf (Perkenalan Diri & Kata Ganti Dhamir Munfashil)',
+      'Al-Adawat Al-Madrasiyah (Perlengkapan & Lingkungan Sekolah)',
+      'Al-Alwan (Warna-Warni) & Kesesuaian Mudzakkar-Muannats',
+      'Al-Arqam (Bilangan 1–100) & As-Sa\'ah (Jam / Waktu)',
+      'Fi\'il Madhi, Fi\'il Mudhari\' & Fi\'il Amr Sederhana',
+      'Mubtada & Khabar dalam Kalimat Nominal (Jumlah Ismiyah)',
+      'Huruf Jar & Zharaf Makan (Kata Depan & Keterangan Tempat)',
+      'Al-Usrah (Keluarga), Al-Mihnatu (Profesi) & Al-Hiwayah (Hobi)'
+    ],
+    'bahasa_daerah': [
+      'Unggah-Ungguh / Undak-Usuk Basa (Ragam Bahasa Santun & Sehari-hari)',
+      'Membaca & Menulis Aksara Daerah (Jawa / Sunda / Nusantara)',
+      'Cerita Rakyat, Dongeng & Legenda Daerah Setempat',
+      'Puisi Tradisional Daerah (Tembang Macapat / Pupuh / Pantun)',
+      'Pidato / Biantara Bahasa Daerah dalam Acara Adat & Sekolah',
+      'Peribahasa (Paribasan / Babasan) & Ungkapan Budaya Lokal',
+      'Artikel Budaya, Makanan Tradisional & Kesenian Daerah'
+    ],
+    'bahasa_asing': [
+      'Salam Sapaan, Perkenalan Diri & Ungkapan Sopan Santun',
+      'Pelafalan Dasar, Sistem Penulisan & Kosakata Sehari-hari',
+      'Struktur Kalimat Dasar & Tata Bahasa Kontekstual',
+      'Bilangan, Waktu, Hari, Tanggal & Aktivitas Harian',
+      'Memahami Teks Dialog Singkat & Deskripsi Sederhana',
+      'Keluarga, Hobi, Sekolah & Budaya Negara Penutur'
+    ],
+    'informatika': [
+      'Berpikir Komputasional (Dekomposisi, Pola, Abstraksi & Algoritma)',
+      'Jaringan Komputer & Topologi Internet',
+      'Algoritma Pemrograman & Logika Percabangan/Perulangan',
+      'Analisis Data, Visualisasi & Formula Spreadsheet',
+      'Perangkat Keras (Hardware), Perangkat Lunak & Sistem Operasi',
+      'Dampak Sosial Informatika, Jejak Digital & Etika Siber',
+      'Sistem Bilangan Biner, Desimal & Heksadesimal',
+      'Keamanan Data, Enkripsi & Proteksi Akun'
+    ],
+    'matematika': [
+      'Eksponen, Bentuk Akar & Notasi Ilmiah',
+      'Logaritma & Sifat-Sifat Operasi Logaritma',
+      'Sistem Persamaan Linier Dua Variabel (SPLDV)',
+      'Persamaan & Fungsi Kuadrat serta Grafik Parabola',
+      'Trigonometri Dasar (Sinus, Cosinus, Tangen)',
+      'Statistika (Mean, Median, Modus, Jangkauan & Kuartil)',
+      'Peluang Kejadian Tunggal & Majemuk',
+      'Teorema Pythagoras & Segitiga Istimewa',
+      'Transformasi Geometri (Translasi, Refleksi, Rotasi, Dilatasi)',
+      'Bangun Ruang Sisi Lengkung (Tabung, Kerucut, Bola)'
+    ],
+    'fisika': [
+      'Besaran Pokok, Besaran Turunan, Satuan SI & Pengukuran',
+      'Gerak Lurus Beraturan (GLB) & Gerak Lurus Berubah Beraturan (GLBB)',
+      'Hukum Newton tentang Gerak, Gaya Gesek & Dinamika Partikel',
+      'Usaha, Energi Kinetik, Energi Potensial & Hukum Kekekalan Energi',
+      'Suhu, Kalor, Asas Black & Perpindahan Kalor',
+      'Getaran, Gelombang Mekanik, Bunyi & Efek Doppler',
+      'Optika Geometri (Cermin, Lensa & Alat Optik)',
+      'Listrik Statis, Listrik Dinamis (Hukum Ohm & Kirchhoff) & Kemagnetan'
+    ],
+    'kimia': [
+      'Hakikat Ilmu Kimia, Keselamatan Laboratorium & Metode Ilmiah',
+      'Struktur Atom, Konfigurasi Elektron & Sistem Periodik Unsur',
+      'Ikatan Kimia (Ion, Kovalen, Logam) & Bentuk Molekul',
+      'Tata Nama Senyawa Kimia & Persamaan Reaksi Sederhana',
+      'Hukum-Hukum Dasar Kimia & Stoikiometri (Konsep Mol)',
+      'Larutan Elektrolit-Nonelektrolit & Reaksi Redoks',
+      'Hidrokarbon, Minyak Bumi & Termokimia',
+      'Laju Reaksi, Kesetimbangan Kimia & Asam-Basa'
+    ],
+    'biologi': [
+      'Keanekaragaman Hayati, Klasifikasi Makhluk Hidup & Virus',
+      'Struktur & Fungsi Sel (Prokariotik, Eukariotik & Organel Sel)',
+      'Jaringan Tumbuhan & Jaringan Hewan serta Fungsinya',
+      'Sistem Organ Manusia (Pencernaan, Pernapasan, Peredaran Darah)',
+      'Ekosistem, Aliran Energi, Daur Biogeokimia & Perubahan Lingkungan',
+      'Metabolisme Sel (Enzim, Respirasi Seluler & Fotosintesis)',
+      'Substansi Genetika (DNA, RNA, Sintesis Protein) & Pembelahan Sel',
+      'Hukum Pewarisan Sifat Mendel, Mutasi & Bioteknologi'
+    ],
+    'ipa': [
+      'Ekosistem, Interaksi Biotik-Abiotik & Rantai Makanan',
+      'Sistem Peredaran Darah & Organ Jantung Manusia',
+      'Sistem Pencernaan, Nutrisi & Enzim Metabolisme',
+      'Sistem Pernapasan & Pertukaran Gas Alveolus',
+      'Hukum Newton tentang Gerak, Gaya & Percepatan',
+      'Energi Kinetik, Potensial & Hukum Kekekalan Energi',
+      'Listrik Dinamis, Rangkaian Seri-Paralel & Hukum Ohm',
+      'Pewarisan Sifat, Genetika & Persilangan Monohibrid/Dihibrid',
+      'Zat Aditif Makanan, Pewarna Alami & Zat Adiktif',
+      'Tekanan Zat Padat, Cair (Hidrostatis) & Hukum Pascal'
+    ],
+    'tahfidz': [
+      'Hafalan Juz 30 (An-Naba s.d. An-Nas) — Muraja\'ah & Sambung Ayat',
+      'Hafalan Juz 29 (Al-Mulk s.d. Al-Mursalat) — Mutqin & Tajwid',
+      'Hukum Bacaan Nun Sukun, Tanwin & Mim Sukun dalam Tilawah',
+      'Hukum Mad (Mad Thabi\'i, Mad Wajib Muttashil, Mad Jaiz Munfashil)',
+      'Makharijul Huruf & Sifat-Sifat Huruf Hijaiyah',
+      'Adab Terhadap Al-Qur\'an, Halaqah & Metode Penguatan Hafalan',
+      'Tafhimul Ayat (Memahami Makna Kosakata & Pesan Pokok Surat Pilihan)'
+    ],
+    'pai': [
+      'Hukum Tajwid Nun Sukun, Tanwin & Mim Sukun',
+      'Hukum Tajwid Mad Thabi\'i & Mad Far\'i',
+      'Toleransi & Moderasi Beragama dalam Islam (Tasamuh)',
+      'Rukun Iman & Pemahaman Asmaul Husna',
+      'Ketentuan Shalat Fardhu, Berjamaah & Shalat Sunnah',
+      'Zakat Fitrah, Zakat Mal & Golongan Mustahik',
+      'Sejarah Perjuangan Dakwah Nabi Muhammad SAW di Madinah',
+      'Adab Bergaul, Menghormati Guru & Akhlakul Karimah'
+    ],
+    'indonesia': [
+      'Teks Laporan Hasil Observasi (LHO) & Ciri Kebahasaannya',
+      'Teks Eksplanasi Fenomena Alam & Sosial',
+      'Teks Pidato Persuasif & Argumen Bernalar Kritis',
+      'Unsur Intrinsik & Ekstrinsik Teks Cerpen',
+      'Teks Tanggapan Kritis & Resensi Karya',
+      'Teks Prosedur & Langkah-Langkah Sistematis',
+      'Kaidah Ejaan Bahasa Indonesia (EBI), Kalimat Efektif & Tanda Baca',
+      'Puisi Rakyat (Pantun, Gurindam, Syair) & Makna Konotatif'
+    ],
+    'inggris': [
+      'Descriptive Text (Describing People, Animals & Tourist Spots)',
+      'Narrative Text (Folktales, Fables & Moral Lessons)',
+      'Procedure Text (Step-by-Step Recipes & Manual Guides)',
+      'Recount Text (Past Personal Experiences & Historical Events)',
+      'Simple Past Tense & Irregular Verbs in Context',
+      'Passive Voice in Scientific & General Facts',
+      'Asking and Giving Opinions, Agreeing & Disagreeing',
+      'Report Text (Scientific Facts & Natural Phenomena)'
+    ],
+    'sejarah': [
+      'Konsep Dasar Sejarah (Diakronik, Sinkronik, Ruang & Waktu)',
+      'Asal-Usul Nenek Moyang & Kehidupan Masa Praaksara Indonesia',
+      'Kerajaan-Kerajaan Hindu-Buddha & Islam di Nusantara',
+      'Kolonialisme, Imperialisme Barat & Perlawanan Bangsa Indonesia',
+      'Pergerakan Nasional, Sumpah Pemuda 1928 & Kebangkitan Nasional',
+      'Peristiwa Proklamasi Kemerdekaan RI 17 Agustus 1945',
+      'Perjuangan Mempertahankan Kemerdekaan & Demokrasi di Indonesia'
+    ],
+    'geografi': [
+      'Konsep Esensial, Prinsip & Pendekatan Ilmu Geografi',
+      'Peta, Penginderaan Jauh & Sistem Informasi Geografis (SIG)',
+      'Dinamika Litosfer (Tektonisme, Vulkanisme, Seisme) & Pedosfer',
+      'Dinamika Atmosfer (Cuaca, Iklim) & Hidrosfer (Siklus Air)',
+      'Sebaran Flora-Fauna, Bioma & Potensi Sumber Daya Alam Indonesia',
+      'Dinamika Kependudukan, Keragaman Budaya & Mitigasi Bencana'
+    ],
+    'ekonomi': [
+      'Konsep Ilmu Ekonomi, Kelangkaan & Biaya Peluang',
+      'Kegiatan Ekonomi, Pelaku Ekonomi & Circular Flow Diagram',
+      'Permintaan, Penawaran, Elastisitas & Harga Keseimbangan Pasar',
+      'Struktur Pasar, Lembaga Keuangan, Bank Sentral & OJK',
+      'Pendapatan Nasional, Pertumbuhan Ekonomi & Ketenagakerjaan',
+      'Kebijakan Moneter, Kebijakan Fiskal, APBN/APBD & Perdagangan Internasional',
+      'Persamaan Dasar Akuntansi & Siklus Akuntansi Perusahaan'
+    ],
+    'sosiologi': [
+      'Hakikat Sosiologi sebagai Ilmu tentang Masyarakat & Realitas Sosial',
+      'Interaksi Sosial, Nilai, Norma & Sosialisasi Pembentukan Kepribadian',
+      'Kelompok Sosial, Diferensiasi & Stratifikasi Sosial',
+      'Konflik Sosial, Kekerasan, Integrasi & Harmoni Sosial',
+      'Perubahan Sosial, Globalisasi & Pemberdayaan Komunitas Lokal'
+    ],
+    'ips': [
+      'Karakteristik Geografis & Potensi Sumber Daya Negara ASEAN',
+      'Interaksi Antarruang & Perubahan Sosial Budaya',
+      'Kegiatan Ekonomi (Produksi, Distribusi, Konsumsi) & Pasar Bebas',
+      'Lembaga Sosial & Peranannya dalam Keteraturan Masyarakat',
+      'Peristiwa Menjelang Proklamasi Kemerdekaan Indonesia',
+      'Permintaan, Penawaran & Pembentukan Harga Keseimbangan',
+      'Globalisasi, Kearifan Lokal & Tantangan Era Digital'
+    ],
+    'pancasila': [
+      'Penerapan Nilai-Nilai Pancasila dalam Kehidupan Berbangsa',
+      'Norma Hukum, Hak & Kewajiban Asasi Warga Negara',
+      'Makna & Kedudukan UUD NRI Tahun 1945',
+      'Bhinneka Tunggal Ika & Menghargai Keragaman Suku/Agama',
+      'Kedaulatan Rakyat, Demokrasi Pancasila & Pemilu',
+      'Menjaga Keutuhan Negara Kesatuan Republik Indonesia (NKRI)'
+    ],
+    'pjok': [
+      'Teknik Dasar & Aturan Permainan Bola Voli (Passing & Servis)',
+      'Keterampilan Menggiring, Mengoper & Menembak Bola Basket',
+      'Latihan Kebugaran Jasmani (Kekuatan, Kelenturan, Daya Tahan)',
+      'Aktivitas Senam Lantai (Roll Depan, Roll Belakang, Sikap Lilin)',
+      'Pola Hidup Bersih dan Sehat (PHBS) serta Bahaya Merokok/NAPZA',
+      'Aktivitas Atletik (Lari Cepat/Sprint & Lompat Jauh)'
+    ],
+    'seni': [
+      'Menggambar Model dengan Proporsi & Pencahayaan',
+      'Ragam Hias Flora, Fauna & Geometris Tradisional Nusantara',
+      'Teknik Bernyanyi Vokal Grup & Tangga Nada Diatonis',
+      'Mengenal Alat Musik Tradisional Nusantara & Musik Ansambel',
+      'Apresiasi Karya Seni Patung & Seni Rupa Terapan Daerah',
+      'Eksplorasi Gerak Tari Tradisional & Iringan Musik'
+    ],
+    'prakarya': [
+      'Pengolahan Bahan Pangan Buah & Sayuran Menjadi Makanan Khas',
+      'Kerajinan Bahan Serat Alam & Bahan Lunak Alami',
+      'Budidaya Tanaman Sayuran dengan Metode Hidroponik',
+      'Teknik Dasar Pengemasan Produk & Analisis Usaha Sederhana',
+      'Pengolahan Bahan Samping Pangan Menjadi Produk Bergizi'
+    ],
+    'bk': [
+      'Mengenal Potensi Diri, Minat & Gaya Belajar Efektif',
+      'Manajemen Waktu & Mengatasi Kebiasaan Menunda Belajar',
+      'Perencanaan Karir & Pemilihan Jurusan/Sekolah Lanjutan',
+      'Komunikasi Asertif & Pencegahan Perundungan (Anti-Bullying)',
+      'Manajemen Emosi, Regulasi Diri & Mengatasi Stres Belajar'
+    ]
+  };
+
+  const getSubjectCategoryKey = (mapel: string): string => {
+    const m = (mapel || '').trim().toLowerCase();
+
+    // 1. Cek Bahasa Jepang
+    if (m.includes('jepang') || m.includes('japanese') || m.includes('nihongo')) {
+      return 'bahasa_jepang';
+    }
+
+    // 2. Cek Bahasa Arab
+    if (m.includes('arab') || m.includes('arabic') || m.includes('nahwu') || m.includes('shorof') || m.includes('sharaf')) {
+      return 'bahasa_arab';
+    }
+
+    // 3. Cek Bahasa Daerah / Muatan Lokal Bahasa
+    if (m.includes('sunda') || m.includes('jawa') || m.includes('daerah') || m.includes('bali') || m.includes('madura') || m.includes('minang') || m.includes('bugis') || m.includes('batak')) {
+      return 'bahasa_daerah';
+    }
+
+    // 4. Cek Bahasa Asing Lainnya (Mandarin, Korea, Jerman, Perancis, dll.)
+    if (m.includes('mandarin') || m.includes('korea') || m.includes('jerman') || m.includes('perancis') || m.includes('prancis') || m.includes('spanyol') || m.includes('bahasa asing')) {
+      return 'bahasa_asing';
+    }
+
+    // 5. Cek Informatika / Komputer / TIK
+    const isTik = /(?:^|[\s/()_-])tik(?:[\s/()_-]|$)/i.test(m);
+    if (m.includes('informatika') || m.includes('komputer') || m.includes('coding') || m.includes('cyber') || m.includes('pemrograman') || isTik) {
+      return 'informatika';
+    }
+
+    // 6. Cek Matematika
+    if (m.includes('matematik') || m.includes('mtk') || m.includes('kalkulus') || m.includes('aljabar') || m.includes('geometri') || m.includes('trigonometri')) {
+      return 'matematika';
+    }
+
+    // 7. Cek Fisika, Kimia, Biologi, dan IPA umum
+    if (m.includes('fisika')) return 'fisika';
+    if (m.includes('kimia')) return 'kimia';
+    if (m.includes('biologi')) return 'biologi';
+    const isIpa = /(?:^|[\s/()_-])ipa(?:[\s/()_-]|$)/i.test(m);
+    if (isIpa || m.includes('sains') || m.includes('ilmu pengetahuan alam')) {
+      return 'ipa';
+    }
+
+    // 8. Cek Tahfidz & PAI / Agama Islam
+    if (m.includes('tahfidz') || m.includes('tahfiz') || m.includes('al-qur') || m.includes('alquran')) {
+      return 'tahfidz';
+    }
+    const isPai = /(?:^|[\s/()_-])pai(?:[\s/()_-]|$)/i.test(m);
+    if (isPai || m.includes('agama') || m.includes('islam') || m.includes('fiqih') || m.includes('fikih') || m.includes('akidah') || m.includes('aqidah') || m.includes('qur') || m.includes('hadits')) {
+      return 'pai';
+    }
+
+    // 9. Cek Bahasa Indonesia
+    if (m.includes('indonesia') || /(?:^|[\s/()_-])bindo(?:[\s/()_-]|$)/i.test(m)) {
+      return 'indonesia';
+    }
+
+    // 10. Cek Bahasa Inggris
+    if (m.includes('inggris') || m.includes('english') || /(?:^|[\s/()_-])bing(?:[\s/()_-]|$)/i.test(m)) {
+      return 'inggris';
+    }
+
+    // 11. Cek Sejarah, Geografi, Ekonomi, Sosiologi, dan IPS umum
+    if (m.includes('sejarah')) return 'sejarah';
+    if (m.includes('geografi')) return 'geografi';
+    if (m.includes('ekonomi') || m.includes('akuntansi')) return 'ekonomi';
+    if (m.includes('sosiologi') || m.includes('antropologi')) return 'sosiologi';
+    const isIps = /(?:^|[\s/()_-])ips(?:[\s/()_-]|$)/i.test(m);
+    if (isIps || m.includes('ilmu pengetahuan sosial')) {
+      return 'ips';
+    }
+
+    // 12. Cek Pancasila / PKn / PPKn
+    const isPkn = /(?:^|[\s/()_-])pkn(?:[\s/()_-]|$)/i.test(m) || /(?:^|[\s/()_-])ppkn(?:[\s/()_-]|$)/i.test(m);
+    if (isPkn || m.includes('pancasila') || m.includes('kewarganegaraan')) {
+      return 'pancasila';
+    }
+
+    // 13. Cek PJOK / Olahraga
+    const isPjok = /(?:^|[\s/()_-])pjok(?:[\s/()_-]|$)/i.test(m);
+    if (isPjok || m.includes('olahraga') || m.includes('penjas') || m.includes('jasmani')) {
+      return 'pjok';
+    }
+
+    // 14. Cek Seni Budaya
+    if (m.includes('seni') || m.includes('musik') || m.includes('lukis') || m.includes('tari') || m.includes('teater')) {
+      return 'seni';
+    }
+
+    // 15. Cek Prakarya
+    if (m.includes('prakarya') || m.includes('kewirausahaan') || m.includes('pkwu')) {
+      return 'prakarya';
+    }
+
+    // 16. Cek BK / Bimbingan Konseling
+    const isBk = /(?:^|[\s/()_-])bk(?:[\s/()_-]|$)/i.test(m);
+    if (isBk || m.includes('konseling') || m.includes('bimbingan')) {
+      return 'bk';
+    }
+
+    return 'custom';
+  };
+
+  const getSubjectTopicSuggestions = (mapel: string): string[] => {
+    const key = getSubjectCategoryKey(mapel);
+    if (key !== 'custom' && SUBJECT_TOPIC_MAP[key]) {
+      return SUBJECT_TOPIC_MAP[key];
+    }
+    const cleanMapel = (mapel || 'Mata Pelajaran').trim();
+    return [
+      `Konsep Dasar & Ruang Lingkup ${cleanMapel}`,
+      `Prinsip, Kaidah & Terminologi Pokok ${cleanMapel}`,
+      `Penerapan ${cleanMapel} dalam Kehidupan Sehari-hari`,
+      `Analisis Studi Kasus & Pemecahan Masalah ${cleanMapel}`,
+      `Keterampilan Praktik & Proyek Pembelajaran ${cleanMapel}`,
+      `Evaluasi Pemahaman & Penalaran Kritis (HOTS) ${cleanMapel}`,
+      `Literasi & Pemahaman Teks Kontekstual ${cleanMapel}`,
+      `Integrasi Nilai Profil Pelajar Pancasila dalam ${cleanMapel}`
+    ];
+  };
+
+  const getSubjectMetadata = (mapel: string) => {
+    const key = getSubjectCategoryKey(mapel);
+    switch (key) {
+      case 'bahasa_jepang':
+        return { icon: '🇯🇵', label: 'Bahasa Jepang', colorBadge: 'bg-rose-50 text-rose-700 border-rose-200', placeholder: 'Contoh: Hiragana & Katakana, Aisatsu, Jikoshoukai, Partikel wa/ga/o/ni, Kata Kerja -masu...' };
+      case 'bahasa_arab':
+        return { icon: '🕌', label: 'Bahasa Arab', colorBadge: 'bg-emerald-50 text-emerald-700 border-emerald-200', placeholder: 'Contoh: Ta\'aruf, Al-Adawat Al-Madrasiyah, Fi\'il Madhi & Mudhari\', Jumlah Ismiyah...' };
+      case 'bahasa_daerah':
+        return { icon: '🏺', label: 'Bahasa Daerah', colorBadge: 'bg-amber-50 text-amber-700 border-amber-200', placeholder: 'Contoh: Unggah-Ungguh Basa, Aksara Daerah, Cerita Rakyat, Tembang / Pupuh...' };
+      case 'bahasa_asing':
+        return { icon: '🌐', label: mapel || 'Bahasa Asing', colorBadge: 'bg-sky-50 text-sky-700 border-sky-200', placeholder: `Contoh: Salam Sapaan, Kosakata Sehari-hari, Tata Bahasa & Dialog ${mapel}...` };
+      case 'informatika':
+        return { icon: '💻', label: 'Informatika', colorBadge: 'bg-emerald-50 text-emerald-700 border-emerald-200', placeholder: 'Contoh: Berpikir Komputasional, Algoritma Pemrograman, Jaringan Komputer, Sistem Biner...' };
+      case 'matematika':
+        return { icon: '📐', label: 'Matematika', colorBadge: 'bg-indigo-50 text-indigo-700 border-indigo-200', placeholder: 'Contoh: Eksponen & Logaritma, Sistem Persamaan Linier Dua Variabel, Trigonometri...' };
+      case 'fisika':
+        return { icon: '⚡', label: 'Fisika', colorBadge: 'bg-cyan-50 text-cyan-700 border-cyan-200', placeholder: 'Contoh: GLB & GLBB, Hukum Newton, Usaha & Energi, Listrik Dinamis...' };
+      case 'kimia':
+        return { icon: '⚗️', label: 'Kimia', colorBadge: 'bg-violet-50 text-violet-700 border-violet-200', placeholder: 'Contoh: Struktur Atom, Ikatan Kimia, Stoikiometri Mol, Asam-Basa...' };
+      case 'biologi':
+        return { icon: '🧬', label: 'Biologi', colorBadge: 'bg-emerald-50 text-emerald-700 border-emerald-200', placeholder: 'Contoh: Struktur Sel, Sistem Organ Manusia, Ekosistem, Genetika Mendel...' };
+      case 'ipa':
+        return { icon: '🔬', label: 'IPA / Sains', colorBadge: 'bg-teal-50 text-teal-700 border-teal-200', placeholder: 'Contoh: Sistem Peredaran Darah Manusia, Listrik Dinamis, Ekosistem...' };
+      case 'tahfidz':
+        return { icon: '📿', label: 'Tahfidz Al-Qur\'an', colorBadge: 'bg-emerald-50 text-emerald-700 border-emerald-200', placeholder: 'Contoh: Hafalan Juz 30 & Juz 29, Sambung Ayat, Hukum Tajwid & Mad, Makharijul Huruf...' };
+      case 'pai':
+        return { icon: '🕌', label: 'PAI / Agama Islam', colorBadge: 'bg-emerald-50 text-emerald-700 border-emerald-200', placeholder: 'Contoh: Hukum Tajwid, Toleransi Beragama (Tasamuh), Rukun Iman, Zakat...' };
+      case 'indonesia':
+        return { icon: '📖', label: 'Bahasa Indonesia', colorBadge: 'bg-blue-50 text-blue-700 border-blue-200', placeholder: 'Contoh: Teks Laporan Hasil Observasi (LHO), Teks Pidato Persuasif, Cerpen...' };
+      case 'inggris':
+        return { icon: '🌍', label: 'Bahasa Inggris', colorBadge: 'bg-sky-50 text-sky-700 border-sky-200', placeholder: 'Contoh: Descriptive Text, Narrative Text, Simple Past Tense, Passive Voice...' };
+      case 'sejarah':
+        return { icon: '📜', label: 'Sejarah', colorBadge: 'bg-amber-50 text-amber-700 border-amber-200', placeholder: 'Contoh: Kerajaan Nusantara, Pergerakan Nasional, Proklamasi Kemerdekaan...' };
+      case 'geografi':
+        return { icon: '🗺️', label: 'Geografi', colorBadge: 'bg-teal-50 text-teal-700 border-teal-200', placeholder: 'Contoh: Peta & SIG, Dinamika Litosfer & Atmosfer, Mitigasi Bencana...' };
+      case 'ekonomi':
+        return { icon: '📊', label: 'Ekonomi', colorBadge: 'bg-blue-50 text-blue-700 border-blue-200', placeholder: 'Contoh: Permintaan & Penawaran, Pendapatan Nasional, Kebijakan Moneter...' };
+      case 'sosiologi':
+        return { icon: '👥', label: 'Sosiologi', colorBadge: 'bg-purple-50 text-purple-700 border-purple-200', placeholder: 'Contoh: Interaksi Sosial, Stratifikasi Sosial, Perubahan Sosial & Globalisasi...' };
+      case 'ips':
+        return { icon: '🏛️', label: 'IPS / Sosial', colorBadge: 'bg-amber-50 text-amber-700 border-amber-200', placeholder: 'Contoh: Interaksi Antarruang Negara ASEAN, Perubahan Sosial Budaya, Pasar Bebas...' };
+      case 'pancasila':
+        return { icon: '🇮🇩', label: 'Pendidikan Pancasila', colorBadge: 'bg-rose-50 text-rose-700 border-rose-200', placeholder: 'Contoh: Penerapan Nilai Pancasila, Norma Hukum & UUD 1945, Bhinneka Tunggal Ika...' };
+      case 'pjok':
+        return { icon: '⚽', label: 'PJOK / Olahraga', colorBadge: 'bg-green-50 text-green-700 border-green-200', placeholder: 'Contoh: Teknik Dasar Bola Voli, Senam Lantai, Kebugaran Jasmani...' };
+      case 'seni':
+        return { icon: '🎨', label: 'Seni Budaya', colorBadge: 'bg-purple-50 text-purple-700 border-purple-200', placeholder: 'Contoh: Menggambar Model & Proporsi, Musik Tradisional Nusantara, Ragam Hias...' };
+      case 'prakarya':
+        return { icon: '🛠️', label: 'Prakarya & PKWU', colorBadge: 'bg-orange-50 text-orange-700 border-orange-200', placeholder: 'Contoh: Pengolahan Pangan Bahan Nabati, Kerajinan Serat Alam, Hidroponik...' };
+      case 'bk':
+        return { icon: '🧠', label: 'Bimbingan Konseling', colorBadge: 'bg-cyan-50 text-cyan-700 border-cyan-200', placeholder: 'Contoh: Manajemen Waktu Belajar, Perencanaan Karir, Anti-Bullying...' };
+      default:
+        return { icon: '📚', label: mapel || 'Mata Pelajaran', colorBadge: 'bg-indigo-50 text-indigo-700 border-indigo-200', placeholder: `Contoh: Konsep dasar, kaidah, dan penerapan materi ${mapel || 'Kurikulum Merdeka'}...` };
+    }
+  };
+
+  const handleOpenAiModalForActiveBank = () => {
+    if (!activeBank) return;
+    
+    // Periksa apakah mapel aktif sesuai atau bisa diambil dari judul paket
+    let detectedMapel = activeBank.mataPelajaran || '';
+    if (!detectedMapel || detectedMapel.trim() === '' || detectedMapel === 'Umum') {
+      const judulLower = (activeBank.judul || '').toLowerCase();
+      if (judulLower.includes('jepang') || judulLower.includes('nihongo')) detectedMapel = 'Bahasa Jepang';
+      else if (judulLower.includes('arab')) detectedMapel = 'Bahasa Arab';
+      else if (judulLower.includes('tahfidz') || judulLower.includes('tahfiz')) detectedMapel = 'Tahfidz Al-Qur\'an';
+      else if (judulLower.includes('matematik')) detectedMapel = 'Matematika';
+      else if (judulLower.includes('informatika') || judulLower.includes('tik')) detectedMapel = 'Informatika';
+      else if (judulLower.includes('fisika')) detectedMapel = 'Fisika';
+      else if (judulLower.includes('kimia')) detectedMapel = 'Kimia';
+      else if (judulLower.includes('biologi')) detectedMapel = 'Biologi';
+      else if (judulLower.includes('ipa') || judulLower.includes('sains')) detectedMapel = 'Ilmu Pengetahuan Alam (IPA)';
+      else if (judulLower.includes('agama') || judulLower.includes('pai')) detectedMapel = 'Pendidikan Agama Islam';
+      else if (judulLower.includes('inggris')) detectedMapel = 'Bahasa Inggris';
+      else if (judulLower.includes('indonesia')) detectedMapel = 'Bahasa Indonesia';
+      else if (judulLower.includes('sejarah')) detectedMapel = 'Sejarah';
+      else if (judulLower.includes('geografi')) detectedMapel = 'Geografi';
+      else if (judulLower.includes('ekonomi')) detectedMapel = 'Ekonomi';
+      else if (judulLower.includes('sosiologi')) detectedMapel = 'Sosiologi';
+      else if (judulLower.includes('ips')) detectedMapel = 'Ilmu Pengetahuan Sosial (IPS)';
+      else if (judulLower.includes('pancasila') || judulLower.includes('pkn')) detectedMapel = 'Pendidikan Pancasila';
+      else if (judulLower.includes('pjok') || judulLower.includes('olahraga')) detectedMapel = 'PJOK';
+      else if (judulLower.includes('seni')) detectedMapel = 'Seni Budaya';
+      else if (judulLower.includes('prakarya')) detectedMapel = 'Prakarya & Kewirausahaan';
+      else detectedMapel = availableMapelList[0] || 'Matematika';
+    }
+
+    setInBankAiMapel(detectedMapel);
+    setInBankAiKelas(activeBank.kelas || 'X-IPA-1');
+    
+    // Ambil topik spesifik yang relevan dengan mata pelajaran tersebut
+    const suggestions = getSubjectTopicSuggestions(detectedMapel);
+    const defaultTopic = suggestions.length > 0 ? suggestions[0] : `Konsep Dasar ${detectedMapel}`;
+
+    setInBankAiTopik(defaultTopic);
+    setInBankAiJumlah(10);
+    setInBankAiTipeSoal(['pg', 'multiple_choice', 'isian', 'esai']);
+    setInBankAiKesulitan('Sedang (C3: Aplikasi Konsep)');
+    setInBankAiInstruksi('');
+    setInBankAiBobot(10);
+    setInBankAiGeneratedList([]);
+    setInBankAiSelectedIndices([]);
+    setShowAiModalInBank(true);
+  };
+
+  const handleToggleInBankAiTipe = (tipeId: string) => {
+    setInBankAiTipeSoal(prev => {
+      if (prev.includes(tipeId)) {
+        if (prev.length === 1) return prev; // keep at least 1
+        return prev.filter(t => t !== tipeId);
+      }
+      return [...prev, tipeId];
+    });
+  };
+
+  const handleGenerateInBankAi = async () => {
+    if (!inBankAiTopik.trim()) {
+      alert('Harap ketikkan atau pilih topik materi soal terlebih dahulu!');
+      return;
+    }
+    setInBankAiLoading(true);
+    setInBankAiGeneratedList([]);
+    setInBankAiSelectedIndices([]);
+    try {
+      const res = await fetch('/api/ai/generate-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mataPelajaran: inBankAiMapel,
+          kelas: inBankAiKelas,
+          topik: inBankAiTopik,
+          jumlahSoal: inBankAiJumlah,
+          tipeSoal: inBankAiTipeSoal,
+          tingkatKesulitan: inBankAiKesulitan,
+          instruksiTambahan: inBankAiInstruksi,
+          bobotPerSoal: inBankAiBobot
+        })
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.soalList) && data.soalList.length > 0) {
+        const formatted: SoalCBT[] = data.soalList.map((item: any, idx: number) => ({
+          id: `soal-ai-${Date.now()}-${idx}`,
+          tipe: item.tipe || 'pg',
+          pertanyaan: item.pertanyaan || '',
+          opsi: item.opsi && Array.isArray(item.opsi) && item.opsi.length >= 2 ? item.opsi : (
+            (item.tipe === 'pg' || item.tipe === 'multiple_choice') ? [
+              { id: 'A', teks: 'Pilihan A' },
+              { id: 'B', teks: 'Pilihan B' },
+              { id: 'C', teks: 'Pilihan C' },
+              { id: 'D', teks: 'Pilihan D' }
+            ] : undefined
+          ),
+          kunciJawaban: item.kunciJawaban || (item.tipe === 'multiple_choice' ? ['A', 'C'] : 'A'),
+          pembahasan: item.pembahasan || '',
+          bobot: Number(item.bobot) || inBankAiBobot
+        }));
+        setInBankAiGeneratedList(formatted);
+        setInBankAiSelectedIndices(formatted.map((_, i) => i));
+      } else {
+        alert('Gagal menghasilkan soal dari AI. Silakan coba kembali.');
+      }
+    } catch (err: any) {
+      console.error('Error generating AI questions:', err);
+      alert('Terjadi kesalahan saat menghubungi API Gemini AI.');
+    } finally {
+      setInBankAiLoading(false);
+    }
+  };
+
+  const handleApplyAiQuestionsToActiveBank = () => {
+    if (!activeBank) return;
+    const selectedSoal = inBankAiGeneratedList.filter((_, idx) => inBankAiSelectedIndices.includes(idx));
+    if (selectedSoal.length === 0) {
+      alert('Pilih minimal satu butir soal untuk dimasukkan ke Bank Soal!');
+      return;
+    }
+
+    setBankSoalList(prev => prev.map(b => {
+      if (b.id === activeBank.id) {
+        const updatedDaftar = [...b.daftarSoal, ...selectedSoal];
+        return {
+          ...b,
+          daftarSoal: updatedDaftar,
+          jumlahSoal: updatedDaftar.length
+        };
+      }
+      return b;
+    }));
+
+    setShowAiModalInBank(false);
+    setInBankAiToast(`Berhasil menambahkan ${selectedSoal.length} butir soal AI ke paket "${activeBank.judul}"!`);
+    setTimeout(() => setInBankAiToast(null), 4000);
+  };
+
+  // --- AI Generator State (Legacy subTab) ---
+  const initialAiMapel = availableMapelList[0] || 'Informatika';
+  const [aiMapel, setAiMapel] = useState(initialAiMapel);
   const [aiKelas, setAiKelas] = useState<string[]>(availableKelasList.length > 0 ? [availableKelasList[0]] : []);
   const [aiTipeSoal, setAiTipeSoal] = useState<string[]>(['pg', 'multiple_choice', 'isian', 'esai']);
-  const [aiTopik, setAiTopik] = useState('Sistem Peredaran Darah & Fotosintesis');
-  const [aiJumlah, setAiJumlah] = useState(4);
+  const [aiTopik, setAiTopik] = useState(() => getSubjectTopicSuggestions(initialAiMapel)[0] || 'Capaian Pembelajaran Kurikulum Merdeka');
+  const [aiJumlah, setAiJumlah] = useState(10);
   const [loadingAi, setLoadingAi] = useState(false);
 
   const handleToggleAiKelas = (kelasName: string) => {
@@ -1024,6 +1594,183 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
     return found || guruList[0] || { id: 'g-1', nama: 'Siti Rahmawati, S.Si., M.Sc.', mataPelajaran: 'Matematika', nip: '19850115', email: 'siti.rahmawati@guru.sch.id', fotoUrl: '' };
   }, [guruList, userEmail]);
+
+  const generateBankKode = (mapelName: string, kelasName: string) => {
+    const cleanMapel = (mapelName || 'CBT')
+      .replace(/[^a-zA-Z0-9\s]/g, '')
+      .trim()
+      .split(/\s+/)
+      .map(w => w.slice(0, 3).toUpperCase())
+      .join('')
+      .slice(0, 4) || 'CBT';
+    const romanMatch = (kelasName || '').match(/\b(VII|VIII|IX|X|XI|XII|7|8|9|10|11|12)\b/i);
+    const kelasPart = romanMatch ? romanMatch[1].toUpperCase() : 'SMP';
+    const year = new Date().getFullYear();
+    const seq = String(bankSoalList.length + 1).padStart(2, '0');
+    return `${cleanMapel}-${kelasPart}-${year}-${seq}`;
+  };
+
+  const handleOpenAddBankModal = () => {
+    const defaultMapel =
+      currentRole === 'guru' && activeGuru?.mataPelajaran && activeGuru.mataPelajaran.trim()
+        ? activeGuru.mataPelajaran.trim()
+        : availableMapelList[0] || 'Matematika';
+    const defaultKelas = availableKelasList[0] || 'VIII - Al Biruni';
+    setEditingBankId(null);
+    setBankMapel(defaultMapel);
+    setBankKelas(defaultKelas);
+    setBankJudul(`Asesmen Sumatif - ${defaultMapel} Kurikulum Merdeka`);
+    setBankKode(generateBankKode(defaultMapel, defaultKelas));
+    setBankDurasi(90);
+    setBankImportedSoal([]);
+    setBankImportFileName('');
+    setBankFormError('');
+    setShowAddBankModal(true);
+  };
+
+  const handleOpenEditBankModal = (bank: BankSoal) => {
+    setEditingBankId(bank.id);
+    setBankJudul(bank.judul);
+    setBankKode(bank.kode);
+    setBankMapel(bank.mataPelajaran);
+    setBankKelas(bank.kelas);
+    setBankDurasi(bank.durasiMenit || 90);
+    setBankImportedSoal([]);
+    setBankImportFileName('');
+    setBankFormError('');
+    setShowAddBankModal(true);
+  };
+
+  const handleImportJsonForBank = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBankFormError('');
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(String(ev.target?.result || '[]'));
+        const rawList = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.daftarSoal) ? parsed.daftarSoal : null;
+        if (!rawList || rawList.length === 0) {
+          setBankFormError('File JSON harus berisi array daftar soal (minimal 1 soal).');
+          return;
+        }
+        const normalized: SoalCBT[] = rawList
+          .filter((item: any) => item && typeof item.pertanyaan === 'string' && item.pertanyaan.trim())
+          .map((item: any, idx: number) => {
+            const tipe: TipeSoal = ['pg', 'multiple_choice', 'isian', 'esai'].includes(item.tipe) ? item.tipe : 'pg';
+            return {
+              id: `soal-json-${Date.now()}-${idx}`,
+              tipe,
+              pertanyaan: item.pertanyaan.trim(),
+              opsi:
+                tipe === 'pg' || tipe === 'multiple_choice'
+                  ? Array.isArray(item.opsi) && item.opsi.length >= 2
+                    ? item.opsi
+                    : [
+                        { id: 'A', teks: 'Opsi A' },
+                        { id: 'B', teks: 'Opsi B' },
+                        { id: 'C', teks: 'Opsi C' },
+                        { id: 'D', teks: 'Opsi D' }
+                      ]
+                  : undefined,
+              kunciJawaban: item.kunciJawaban ?? (tipe === 'multiple_choice' ? ['A', 'B'] : 'A'),
+              pembahasan: item.pembahasan || '',
+              bobot: Number(item.bobot) || 25
+            };
+          });
+        if (normalized.length === 0) {
+          setBankFormError('Tidak ada soal valid ditemukan dalam file JSON.');
+          return;
+        }
+        setBankImportedSoal(normalized);
+        setBankImportFileName(`${file.name} (${normalized.length} soal)`);
+      } catch {
+        setBankFormError('Format file JSON tidak valid. Gunakan Template JSON sebagai acuan.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleSaveBankPaket = (e: React.FormEvent) => {
+    e.preventDefault();
+    setBankFormError('');
+    if (!bankJudul.trim()) {
+      setBankFormError('Judul Paket Bank Soal wajib diisi.');
+      return;
+    }
+    if (!bankKode.trim()) {
+      setBankFormError('Kode Paket wajib diisi.');
+      return;
+    }
+    if (!bankMapel.trim()) {
+      setBankFormError('Mata Pelajaran wajib dipilih.');
+      return;
+    }
+    if (!bankKelas.trim()) {
+      setBankFormError('Kelas Target wajib dipilih.');
+      return;
+    }
+    const durasiNum = Math.max(5, Number(bankDurasi) || 90);
+    const pembuatNama =
+      currentRole === 'guru'
+        ? activeGuru?.nama || userEmail || 'Guru Pengampu'
+        : 'Administrator';
+
+    if (editingBankId) {
+      setBankSoalList(prev =>
+        prev.map(b =>
+          b.id === editingBankId
+            ? {
+                ...b,
+                judul: bankJudul.trim(),
+                kode: bankKode.trim().toUpperCase(),
+                mataPelajaran: bankMapel.trim(),
+                kelas: bankKelas.trim(),
+                durasiMenit: durasiNum,
+                daftarSoal: bankImportedSoal.length > 0 ? [...b.daftarSoal, ...bankImportedSoal] : b.daftarSoal,
+                jumlahSoal:
+                  bankImportedSoal.length > 0
+                    ? b.daftarSoal.length + bankImportedSoal.length
+                    : b.daftarSoal.length
+              }
+            : b
+        )
+      );
+      showToast('Paket Bank Soal berhasil diperbarui!');
+    } else {
+      const newBank: BankSoal = {
+        id: `bs-${Date.now()}`,
+        judul: bankJudul.trim(),
+        kode: bankKode.trim().toUpperCase(),
+        mataPelajaran: bankMapel.trim(),
+        kelas: bankKelas.trim(),
+        durasiMenit: durasiNum,
+        jumlahSoal: bankImportedSoal.length,
+        daftarSoal: bankImportedSoal,
+        dibuatOleh: pembuatNama,
+        tanggalDibuat: new Date().toISOString().split('T')[0]
+      };
+      setBankSoalList(prev => [newBank, ...prev]);
+      setSelectedBankId(newBank.id);
+      showToast(`Paket "${newBank.judul}" berhasil ditambahkan ke Daftar Bank Soal!`);
+    }
+
+    setShowAddBankModal(false);
+    setEditingBankId(null);
+  };
+
+  const displayedBankSoalList = useMemo(() => {
+    if (currentRole === 'guru' && filterBankByGuruMapel && activeGuru?.mataPelajaran) {
+      const guruMapelLower = activeGuru.mataPelajaran.toLowerCase();
+      return bankSoalList.filter(
+        b =>
+          (b.mataPelajaran || '').toLowerCase().includes(guruMapelLower) ||
+          guruMapelLower.includes((b.mataPelajaran || '').toLowerCase()) ||
+          b.dibuatOleh === activeGuru.nama
+      );
+    }
+    return bankSoalList;
+  }, [bankSoalList, currentRole, filterBankByGuruMapel, activeGuru]);
   
   // Real dynamic timer matching the mockup image (1 Jam 49 Menit 51 Detik)
   const [timeLeft, setTimeLeft] = useState(1 * 3600 + 49 * 60 + 51);
@@ -1221,6 +1968,14 @@ export const CbtView: React.FC<CbtViewProps> = ({
   return (
     <div className="space-y-6">
       
+      {/* Global Toast Notification */}
+      {toastNotification && (
+        <div className="fixed top-5 right-5 z-[120] bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold animate-bounce">
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{toastNotification}</span>
+        </div>
+      )}
+
       {/* Teacher Account Identity Banner */}
       {currentRole === 'guru' && (
         <div className="bg-gradient-to-r from-purple-900 to-indigo-900 p-5 rounded-2xl text-white shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 border border-purple-700/50">
@@ -1275,14 +2030,6 @@ export const CbtView: React.FC<CbtViewProps> = ({
       {/* SUBTAB JADWAL & KARTU PESERTA UJIAN */}
       {subTab === 'jadwal_kartu' && (
         <div className="space-y-6">
-          
-          {/* Toast Notification */}
-          {toastNotification && (
-            <div className="fixed top-5 right-5 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold animate-bounce">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{toastNotification}</span>
-            </div>
-          )}
 
           {/* Jadwal Ujian List */}
           <div className="bg-[#121212] rounded-2xl p-6 border border-slate-800 shadow-xl space-y-4">
@@ -1470,53 +2217,124 @@ export const CbtView: React.FC<CbtViewProps> = ({
           
           {/* Left: Bank List */}
           <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
-            <div className="flex items-center justify-between border-b pb-2">
+            <div className="flex items-center justify-between border-b pb-2.5">
               <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Daftar Paket Bank Soal</h3>
               <button 
+                type="button"
                 onClick={handleDownloadTemplate}
-                className="text-[11px] text-emerald-700 font-bold hover:underline flex items-center gap-1"
+                className="text-[11px] text-emerald-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" /> Template JSON
               </button>
             </div>
 
-            <div className="space-y-2">
-              {bankSoalList.map(b => (
-                <div
-                  key={b.id}
-                  onClick={() => setSelectedBankId(b.id)}
-                  className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-3 relative group ${
-                    b.id === activeBank?.id
-                      ? 'border-emerald-500 bg-emerald-50/40 text-slate-900 font-semibold shadow-sm'
-                      : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100/80 text-slate-700'
+            {/* Tombol Tambah Paket Bank Soal */}
+            <button
+              type="button"
+              onClick={handleOpenAddBankModal}
+              className="w-full py-2.5 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Tambah Paket Bank Soal</span>
+            </button>
+
+            {/* Filter Mapel Guru (Opsional saat peran Guru aktif) */}
+            {currentRole === 'guru' && activeGuru?.mataPelajaran && (
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setFilterBankByGuruMapel(false)}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    !filterBankByGuruMapel
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  <h4 className="text-xs font-extrabold text-slate-900 leading-snug">{b.judul}</h4>
-                  <div className="text-[11px] text-slate-500 font-medium">{b.mataPelajaran} • {b.kelas}</div>
+                  Semua ({bankSoalList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterBankByGuruMapel(true)}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer truncate ${
+                    filterBankByGuruMapel
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title={`Tampilkan hanya paket ${activeGuru.mataPelajaran}`}
+                >
+                  Mapel {activeGuru.mataPelajaran}
+                </button>
+              </div>
+            )}
 
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-200/60">
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-200/90 text-slate-700 font-extrabold">
-                      {b.kode}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full">
-                        {b.jumlahSoal} Soal
+            <div className="space-y-2.5">
+              {displayedBankSoalList.length === 0 ? (
+                <div className="p-5 text-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 space-y-2">
+                  <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-xs font-bold text-slate-700">
+                    {filterBankByGuruMapel
+                      ? `Belum ada paket untuk mapel ${activeGuru?.mataPelajaran}`
+                      : 'Belum ada Paket Bank Soal'}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Klik tombol "Tambah Paket Bank Soal" di atas untuk membuat paket soal baru.
+                  </p>
+                </div>
+              ) : (
+                displayedBankSoalList.map(b => (
+                  <div
+                    key={b.id}
+                    onClick={() => setSelectedBankId(b.id)}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2.5 relative group ${
+                      b.id === activeBank?.id
+                        ? 'border-emerald-500 bg-emerald-50/40 text-slate-900 font-semibold shadow-sm'
+                        : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100/80 text-slate-700'
+                    }`}
+                  >
+                    <h4 className="text-xs font-extrabold text-slate-900 leading-snug">{b.judul}</h4>
+                    <div className="text-[11px] text-slate-500 font-medium">{b.mataPelajaran} • {b.kelas}</div>
+                    {b.dibuatOleh && (
+                      <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                        <User className="w-3 h-3" />
+                        <span className="truncate">Penyusun: {b.dibuatOleh}</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-200/60">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-200/90 text-slate-700 font-extrabold truncate max-w-[95px]" title={b.kode}>
+                        {b.kode}
                       </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteTargetBankSoal(b);
-                        }}
-                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm border border-rose-200"
-                        title="Hapus Paket Bank Soal"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" /> Hapus
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full">
+                          {b.jumlahSoal} Soal
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEditBankModal(b);
+                          }}
+                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm border border-blue-200"
+                          title="Edit Info Paket Bank Soal"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTargetBankSoal(b);
+                          }}
+                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm border border-rose-200"
+                          title="Hapus Paket Bank Soal"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Hapus
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
 
@@ -1524,37 +2342,69 @@ export const CbtView: React.FC<CbtViewProps> = ({
           <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
             {activeBank ? (
               <>
-                <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
                   <div>
-                    <h3 className="font-bold text-slate-900 text-base">{activeBank.judul}</h3>
-                    <p className="text-xs text-slate-500">{activeBank.mataPelajaran} - Kelas {activeBank.kelas} | Durasi: {activeBank.durasiMenit} Menit</p>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-slate-900 text-base">{activeBank.judul}</h3>
+                      <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono font-bold">
+                        {activeBank.kode}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      <span className="font-semibold text-emerald-700">{activeBank.mataPelajaran}</span> • Kelas <span className="font-semibold">{activeBank.kelas}</span> | Durasi: {activeBank.durasiMenit} Menit • Total: <span className="font-bold text-slate-900">{activeBank.daftarSoal.length} Soal</span>
+                    </p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setEditingSoalId(null);
-                      setNewTipe('pg');
-                      setNewPertanyaan('');
-                      setNewOpsiA('');
-                      setNewOpsiB('');
-                      setNewOpsiC('');
-                      setNewOpsiD('');
-                      setNewKunciPg('A');
-                      setNewKunciIsian('');
-                      setNewKunciEsai('');
-                      setNewPembahasan('');
-                      setNewBobot(25);
-                      setNewImageUrl('');
-                      setNewVideoUrl('');
-                      setShowAddSoalModal(true);
-                    }}
-                    className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-sm"
-                  >
-                    <Plus className="w-4 h-4" /> Tambah Soal Manual
-                  </button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={handleOpenAiModalForActiveBank}
+                      className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-indigo-500/20 cursor-pointer"
+                      title={`Buat soal baru dengan AI khusus mata pelajaran ${activeBank.mataPelajaran}`}
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+                      <span>Tambah Soal AI</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingSoalId(null);
+                        setNewTipe('pg');
+                        setNewPertanyaan('');
+                        setNewOpsiA('');
+                        setNewOpsiB('');
+                        setNewOpsiC('');
+                        setNewOpsiD('');
+                        setNewKunciPg('A');
+                        setNewKunciIsian('');
+                        setNewKunciEsai('');
+                        setNewPembahasan('');
+                        setNewBobot(25);
+                        setNewImageUrl('');
+                        setNewVideoUrl('');
+                        setShowAddSoalModal(true);
+                      }}
+                      className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" /> Tambah Soal Manual
+                    </button>
+                  </div>
                 </div>
 
                 {/* List of Questions in Bank */}
                 <div className="space-y-4">
+                  {activeBank.daftarSoal.length === 0 && (
+                    <div className="p-8 text-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/70 space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto border border-indigo-200">
+                        <BookOpen className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-800">
+                          Paket "{activeBank.judul}" Masih Kosong
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                          Silakan mulai menambahkan butir soal untuk mata pelajaran <span className="font-bold text-emerald-700">{activeBank.mataPelajaran}</span> menggunakan tombol <strong className="text-indigo-600">Tambah Soal AI</strong> atau <strong className="text-emerald-700">Tambah Soal Manual</strong> di atas.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   {activeBank.daftarSoal.map((soal, idx) => (
                     <div key={soal.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
                       <div className="flex items-center justify-between">
@@ -1677,7 +2527,12 @@ export const CbtView: React.FC<CbtViewProps> = ({
               <label className="text-[11px] font-bold text-slate-700">Mata Pelajaran</label>
               <select
                 value={aiMapel}
-                onChange={e => setAiMapel(e.target.value)}
+                onChange={e => {
+                  const nextMapel = e.target.value;
+                  setAiMapel(nextMapel);
+                  const suggestions = getSubjectTopicSuggestions(nextMapel);
+                  if (suggestions.length > 0) setAiTopik(suggestions[0]);
+                }}
                 className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 outline-none"
               >
                 {availableMapelList.map(m => (
@@ -1734,39 +2589,80 @@ export const CbtView: React.FC<CbtViewProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[11px] font-bold text-slate-700">Jumlah Soal Total</label>
-                <input 
-                  type="number" 
-                  min={1}
-                  max={20}
-                  value={aiJumlah} 
-                  onChange={e => setAiJumlah(Number(e.target.value))}
-                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder:text-slate-400" 
-                />
+            <div className="space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Jumlah Soal Total (1–50)</label>
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    {[5, 10, 15, 20, 30, 40].map(cnt => (
+                      <button
+                        key={cnt}
+                        type="button"
+                        onClick={() => setAiJumlah(cnt)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                          aiJumlah === cnt
+                            ? 'bg-emerald-600 border-emerald-600 text-white'
+                            : 'bg-slate-50 border-slate-300 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {cnt}
+                      </button>
+                    ))}
+                  </div>
+                  <input 
+                    type="number" 
+                    min={1}
+                    max={50}
+                    value={aiJumlah} 
+                    onChange={e => setAiJumlah(Math.min(Math.max(Number(e.target.value) || 1, 1), 50))}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder:text-slate-400" 
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Topik / Bahasan Soal</label>
+                  <input 
+                    type="text" 
+                    value={aiTopik} 
+                    onChange={e => setAiTopik(e.target.value)}
+                    placeholder={getSubjectMetadata(aiMapel).placeholder}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder:text-slate-400" 
+                  />
+                </div>
               </div>
+
               <div>
-                <label className="text-[11px] font-bold text-slate-700">Topik / Bahasan Soal</label>
-                <input 
-                  type="text" 
-                  value={aiTopik} 
-                  onChange={e => setAiTopik(e.target.value)}
-                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder:text-slate-400" 
-                />
+                <div className="text-[10px] font-bold text-slate-500 mb-1">
+                  💡 Rekomendasi Topik {getSubjectMetadata(aiMapel).label}:
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {getSubjectTopicSuggestions(aiMapel).map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setAiTopik(t)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all cursor-pointer ${
+                        aiTopik.trim().toLowerCase() === t.trim().toLowerCase()
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-slate-50 hover:bg-emerald-50 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {aiTopik.trim().toLowerCase() === t.trim().toLowerCase() ? `✓ ${t}` : `+ ${t}`}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
             <button
               onClick={handleGenerateAi}
               disabled={loadingAi}
-              className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-md"
+              className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer"
             >
               {loadingAi ? (
-                <span>Generating dengan Gemini AI...</span>
+                <span>Generating {aiJumlah} Soal dengan Gemini AI...</span>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4" /> Generate Bank Soal Otomatis
+                  <Sparkles className="w-4 h-4" /> Generate {aiJumlah} Soal Otomatis ({aiMapel})
                 </>
               )}
             </button>
@@ -2862,6 +3758,542 @@ export const CbtView: React.FC<CbtViewProps> = ({
         </div>
       )}
 
+      {/* MODAL GENERATE SOAL AI (SESUAI MATA PELAJARAN PAKET AKTIF) */}
+      {showAiModalInBank && activeBank && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
+            
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200/80 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-500 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                  <Sparkles className="w-6 h-6 animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-base text-white">
+                      Tambah Soal dengan Bantuan AI (Gemini)
+                    </h3>
+                    <span className="text-[10px] font-bold bg-indigo-500/30 text-indigo-300 border border-indigo-400/30 px-2 py-0.5 rounded-full">
+                      Kurikulum Merdeka
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Mata Pelajaran: <span className="font-bold text-amber-300">{inBankAiMapel}</span> • Paket: <span className="font-semibold">{activeBank.judul}</span> ({inBankAiKelas})
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setShowAiModalInBank(false)}
+                className="text-slate-400 hover:text-white font-bold p-2 hover:bg-white/10 rounded-xl transition-colors cursor-pointer text-xs"
+                title="Tutup Modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 custom-scrollbar bg-slate-50/60">
+              
+              {/* Step 1: Parameter Generator (If not reviewed yet) */}
+              {inBankAiGeneratedList.length === 0 ? (
+                <div className="space-y-4">
+                  
+                  {/* Subject & Packet Connection Info Card */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                        <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                          <span>{getSubjectMetadata(inBankAiMapel).icon}</span>
+                          <span>Tersambung ke Mata Pelajaran: {inBankAiMapel}</span>
+                        </span>
+                      </div>
+                      <div className="text-sm font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                        <span>{inBankAiMapel}</span>
+                        <span className="text-slate-400">•</span>
+                        <span className="text-slate-700">Kelas {inBankAiKelas}</span>
+                        <span className={`text-[10px] px-2.5 py-0.5 rounded-full border font-bold ${getSubjectMetadata(inBankAiMapel).colorBadge}`}>
+                          {getSubjectMetadata(inBankAiMapel).label}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-600">
+                        Daftar topik pembelajaran & butir soal AI otomatis disesuaikan dengan Capaian Pembelajaran Kurikulum Merdeka untuk mapel ini.
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex flex-col">
+                        <label className="text-[10px] font-bold text-slate-500 mb-1">Ganti Mata Pelajaran:</label>
+                        <select
+                          value={inBankAiMapel}
+                          onChange={e => {
+                            const newMapel = e.target.value;
+                            setInBankAiMapel(newMapel);
+                            const suggestions = getSubjectTopicSuggestions(newMapel);
+                            if (suggestions.length > 0) setInBankAiTopik(suggestions[0]);
+                          }}
+                          className="px-3 py-1.5 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm"
+                          title="Ganti mata pelajaran untuk memperbarui rekomendasi materi/topik"
+                        >
+                          {(() => {
+                            const standardMapels = [
+                              'Informatika',
+                              'Matematika',
+                              'Matematika Tingkat Lanjut',
+                              'Ilmu Pengetahuan Alam (IPA)',
+                              'Fisika',
+                              'Kimia',
+                              'Biologi',
+                              'Bahasa Indonesia',
+                              'Bahasa Inggris',
+                              'Bahasa Jepang',
+                              'Bahasa Arab',
+                              'Bahasa Daerah',
+                              'Pendidikan Agama Islam (PAI)',
+                              'Tahfidz Al-Qur\'an',
+                              'Ilmu Pengetahuan Sosial (IPS)',
+                              'Sejarah',
+                              'Geografi',
+                              'Ekonomi',
+                              'Sosiologi',
+                              'Pendidikan Pancasila (PPKn)',
+                              'PJOK (Pendidikan Jasmani & Olahraga)',
+                              'Seni Budaya',
+                              'Prakarya & Kewirausahaan',
+                              'Bimbingan Konseling (BK)'
+                            ];
+                            const set = new Set<string>();
+                            if (inBankAiMapel && inBankAiMapel.trim()) set.add(inBankAiMapel.trim());
+                            availableMapelList.forEach(m => {
+                              if (m && m.trim()) set.add(m.trim());
+                            });
+                            standardMapels.forEach(m => set.add(m));
+                            return Array.from(set).map(m => (
+                              <option key={m} value={m}>{m}</option>
+                            ));
+                          })()}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Input Topik / Materi Pembelajaran with Dynamic Suggestions */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                        <span>Topik / Materi Pembelajaran Spesifik</span>
+                        <span className="text-rose-500">*</span>
+                      </label>
+                      <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                        Mapel Aktif: {inBankAiMapel}
+                      </span>
+                    </div>
+                    
+                    <input 
+                      type="text"
+                      required
+                      value={inBankAiTopik}
+                      onChange={e => setInBankAiTopik(e.target.value)}
+                      placeholder={getSubjectMetadata(inBankAiMapel).placeholder}
+                      className="w-full p-3 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none shadow-sm transition-all"
+                    />
+
+                    {/* Topic Suggestions Chips */}
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                          <span className="text-amber-500">💡</span>
+                          <span>Rekomendasi Topik Kurikulum Merdeka untuk {inBankAiMapel}:</span>
+                          <span className="text-[10px] font-medium text-slate-400">
+                            ({getSubjectTopicSuggestions(inBankAiMapel).length} materi)
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-400">Klik rekomendasi di bawah untuk memilih</span>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {getSubjectTopicSuggestions(inBankAiMapel).map(t => {
+                          const isSelected = inBankAiTopik.trim().toLowerCase() === t.trim().toLowerCase();
+                          return (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => setInBankAiTopik(t)}
+                              className={`px-3 py-1.5 text-xs rounded-xl font-medium transition-all cursor-pointer border flex items-center gap-1.5 text-left ${
+                                isSelected
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-300 font-bold'
+                                  : 'bg-white hover:bg-indigo-50 text-slate-700 border-slate-200 hover:border-indigo-300 hover:text-indigo-800 shadow-sm'
+                              }`}
+                            >
+                              <span className={isSelected ? 'text-amber-300 font-bold' : 'text-indigo-500 font-bold'}>
+                                {isSelected ? '✓' : '+'}
+                              </span>
+                              <span>{t}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Difficulty Level & Question Count */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    
+                    {/* Tingkat Kesulitan */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-extrabold text-slate-800 block">
+                        Tingkat Kesulitan Kognitif (Taksonomi Bloom)
+                      </label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          { id: 'Mudah (C1-C2: Pemahaman Dasar)', label: '🟢 Mudah', desc: 'C1 - C2' },
+                          { id: 'Sedang (C3: Aplikasi Konsep)', label: '🟡 Sedang', desc: 'C3 Aplikasi' },
+                          { id: 'Sukar / HOTS (C4-C6: Analisis Kritis)', label: '🔴 HOTS', desc: 'C4 - C6' }
+                        ].map(k => (
+                          <button
+                            key={k.id}
+                            type="button"
+                            onClick={() => setInBankAiKesulitan(k.id)}
+                            className={`p-2 rounded-xl text-xs text-center border transition-all cursor-pointer ${
+                              inBankAiKesulitan === k.id
+                                ? 'bg-indigo-50 border-indigo-500 text-indigo-800 font-extrabold shadow-sm ring-1 ring-indigo-500'
+                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium'
+                            }`}
+                          >
+                            <div className="font-bold">{k.label}</div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">{k.desc}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Jumlah Soal & Bobot Poin */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-extrabold text-slate-800 block">
+                          Jumlah Soal yang Digenerate
+                        </label>
+                        <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                          1 – 50 Soal
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                        {[5, 10, 15, 20, 30, 40].map(cnt => (
+                          <button
+                            key={cnt}
+                            type="button"
+                            onClick={() => setInBankAiJumlah(cnt)}
+                            className={`py-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                              inBankAiJumlah === cnt
+                                ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            {cnt} Soal
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 pt-1">
+                        <div className="flex items-center gap-1.5">
+                          <span>Custom jumlah:</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={50}
+                            value={inBankAiJumlah}
+                            onChange={e => setInBankAiJumlah(Math.min(Math.max(Number(e.target.value) || 1, 1), 50))}
+                            className="w-16 p-1 text-center bg-white border border-indigo-300 rounded-lg text-xs font-extrabold text-indigo-700"
+                          />
+                          <span className="font-bold text-slate-700">Butir</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span>Bobot/soal:</span>
+                          <input 
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={inBankAiBobot}
+                            onChange={e => setInBankAiBobot(Math.min(Math.max(Number(e.target.value) || 1, 1), 100))}
+                            className="w-14 p-1 text-center bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800"
+                          />
+                          <span className="font-bold text-slate-700">Poin</span>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Tipe Soal yang Diinginkan */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-extrabold text-slate-800 block">
+                      Tipe Soal yang Ingin Dihasilkan
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { id: 'pg', label: 'Pilihan Ganda', badge: '1 Jawaban' },
+                        { id: 'multiple_choice', label: 'Ganda Kompleks', badge: '>1 Jawaban' },
+                        { id: 'isian', label: 'Isian Singkat', badge: 'Teks Pendek' },
+                        { id: 'esai', label: 'Esai / Uraian', badge: 'Analisis' }
+                      ].map(t => {
+                        const isChecked = inBankAiTipeSoal.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => handleToggleInBankAiTipe(t.id)}
+                            className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2 ${
+                              isChecked
+                                ? 'bg-indigo-50 border-indigo-500 text-indigo-900 shadow-sm ring-1 ring-indigo-500'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center shrink-0 border ${
+                              isChecked ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300'
+                            }`}>
+                              {isChecked && <Check className="w-3 h-3" />}
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold leading-tight">{t.label}</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">{t.badge}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Instruksi Khusus Guru (Opsional) */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-extrabold text-slate-800 block">
+                      Instruksi Tambahan Guru (Opsional)
+                    </label>
+                    <textarea 
+                      rows={2}
+                      value={inBankAiInstruksi}
+                      onChange={e => setInBankAiInstruksi(e.target.value)}
+                      placeholder="Contoh: Sertakan stimulus cerita kontekstual kehidupan sehari-hari, atau fokuskan pada penerapan rumus..."
+                      className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Action Button: Generate */}
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      disabled={inBankAiLoading}
+                      onClick={handleGenerateInBankAi}
+                      className="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 cursor-pointer"
+                    >
+                      {inBankAiLoading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>AI Sedang Merumuskan {inBankAiJumlah} Soal & Kunci Jawaban...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-5 h-5 text-amber-300" />
+                          <span>Generate {inBankAiJumlah} Soal AI untuk "{inBankAiMapel}"</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                </div>
+              ) : (
+                /* Step 2: Review Generated Questions before adding to active Bank */
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-white rounded-2xl border border-slate-200">
+                    <div className="flex items-center gap-2">
+                      <span className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
+                        ✓
+                      </span>
+                      <div>
+                        <div className="text-xs font-extrabold text-slate-900">
+                          {inBankAiGeneratedList.length} Soal AI Berhasil Dibuat
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          {inBankAiSelectedIndices.length} dari {inBankAiGeneratedList.length} soal terpilih untuk dimasukkan ke "{activeBank.judul}"
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (inBankAiSelectedIndices.length === inBankAiGeneratedList.length) {
+                            setInBankAiSelectedIndices([]);
+                          } else {
+                            setInBankAiSelectedIndices(inBankAiGeneratedList.map((_, i) => i));
+                          }
+                        }}
+                        className="px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+                      >
+                        {inBankAiSelectedIndices.length === inBankAiGeneratedList.length ? 'Batal Pilih Semua' : 'Pilih Semua'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInBankAiGeneratedList([]);
+                          setInBankAiSelectedIndices([]);
+                        }}
+                        className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-all cursor-pointer flex items-center gap-1"
+                      >
+                        🔄 Ganti Parameter
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* List of Generated Questions for Review */}
+                  <div className="space-y-3">
+                    {inBankAiGeneratedList.map((soal, idx) => {
+                      const isSelected = inBankAiSelectedIndices.includes(idx);
+                      return (
+                        <div 
+                          key={soal.id || idx}
+                          className={`p-4 rounded-2xl border transition-all ${
+                            isSelected 
+                              ? 'bg-white border-indigo-400 shadow-sm ring-1 ring-indigo-400' 
+                              : 'bg-slate-100/70 border-slate-200 opacity-70'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between border-b pb-2 mb-2.5">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input 
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  setInBankAiSelectedIndices(prev => 
+                                    prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+                                  );
+                                }}
+                                className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
+                              />
+                              <span className="text-xs font-extrabold text-slate-800">
+                                Butir Soal #{idx + 1}
+                              </span>
+                            </label>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                                {soal.tipe}
+                              </span>
+                              <span className="text-[11px] font-bold text-emerald-700">
+                                Bobot: {soal.bobot} Poin
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Question Text (Editable) */}
+                          <div className="space-y-1 mb-3">
+                            <textarea
+                              rows={2}
+                              value={soal.pertanyaan}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setInBankAiGeneratedList(prev => prev.map((s, i) => i === idx ? { ...s, pertanyaan: val } : s));
+                              }}
+                              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          {/* Options if PG or Multiple Choice */}
+                          {(soal.tipe === 'pg' || soal.tipe === 'multiple_choice') && soal.opsi && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                              {soal.opsi.map(op => {
+                                const isCorrect = Array.isArray(soal.kunciJawaban) 
+                                  ? soal.kunciJawaban.includes(op.id)
+                                  : soal.kunciJawaban === op.id;
+                                return (
+                                  <div 
+                                    key={op.id}
+                                    className={`p-2 rounded-xl text-xs border flex items-center justify-between ${
+                                      isCorrect 
+                                        ? 'bg-emerald-50 border-emerald-400 text-emerald-950 font-bold' 
+                                        : 'bg-white border-slate-200 text-slate-700 font-medium'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-mono font-black">{op.id}.</span>
+                                      <span>{op.teks}</span>
+                                    </div>
+                                    {isCorrect && (
+                                      <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold">
+                                        Kunci ✓
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Kunci Jawaban for Isian or Esai */}
+                          {(soal.tipe === 'isian' || soal.tipe === 'esai') && (
+                            <div className="mb-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs">
+                              <span className="font-bold text-amber-900">Kunci Jawaban: </span>
+                              <span className="text-slate-800">{String(soal.kunciJawaban)}</span>
+                            </div>
+                          )}
+
+                          {/* Pembahasan */}
+                          {soal.pembahasan && (
+                            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
+                              <span className="font-bold text-slate-800">Pembahasan Ilmiah: </span>
+                              <span>{soal.pembahasan}</span>
+                            </div>
+                          )}
+
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </div>
+              )}
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3">
+              <button 
+                type="button" 
+                onClick={() => setShowAiModalInBank(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+
+              {inBankAiGeneratedList.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleApplyAiQuestionsToActiveBank}
+                  disabled={inBankAiSelectedIndices.length === 0}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-extrabold rounded-xl text-xs transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Masukkan {inBankAiSelectedIndices.length} Soal ke Paket "{activeBank.judul}"</span>
+                </button>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Floating Toast Notification */}
+      {inBankAiToast && (
+        <div className="fixed bottom-6 right-6 z-[160] bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 border border-slate-700 animate-in slide-in-from-bottom-4 duration-200">
+          <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <span className="text-xs font-semibold">{inBankAiToast}</span>
+        </div>
+      )}
+
       {/* POPUP CHEAT ALERT MODAL (DENGAN ALARM SUARA BIP BIP BIP) */}
       {showCheatAlert && (
         <div className="fixed inset-0 bg-[#3b050d]/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
@@ -3690,6 +5122,290 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 <Trash2 className="w-3.5 h-3.5" /> {deleteTargetHasilUjian === 'all' ? 'Ya, Hapus Semua' : 'Ya, Hapus Hasil Ujian'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TAMBAH / EDIT PAKET BANK SOAL */}
+      {showAddBankModal && (
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-[105] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200 bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 shadow-lg">
+                  <BookOpen className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-white">
+                    {editingBankId ? 'Edit Paket Bank Soal' : 'Tambah Paket Bank Soal Baru'}
+                  </h3>
+                  <p className="text-[11px] text-emerald-200 mt-0.5">
+                    {currentRole === 'guru'
+                      ? `Penyusun: ${activeGuru?.nama || userEmail || 'Guru Pengampu'} • Tersimpan Otomatis ke Firebase`
+                      : 'Buat paket soal ujian baru sesuai Kurikulum Merdeka'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddBankModal(false)}
+                className="text-slate-400 hover:text-white p-2 hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
+                title="Tutup Modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveBankPaket} className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4 custom-scrollbar">
+                {bankFormError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{bankFormError}</span>
+                  </div>
+                )}
+
+                {/* Judul Paket */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-extrabold text-slate-800 block">
+                    Judul Paket Bank Soal <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={bankJudul}
+                    onChange={e => setBankJudul(e.target.value)}
+                    placeholder="Contoh: Asesmen Sumatif Akhir Semester - Informatika Kurikulum Merdeka"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
+                  {/* Quick Template Title Chips */}
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {[
+                      'Asesmen Sumatif Akhir Semester (ASAS)',
+                      'Penilaian Tengah Semester (PTS)',
+                      'Asesmen Formatif / Ulangan Harian',
+                      'Latihan Soal Kurikulum Merdeka'
+                    ].map(prefix => (
+                      <button
+                        key={prefix}
+                        type="button"
+                        onClick={() => setBankJudul(`${prefix} - ${bankMapel || 'Mata Pelajaran'}`)}
+                        className="px-2 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 rounded-lg text-[10px] font-semibold transition-all cursor-pointer"
+                      >
+                        + {prefix}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Mata Pelajaran & Kelas Target */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-extrabold text-slate-800 block">
+                      Mata Pelajaran <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={bankMapel}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setBankMapel(val);
+                        if (!editingBankId) {
+                          setBankKode(generateBankKode(val, bankKelas));
+                          if (
+                            !bankJudul ||
+                            bankJudul.startsWith('Asesmen Sumatif -') ||
+                            bankJudul.startsWith('Penilaian Tengah Semester') ||
+                            bankJudul.startsWith('Asesmen Formatif') ||
+                            bankJudul.startsWith('Latihan Soal')
+                          ) {
+                            const prefix = bankJudul.includes(' - ')
+                              ? bankJudul.split(' - ')[0]
+                              : 'Asesmen Sumatif';
+                            setBankJudul(`${prefix} - ${val} Kurikulum Merdeka`);
+                          }
+                        }
+                      }}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none cursor-pointer"
+                    >
+                      {(() => {
+                        const set = new Set<string>();
+                        if (currentRole === 'guru' && activeGuru?.mataPelajaran?.trim()) {
+                          set.add(activeGuru.mataPelajaran.trim());
+                        }
+                        if (bankMapel?.trim()) set.add(bankMapel.trim());
+                        availableMapelList.forEach(m => {
+                          if (m?.trim()) set.add(m.trim());
+                        });
+                        [
+                          'Informatika',
+                          'Matematika',
+                          'Matematika Tingkat Lanjut',
+                          'Ilmu Pengetahuan Alam (IPA)',
+                          'Bahasa Indonesia',
+                          'Bahasa Inggris',
+                          'Pendidikan Agama Islam (PAI)',
+                          'Ilmu Pengetahuan Sosial (IPS)',
+                          'Pendidikan Pancasila (PPKn)',
+                          'PJOK (Pendidikan Jasmani & Olahraga)',
+                          'Seni Budaya',
+                          'Prakarya & Kewirausahaan',
+                          'Bimbingan Konseling (BK)'
+                        ].forEach(m => set.add(m));
+                        return Array.from(set).map(m => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ));
+                      })()}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-extrabold text-slate-800 block">
+                      Kelas Target <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={bankKelas}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setBankKelas(val);
+                        if (!editingBankId) {
+                          setBankKode(generateBankKode(bankMapel, val));
+                        }
+                      }}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none cursor-pointer"
+                    >
+                      {(() => {
+                        const set = new Set<string>();
+                        if (bankKelas?.trim()) set.add(bankKelas.trim());
+                        availableKelasList.forEach(k => set.add(k));
+                        ['Semua Kelas VII', 'Semua Kelas VIII', 'Semua Kelas IX', 'Semua Kelas'].forEach(k =>
+                          set.add(k)
+                        );
+                        return Array.from(set).map(k => (
+                          <option key={k} value={k}>
+                            {k}
+                          </option>
+                        ));
+                      })()}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Kode Paket & Durasi */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-extrabold text-slate-800 block">
+                      Kode Paket Soal <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={bankKode}
+                      onChange={e => setBankKode(e.target.value.toUpperCase())}
+                      placeholder="Contoh: INF-VIII-2026-01"
+                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none uppercase"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-extrabold text-slate-800 block">
+                      Durasi Ujian (Menit) <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={5}
+                        max={300}
+                        required
+                        value={bankDurasi}
+                        onChange={e => setBankDurasi(Number(e.target.value))}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                      />
+                      {[45, 60, 90, 120].map(d => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setBankDurasi(d)}
+                          className={`px-2 py-2 rounded-xl text-[10px] font-bold border transition-all cursor-pointer shrink-0 ${
+                            bankDurasi === d
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          {d}m
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Optional JSON Question Import */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-dashed border-slate-300 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                      <FileJson className="w-4 h-4 text-emerald-600" />
+                      <span>Import Soal dari File JSON (Opsional)</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleDownloadTemplate}
+                      className="text-[11px] font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Download className="w-3 h-3" /> Unduh Template
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    {editingBankId
+                      ? 'Jika Anda mengunggah file JSON, soal di dalamnya akan ditambahkan ke paket ini.'
+                      : 'Biarkan kosong jika ingin mengisi butir soal nanti dengan tombol "Tambah Soal AI" atau "Tambah Soal Manual".'}
+                  </p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <label className="px-3 py-1.5 bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-300 rounded-xl text-[11px] font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all">
+                      <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{bankImportFileName ? 'Ganti File JSON' : 'Pilih File JSON'}</span>
+                      <input type="file" accept=".json,application/json" onChange={handleImportJsonForBank} className="hidden" />
+                    </label>
+                    {bankImportFileName && (
+                      <div className="flex items-center gap-1.5 bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg text-[11px] font-bold">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{bankImportFileName}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBankImportedSoal([]);
+                            setBankImportFileName('');
+                          }}
+                          className="ml-1 text-emerald-900 hover:text-rose-600 font-black cursor-pointer"
+                          title="Batalkan file JSON"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowAddBankModal(false)}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{editingBankId ? 'Simpan Perubahan Paket' : 'Simpan Paket Bank Soal'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

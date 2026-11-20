@@ -392,6 +392,47 @@
       },
       "description": "Global settings for teaching schedules"
     },
+    "edu_jadwalUjianList": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "ujianId": { "type": "string" },
+          "judulUjian": { "type": "string" },
+          "mataPelajaran": { "type": "string" },
+          "tingkatKelas": { "type": "string" },
+          "rombel": { "type": "string" },
+          "kelasTarget": { "type": "string" },
+          "tanggal": { "type": "string" },
+          "jamMulai": { "type": "string" },
+          "jamSelesai": { "type": "string" },
+          "ruang": { "type": "string" },
+          "pengawas": { "type": "string" },
+          "status": { "type": "string", "enum": ["Aktif", "Selesai", "Mendatang"] }
+        },
+        "required": ["id", "mataPelajaran", "kelasTarget", "tanggal", "jamMulai", "jamSelesai", "ruang", "status"]
+      },
+      "description": "List of scheduled CBT/school exams"
+    },
+    "edu_cbtSettings": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "namaUjian": { "type": "string" },
+          "tahunAjaran": { "type": "string" },
+          "semester": { "type": "string", "enum": ["Ganjil", "Genap"] },
+          "kepalaSekolahNama": { "type": "string" },
+          "kepalaSekolahNip": { "type": "string" },
+          "kotaPenetapan": { "type": "string" },
+          "tanggalPenetapan": { "type": "string" },
+          "ttdKepalaSekolahUrl": { "type": "string" },
+          "updatedAt": { "type": "string" }
+        },
+        "required": ["id", "namaUjian", "tahunAjaran", "semester", "kepalaSekolahNama"]
+      },
+      "description": "Global CBT exam configuration and principal signature"
+    },
     "edu_schoolSettings": {
       "schema": { "$ref": "#/entities/SchoolSettings" },
       "description": "General school profile settings document"

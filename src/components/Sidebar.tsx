@@ -116,7 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'database',
       label: 'Database Sekolah',
       icon: <Users className="w-5 h-5" />,
-      desc: 'Siswa, Guru, Staf'
+      desc: 'Siswa, Guru, Staf, Mapel & Ekskul'
     },
     {
       id: 'absensi',
@@ -327,9 +327,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </span>
                       </button>
 
+                      <button
+                        onClick={() => {
+                          setActiveTab('database');
+                          setDatabaseSubTab('mapel');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          databaseSubTab === 'mapel'
+                            ? 'bg-amber-600/10 text-amber-400 border border-amber-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>Mata Pelajaran</span>
+                        </div>
+                        <span className="text-[9px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                          {mapelCount}
+                        </span>
+                      </button>
 
-
-
+                      <button
+                        onClick={() => {
+                          setActiveTab('database');
+                          setDatabaseSubTab('ekskul');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          databaseSubTab === 'ekskul'
+                            ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Trophy className="w-3.5 h-3.5" />
+                          <span>Ekstrakurikuler</span>
+                        </div>
+                        <span className="text-[9px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                          {ekskulCount}
+                        </span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -637,6 +673,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <div className="flex items-center gap-2">
                             <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
                             <span>Hasil Ujian (Firebase)</span>
+                          </div>
+                        </button>
+                      )}
+
+                      {/* 5. Pengaturan Ujian CBT */}
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('pengaturan_cbt');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'pengaturan_cbt'
+                              ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Settings className="w-3.5 h-3.5 text-slate-300" />
+                            <span>Pengaturan Ujian</span>
                           </div>
                         </button>
                       )}

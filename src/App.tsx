@@ -1105,6 +1105,7 @@ export default function App() {
               setSubTab={setCbtSubTab}
               schoolSettings={schoolSettings}
               guruList={guruList}
+              stafList={stafList}
               rombelList={rombelList}
               mapelList={mapelList}
             />

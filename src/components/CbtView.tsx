@@ -39,7 +39,9 @@ import {
   CheckSquare,
   Square,
   Volume2,
-  VolumeX
+  VolumeX,
+  Search,
+  Filter
 } from 'lucide-react';
 import { 
   BankSoal, 
@@ -49,16 +51,28 @@ import {
   TipeSoal, 
   JawabanSiswa,
   JadwalUjianItem,
+  CbtExamSettings,
   Siswa,
   Guru,
+  Staf,
   RombelKelas,
   MataPelajaranItem,
   Role,
   CbtSubTab,
   SchoolSettings
 } from '../types/school';
-import { dbFetchCollection, dbSaveCollection } from '../lib/firebaseSync';
+import { dbFetchCollection, dbSaveCollection, dbSaveItem } from '../lib/firebaseSync';
 import { DenahRuangUjian } from './cbt/DenahRuangUjian';
+import { JadwalUjianSection } from './cbt/JadwalUjianSection';
+import { PengaturanCbtSection } from './cbt/PengaturanCbtSection';
+import {
+  KartuPesertaCard,
+  KartuPesertaBatchModal,
+  KartuPesertaPrintContainer,
+  buildKartuA4PrintHtml,
+  printKartuViaHiddenIframe
+} from './cbt/KartuPesertaPrint';
+import { downloadKartuPesertaA4Pdf } from './cbt/kartuPesertaPdf';
 
 interface CbtViewProps {
   bankSoalList: BankSoal[];
@@ -69,6 +83,7 @@ interface CbtViewProps {
   setHasilUjianList?: React.Dispatch<React.SetStateAction<HasilUjian[]>>;
   siswaList: Siswa[];
   guruList?: Guru[];
+  stafList?: Staf[];
   rombelList?: RombelKelas[];
   mapelList?: MataPelajaranItem[];
   currentRole?: Role;
@@ -87,6 +102,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
   setHasilUjianList,
   siswaList,
   guruList = [],
+  stafList = [],
   rombelList = [],
   mapelList = [],
   currentRole = 'admin',
@@ -100,14 +116,71 @@ export const CbtView: React.FC<CbtViewProps> = ({
   const setSubTab = externalSetSubTab || setInternalSubTab;
 
   useEffect(() => {
-    if (currentRole === 'guru' && subTab === 'jadwal_kartu') {
-      setSubTab('bank_soal');
-    } else if (currentRole === 'siswa') {
-      if (subTab === 'bank_soal' || subTab === 'ai_generator') {
+    if (currentRole === 'siswa') {
+      if (subTab === 'bank_soal' || subTab === 'ai_generator' || subTab === 'pengaturan_cbt') {
         setSubTab('simulasi_ujian');
       }
     }
   }, [currentRole, subTab]);
+
+  // --- Pengaturan CBT Ujian (Nama Ujian, Tahun Ajaran, Semester, TTD Kepala Sekolah) ---
+  const buildDefaultCbtSettings = (): CbtExamSettings => {
+    const rawSem = (schoolSettings?.semesterAktif || schoolSettings?.semester || 'Ganjil').toLowerCase();
+    return {
+      id: 'default',
+      namaUjian: 'Sumatif Akhir Semester (SAS)',
+      tahunAjaran: schoolSettings?.tahunAjaran || '2026/2027',
+      semester: rawSem.includes('genap') ? 'Genap' : 'Ganjil',
+      kepalaSekolahNama: schoolSettings?.kepalaSekolah || 'Nurhidayati, S.Pd',
+      kepalaSekolahNip: schoolSettings?.nipKepalaSekolah || '',
+      kotaPenetapan: schoolSettings?.kotaKabupaten || 'Depok',
+      tanggalPenetapan: '',
+      ttdKepalaSekolahUrl: ''
+    };
+  };
+
+  const [cbtSettings, setCbtSettings] = useState<CbtExamSettings>(() => {
+    try {
+      const saved = localStorage.getItem('edu_cbtSettings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          return { ...buildDefaultCbtSettings(), ...parsed, id: 'default' };
+        }
+      }
+    } catch {
+      // fallback to default
+    }
+    return buildDefaultCbtSettings();
+  });
+
+  useEffect(() => {
+    const fetchRemoteCbtSettings = async () => {
+      try {
+        const remote = await dbFetchCollection<CbtExamSettings>('edu_cbtSettings');
+        if (remote && remote.length > 0) {
+          const found = remote.find(r => r.id === 'default') || remote[0];
+          const merged: CbtExamSettings = { ...buildDefaultCbtSettings(), ...found, id: 'default' };
+          setCbtSettings(merged);
+          localStorage.setItem('edu_cbtSettings', JSON.stringify(merged));
+        }
+      } catch (err) {
+        console.error('Gagal mengambil pengaturan CBT remote:', err);
+      }
+    };
+    fetchRemoteCbtSettings();
+  }, []);
+
+  const saveCbtSettings = (next: CbtExamSettings) => {
+    const payload: CbtExamSettings = { ...next, id: 'default' };
+    setCbtSettings(payload);
+    try {
+      localStorage.setItem('edu_cbtSettings', JSON.stringify(payload));
+      dbSaveItem('edu_cbtSettings', payload).catch(console.error);
+    } catch (err) {
+      console.error('Gagal menyimpan pengaturan CBT:', err);
+    }
+  };
 
   // Compute dynamic lists of available classes, subjects, and teachers
   // Hanya masukkan kelas/rombel yang benar-benar memiliki siswa terdaftar
@@ -154,11 +227,14 @@ export const CbtView: React.FC<CbtViewProps> = ({
     guruList.forEach(g => {
       if (g.mataPelajaran && g.mataPelajaran.trim()) set.add(g.mataPelajaran.trim());
     });
+    hasilUjianList.forEach(h => {
+      if (h.mataPelajaran && h.mataPelajaran.trim()) set.add(h.mataPelajaran.trim());
+    });
     if (set.size === 0) {
       ['Informatika / TIK', 'Matematika', 'Matematika Tingkat Lanjut', 'Bahasa Indonesia', 'Bahasa Inggris', 'IPA (Fisika/Kimia/Biologi)', 'IPS (Ekonomi/Geografi/Sejarah)', 'Pendidikan Agama Islam'].forEach(m => set.add(m));
     }
     return Array.from(set).sort();
-  }, [mapelList, ujianList, bankSoalList, guruList]);
+  }, [mapelList, ujianList, bankSoalList, guruList, hasilUjianList]);
 
   // --- Jadwal Ujian State & Persistence ---
   const DEFAULT_JADWAL: JadwalUjianItem[] = [
@@ -526,35 +602,157 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
   // Modal Kartu Peserta Ujian Printable State
   const [selectedKartuSiswa, setSelectedKartuSiswa] = useState<Siswa | null>(null);
-  const printKartuRef = useRef<HTMLDivElement>(null);
+  const [kartuSearchQuery, setKartuSearchQuery] = useState('');
+  const [kartuKelasFilter, setKartuKelasFilter] = useState<string>('ALL');
+  const [selectedKartuIds, setSelectedKartuIds] = useState<string[]>([]);
+  const [showBatchPrintModal, setShowBatchPrintModal] = useState(false);
+  const [showKartuCutGuide, setShowKartuCutGuide] = useState(true);
+  const [printKartuTargetList, setPrintKartuTargetList] = useState<Siswa[]>([]);
+  const [isPrintingKartu, setIsPrintingKartu] = useState(false);
+  const [isDownloadingKartuPdf, setIsDownloadingKartuPdf] = useState(false);
+  const [downloadPdfProgress, setDownloadPdfProgress] = useState<{ current: number; total: number } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      document.body.classList.remove('printing-kartu-a4');
+    };
+  }, []);
+
+  const kartuKelasOptions = useMemo(() => {
+    const map = new Map<string, number>();
+    siswaList.forEach(s => {
+      const k = (s.kelas || s.rombel || '').trim();
+      if (k) {
+        map.set(k, (map.get(k) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'id'));
+  }, [siswaList]);
+
+  const filteredKartuSiswaList = useMemo(() => {
+    const q = kartuSearchQuery.trim().toLowerCase();
+    return siswaList.filter(s => {
+      const kelasVal = (s.kelas || s.rombel || '').trim();
+      if (kartuKelasFilter !== 'ALL' && kelasVal !== kartuKelasFilter) {
+        return false;
+      }
+      if (!q) return true;
+      const noPeserta = `c2026-${(s.nisn || '').slice(-4)}`.toLowerCase();
+      return (
+        (s.nama || '').toLowerCase().includes(q) ||
+        (s.nisn || '').toLowerCase().includes(q) ||
+        (s.nis || '').toLowerCase().includes(q) ||
+        kelasVal.toLowerCase().includes(q) ||
+        (s.username || '').toLowerCase().includes(q) ||
+        noPeserta.includes(q)
+      );
+    });
+  }, [siswaList, kartuSearchQuery, kartuKelasFilter]);
+
+  const batchKartuSiswaList = useMemo(() => {
+    if (selectedKartuIds.length > 0) {
+      const idSet = new Set(selectedKartuIds);
+      return siswaList.filter(s => idSet.has(s.id));
+    }
+    return filteredKartuSiswaList;
+  }, [selectedKartuIds, siswaList, filteredKartuSiswaList]);
+
+  const allFilteredKartuSelected = useMemo(() => {
+    if (filteredKartuSiswaList.length === 0) return false;
+    const idSet = new Set(selectedKartuIds);
+    return filteredKartuSiswaList.every(s => idSet.has(s.id));
+  }, [filteredKartuSiswaList, selectedKartuIds]);
+
+  const handleToggleSelectKartu = (siswaId: string) => {
+    setSelectedKartuIds(prev =>
+      prev.includes(siswaId) ? prev.filter(id => id !== siswaId) : [...prev, siswaId]
+    );
+  };
+
+  const handleToggleSelectAllFilteredKartu = () => {
+    const filteredIds = filteredKartuSiswaList.map(s => s.id);
+    if (allFilteredKartuSelected) {
+      const removeSet = new Set(filteredIds);
+      setSelectedKartuIds(prev => prev.filter(id => !removeSet.has(id)));
+    } else {
+      setSelectedKartuIds(prev => Array.from(new Set([...prev, ...filteredIds])));
+    }
+  };
+
+  const activeKartuSiswa = useMemo(() => {
+    if (!selectedKartuSiswa) return null;
+    return siswaList.find(s => s.id === selectedKartuSiswa.id) || selectedKartuSiswa;
+  }, [selectedKartuSiswa, siswaList]);
+
+  const triggerKartuA4PrintFallback = (targetList: Siswa[]) => {
+    setPrintKartuTargetList(targetList);
+    document.body.classList.add('printing-kartu-a4');
+
+    const cleanup = () => {
+      document.body.classList.remove('printing-kartu-a4');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        window.print();
+      }, 220);
+    });
+  };
+
+  const triggerKartuA4Print = (targetList: Siswa[]) => {
+    if (targetList.length === 0) return;
+    setIsPrintingKartu(true);
+    setPrintKartuTargetList(targetList);
+
+    const html = buildKartuA4PrintHtml({
+      siswaList: targetList,
+      jadwalList,
+      rombelList,
+      schoolSettings,
+      cbtSettings,
+      showCutGuide: showKartuCutGuide
+    });
+
+    printKartuViaHiddenIframe(
+      html,
+      () => triggerKartuA4PrintFallback(targetList),
+      () => setIsPrintingKartu(false)
+    );
+  };
 
   const handlePrintKartuUjian = () => {
-    const printContent = printKartuRef.current;
-    if (!printContent) return;
-    const windowPrint = window.open('', '', 'width=900,height=650');
-    if (!windowPrint) return;
+    if (!activeKartuSiswa) return;
+    triggerKartuA4Print([activeKartuSiswa]);
+  };
 
-    windowPrint.document.write(`
-      <html>
-        <head>
-          <title>Cetak Kartu Peserta & Jadwal Ujian CBT - ${selectedKartuSiswa?.nama}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <style>
-            @media print {
-              body { margin: 0; padding: 20px; background: white; -webkit-print-color-adjust: exact; }
-              .no-print { display: none !important; }
-            }
-          </style>
-        </head>
-        <body class="flex items-center justify-center min-h-screen bg-slate-100 p-8">
-          <div>${printContent.innerHTML}</div>
-          <script>
-            setTimeout(() => { window.print(); window.close(); }, 500);
-          </script>
-        </body>
-      </html>
-    `);
-    windowPrint.document.close();
+  const handleDownloadKartuPdf = async (targetList: Siswa[], fileSuffix?: string) => {
+    if (targetList.length === 0 || isDownloadingKartuPdf) return;
+    setIsDownloadingKartuPdf(true);
+    setDownloadPdfProgress({ current: 0, total: Math.ceil(targetList.length / 4) });
+    try {
+      const baseName = fileSuffix
+        ? `Kartu-Peserta-Ujian-A4-${fileSuffix}`
+        : `Kartu-Peserta-Ujian-A4-${targetList.length}-Siswa`;
+      await downloadKartuPesertaA4Pdf({
+        siswaList: targetList,
+        jadwalList,
+        rombelList,
+        schoolSettings,
+        cbtSettings,
+        showCutGuide: showKartuCutGuide,
+        fileName: baseName,
+        onProgress: (current, total) => setDownloadPdfProgress({ current, total })
+      });
+      showToast(`Berhasil mengunduh PDF ${targetList.length} Kartu Peserta (${Math.ceil(targetList.length / 4)} lembar A4).`);
+    } catch (err) {
+      console.error('Gagal membuat PDF Kartu Peserta:', err);
+      showToast('Gagal mengunduh PDF kartu peserta. Silakan coba lagi.');
+    } finally {
+      setIsDownloadingKartuPdf(false);
+      setDownloadPdfProgress(null);
+    }
   };
 
   // --- Bank Soal & Input Soal Manual State ---
@@ -1400,79 +1598,245 @@ export const CbtView: React.FC<CbtViewProps> = ({
   const [showKolektifRaporModal, setShowKolektifRaporModal] = useState(false);
   const [selectedMapelRapor, setSelectedMapelRapor] = useState(availableMapelList[0] || 'Matematika');
   const [hasilKelasFilter, setHasilKelasFilter] = useState<string>('Semua');
+  const [hasilMapelFilter, setHasilMapelFilter] = useState<string>('Semua');
   const [kolektifKelasFilter, setKolektifKelasFilter] = useState<string>('Semua');
   const [deleteTargetBankSoal, setDeleteTargetBankSoal] = useState<BankSoal | null>(null);
   const [deleteTargetHasilUjian, setDeleteTargetHasilUjian] = useState<HasilUjian | 'all' | null>(null);
 
+  // Resolve Mata Pelajaran for any HasilUjian (supports both new records with mataPelajaran and legacy records linked by ujianId)
+  const resolveHasilMapel = useMemo(() => {
+    const bankById = new Map<string, string>();
+    bankSoalList.forEach(b => {
+      if (b.id && b.mataPelajaran?.trim()) bankById.set(b.id, b.mataPelajaran.trim());
+    });
+    const ujianById = new Map<string, string>();
+    ujianList.forEach(u => {
+      if (u.mataPelajaran?.trim()) {
+        if (u.id) ujianById.set(u.id, u.mataPelajaran.trim());
+        if (u.bankSoalId) ujianById.set(u.bankSoalId, u.mataPelajaran.trim());
+      }
+    });
+    const jadwalById = new Map<string, string>();
+    jadwalList.forEach(j => {
+      if (j.mataPelajaran?.trim()) {
+        if (j.ujianId) jadwalById.set(j.ujianId, j.mataPelajaran.trim());
+        if (j.id) jadwalById.set(j.id, j.mataPelajaran.trim());
+      }
+    });
+
+    return (h: HasilUjian): string => {
+      if (h.mataPelajaran?.trim()) return h.mataPelajaran.trim();
+      if (h.ujianId) {
+        const fromBank = bankById.get(h.ujianId);
+        if (fromBank) return fromBank;
+        const fromUjian = ujianById.get(h.ujianId);
+        if (fromUjian) return fromUjian;
+        const fromJadwal = jadwalById.get(h.ujianId);
+        if (fromJadwal) return fromJadwal;
+      }
+      return '';
+    };
+  }, [bankSoalList, ujianList, jadwalList]);
+
+  const kolektifMapelOptions = useMemo(() => {
+    const set = new Set<string>(availableMapelList);
+    jadwalList.forEach(j => {
+      if (j.mataPelajaran?.trim()) set.add(j.mataPelajaran.trim());
+    });
+    hasilUjianList.forEach(h => {
+      const m = resolveHasilMapel(h);
+      if (m) set.add(m);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [availableMapelList, jadwalList, hasilUjianList, resolveHasilMapel]);
+
+  useEffect(() => {
+    if (kolektifMapelOptions.length > 0 && !kolektifMapelOptions.includes(selectedMapelRapor)) {
+      setSelectedMapelRapor(kolektifMapelOptions[0]);
+    }
+  }, [kolektifMapelOptions, selectedMapelRapor]);
+
+  useEffect(() => {
+    if (!showKolektifRaporModal && !selectedRaporHasil) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showKolektifRaporModal) setShowKolektifRaporModal(false);
+        if (selectedRaporHasil) setSelectedRaporHasil(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showKolektifRaporModal, selectedRaporHasil]);
+
+  const kolektifResultCountByMapel = useMemo(() => {
+    const counts = new Map<string, number>();
+    hasilUjianList.forEach(h => {
+      const m = resolveHasilMapel(h).toLowerCase();
+      if (!m) return;
+      counts.set(m, (counts.get(m) || 0) + 1);
+    });
+    return counts;
+  }, [hasilUjianList, resolveHasilMapel]);
+
   const filteredHasilUjianList = useMemo(() => {
-    if (hasilKelasFilter === 'Semua') return hasilUjianList;
-    return hasilUjianList.filter(h => h.kelas && h.kelas.toLowerCase().trim() === hasilKelasFilter.toLowerCase().trim());
-  }, [hasilUjianList, hasilKelasFilter]);
+    const targetKelas = hasilKelasFilter.toLowerCase().trim();
+    const targetMapel = hasilMapelFilter.toLowerCase().trim();
+    return hasilUjianList.filter(h => {
+      const matchKelas =
+        hasilKelasFilter === 'Semua' ||
+        (h.kelas && h.kelas.toLowerCase().trim() === targetKelas);
+      const matchMapel =
+        hasilMapelFilter === 'Semua' ||
+        resolveHasilMapel(h).toLowerCase() === targetMapel;
+      return matchKelas && matchMapel;
+    });
+  }, [hasilUjianList, hasilKelasFilter, hasilMapelFilter, resolveHasilMapel]);
 
   const filteredSiswaListForKolektif = useMemo(() => {
     if (kolektifKelasFilter === 'Semua') return siswaList;
     return siswaList.filter(s => s.kelas && s.kelas.toLowerCase().trim() === kolektifKelasFilter.toLowerCase().trim());
   }, [siswaList, kolektifKelasFilter]);
 
+  // Results filtered STRICTLY to the selected Mata Pelajaran (sorted latest first)
+  const hasilForSelectedMapel = useMemo(() => {
+    const targetMapel = selectedMapelRapor.trim().toLowerCase();
+    if (!targetMapel) return [];
+    return hasilUjianList
+      .filter(h => resolveHasilMapel(h).toLowerCase() === targetMapel)
+      .sort((a, b) => (b.waktuSubmit || '').localeCompare(a.waktuSubmit || ''));
+  }, [hasilUjianList, selectedMapelRapor, resolveHasilMapel]);
+
+  // Precomputed rows & per-mapel summary statistics for Modal Rapor Kolektif
+  const kolektifRaporRows = useMemo(() => {
+    const matchedHasilIds = new Set<string>();
+    const rows = filteredSiswaListForKolektif.map(siswa => {
+      const siswaNamaNorm = (siswa.nama || '').trim().toLowerCase();
+      const siswaNisNorm = (siswa.nis || '').trim();
+      const studentResult = hasilForSelectedMapel.find(h => {
+        if (h.siswaId && siswa.id && h.siswaId === siswa.id) return true;
+        if (siswaNisNorm && h.nis && h.nis.trim() === siswaNisNorm) return true;
+        if (siswaNamaNorm && h.siswaNama && h.siswaNama.trim().toLowerCase() === siswaNamaNorm) return true;
+        return false;
+      });
+      if (studentResult) matchedHasilIds.add(studentResult.id);
+      return {
+        key: siswa.id,
+        nama: siswa.nama,
+        kelas: siswa.kelas,
+        nisDisplay: siswa.nisn || siswa.nis || '-',
+        result: studentResult || null
+      };
+    });
+
+    // Include any submitted result for this mapel & class that is not in siswaList (e.g. demo/archived student)
+    const targetKelas = kolektifKelasFilter.trim().toLowerCase();
+    hasilForSelectedMapel.forEach(h => {
+      if (matchedHasilIds.has(h.id)) return;
+      if (kolektifKelasFilter !== 'Semua' && (h.kelas || '').trim().toLowerCase() !== targetKelas) return;
+      matchedHasilIds.add(h.id);
+      rows.push({
+        key: `extra-${h.id}`,
+        nama: h.siswaNama,
+        kelas: h.kelas || '-',
+        nisDisplay: h.nis || '-',
+        result: h
+      });
+    });
+
+    return rows;
+  }, [filteredSiswaListForKolektif, hasilForSelectedMapel, kolektifKelasFilter]);
+
+  const kolektifRaporStats = useMemo(() => {
+    const totalSiswa = kolektifRaporRows.length;
+    const completed = kolektifRaporRows.filter(r => r.result !== null);
+    const sudahUjian = completed.length;
+    const belumUjian = totalSiswa - sudahUjian;
+    const avgScore =
+      sudahUjian > 0
+        ? Math.round(completed.reduce((sum, r) => sum + (r.result?.nilaiTotal || 0), 0) / sudahUjian)
+        : null;
+    const tuntasCount = completed.filter(r => (r.result?.nilaiTotal || 0) >= 75).length;
+    return { totalSiswa, sudahUjian, belumUjian, avgScore, tuntasCount };
+  }, [kolektifRaporRows]);
+
   const printRaporRef = useRef<HTMLDivElement>(null);
   const printKolektifRef = useRef<HTMLDivElement>(null);
 
-  const handlePrintRapor = () => {
-    const printContent = printRaporRef.current;
-    if (!printContent) return;
-    const windowPrint = window.open('', '', 'width=900,height=650');
-    if (!windowPrint) return;
+  const printNodeViaHiddenIframe = (title: string, htmlContent: string) => {
+    const existing = document.getElementById('cbt-rapor-print-iframe');
+    if (existing) existing.remove();
 
-    windowPrint.document.write(`
-      <html>
+    const iframe = document.createElement('iframe');
+    iframe.id = 'cbt-rapor-print-iframe';
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.opacity = '0';
+    iframe.style.pointerEvents = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc || !iframe.contentWindow) {
+      iframe.remove();
+      window.print();
+      return;
+    }
+
+    const headStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map(el => el.outerHTML)
+      .join('\n');
+
+    doc.open();
+    doc.write(`<!DOCTYPE html>
+      <html lang="id">
         <head>
-          <title>Rapor Hasil Ujian CBT - ${selectedRaporHasil?.siswaNama}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
+          <meta charset="UTF-8" />
+          <title>${title}</title>
+          ${headStyles}
           <style>
+            @page { size: A4 portrait; margin: 12mm; }
             @media print {
-              body { margin: 0; padding: 20px; background: white; -webkit-print-color-adjust: exact; }
+              body { margin: 0; padding: 0; background: #ffffff !important; color: #0f172a !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
               .no-print { display: none !important; }
             }
           </style>
         </head>
-        <body class="bg-white text-slate-900 p-8 font-sans">
-          <div>${printContent.innerHTML}</div>
-          <script>
-            setTimeout(() => { window.print(); window.close(); }, 500);
-          </script>
+        <body class="bg-white text-slate-900 p-4 font-sans">
+          <div>${htmlContent}</div>
         </body>
-      </html>
-    `);
-    windowPrint.document.close();
+      </html>`);
+    doc.close();
+
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } finally {
+        setTimeout(() => iframe.remove(), 60000);
+      }
+    }, 300);
+  };
+
+  const handlePrintRapor = () => {
+    const printContent = printRaporRef.current;
+    if (!printContent) return;
+    printNodeViaHiddenIframe(
+      `Rapor Hasil Ujian CBT - ${selectedRaporHasil?.siswaNama || ''}`,
+      printContent.innerHTML
+    );
   };
 
   const handlePrintKolektif = () => {
     const printContent = printKolektifRef.current;
     if (!printContent) return;
-    const windowPrint = window.open('', '', 'width=900,height=650');
-    if (!windowPrint) return;
-
-    windowPrint.document.write(`
-      <html>
-        <head>
-          <title>Rapor Kolektif Hasil Ujian CBT - ${selectedMapelRapor}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <style>
-            @media print {
-              body { margin: 0; padding: 20px; background: white; -webkit-print-color-adjust: exact; }
-              .no-print { display: none !important; }
-            }
-          </style>
-        </head>
-        <body class="bg-white text-slate-900 p-8 font-sans">
-          <div>${printContent.innerHTML}</div>
-          <script>
-            setTimeout(() => { window.print(); window.close(); }, 500);
-          </script>
-        </body>
-      </html>
-    `);
-    windowPrint.document.close();
+    printNodeViaHiddenIframe(
+      `Rapor Kolektif Hasil Ujian CBT - ${selectedMapelRapor}`,
+      printContent.innerHTML
+    );
   };
 
   // Ambil data siswa aktif secara dinamis & akurat sesuai akun login atau pilihan simulasi
@@ -1946,6 +2310,8 @@ export const CbtView: React.FC<CbtViewProps> = ({
     const newHasil: HasilUjian = {
       id: `hsl-${Date.now()}`,
       ujianId: currentExam.id,
+      mataPelajaran: currentExam.mataPelajaran,
+      judulUjian: currentExam.judul,
       siswaId: activeSiswa.id,
       siswaNama: activeSiswa.nama,
       nis: activeSiswa.nis,
@@ -2026,9 +2392,21 @@ export const CbtView: React.FC<CbtViewProps> = ({
             {subTab === 'denah_ruang' && 'Denah Ruang Ujian'}
             {subTab === 'simulasi_ujian' && 'Simulasi CBT Anti-Cheat'}
             {subTab === 'hasil_ujian' && 'Hasil Ujian (Firebase)'}
+            {subTab === 'pengaturan_cbt' && 'Pengaturan Ujian'}
           </span>
         </div>
       </div>
+
+      {/* SUBTAB PENGATURAN CBT UJIAN */}
+      {subTab === 'pengaturan_cbt' && (
+        <PengaturanCbtSection
+          cbtSettings={cbtSettings}
+          onSaveSettings={saveCbtSettings}
+          schoolSettings={schoolSettings}
+          currentRole={currentRole}
+          showToast={showToast}
+        />
+      )}
 
       {/* SUBTAB DENAH RUANG UJIAN */}
       {subTab === 'denah_ruang' && (
@@ -2037,6 +2415,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
           guruList={guruList}
           rombelList={rombelList}
           schoolSettings={schoolSettings}
+          cbtSettings={cbtSettings}
           currentRole={currentRole}
           userEmail={userEmail}
         />
@@ -2046,181 +2425,222 @@ export const CbtView: React.FC<CbtViewProps> = ({
       {subTab === 'jadwal_kartu' && (
         <div className="space-y-6">
 
-          {/* Jadwal Ujian List */}
-          <div className="bg-[#121212] rounded-2xl p-6 border border-slate-800 shadow-xl space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="font-bold text-white text-base flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-blue-400" /> Jadwal Pelaksanaan Ujian CBT 2026
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Daftar sesi ujian online, jadwal ruang lab komputer, dan guru mata pelajaran
-                </p>
-              </div>
-
-              <button
-                onClick={handleOpenAddJadwal}
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-900/30 transition-all cursor-pointer"
-              >
-                <Plus className="w-4 h-4" /> Tambah Sesi Ujian
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-300">
-                <thead className="bg-[#181818] text-slate-400 uppercase font-semibold text-[11px] border-b border-slate-800">
-                  <tr>
-                    <th className="px-4 py-3">Nama Sesi Ujian</th>
-                    <th className="px-4 py-3">Mata Pelajaran</th>
-                    <th className="px-4 py-3">Kelas Target</th>
-                    <th className="px-4 py-3">Tanggal & Waktu</th>
-                    <th className="px-4 py-3">Ruang / Guru Mapel</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 text-center">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/80">
-                  {jadwalList.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                        <Calendar className="w-8 h-8 mx-auto mb-2 text-slate-600 opacity-60" />
-                        <p className="font-semibold text-slate-400">Belum ada sesi ujian yang dijadwalkan</p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">Klik tombol &ldquo;Tambah Sesi Ujian&rdquo; untuk membuat jadwal baru</p>
-                        <button
-                          onClick={handleOpenAddJadwal}
-                          className="mt-3 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white rounded-lg text-xs font-bold inline-flex items-center gap-1 transition-all border border-blue-500/30"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Buat Sesi Pertama
-                        </button>
-                      </td>
-                    </tr>
-                  ) : (
-                    jadwalList.map(j => (
-                      <tr key={j.id} className="hover:bg-slate-800/30 transition-colors">
-                        <td className="px-4 py-3 font-bold text-white">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
-                            <span>{j.judulUjian}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-blue-400 font-semibold">{j.mataPelajaran}</td>
-                        <td className="px-4 py-3 font-mono text-slate-200">
-                          <div className="flex flex-wrap gap-1 max-w-[220px]">
-                            {j.kelasTarget === 'Semua Kelas' ? (
-                              <span className="px-2 py-0.5 rounded-md bg-blue-950/60 border border-blue-800/80 text-blue-300 text-[11px] font-semibold">
-                                🌐 Semua Kelas
-                              </span>
-                            ) : (
-                              j.kelasTarget.split(',').map((k, idx) => (
-                                <span key={idx} className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[11px] text-slate-200 font-bold">
-                                  {k.trim()}
-                                </span>
-                              ))
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-slate-300">
-                          <div className="font-bold text-white">{j.tanggal}</div>
-                          <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                            <Clock className="w-3 h-3 text-slate-500" />
-                            {j.jamMulai} - {j.jamSelesai} WIB
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-slate-400">
-                          <div className="font-semibold text-slate-200 flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-blue-400" /> {j.ruang}
-                          </div>
-                          <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5" title="Guru Mata Pelajaran">
-                            <UserCheck className="w-3 h-3 text-emerald-400" /> {j.pengawas || '-'}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => handleToggleStatusJadwal(j.id, j.status)}
-                            title="Klik untuk mengubah status sesi"
-                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all hover:scale-105 ${
-                              j.status === 'Aktif' 
-                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                                : j.status === 'Mendatang'
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                : 'bg-slate-800 text-slate-400 border border-slate-700'
-                            }`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              j.status === 'Aktif' ? 'bg-emerald-400 animate-pulse' : j.status === 'Mendatang' ? 'bg-amber-400' : 'bg-slate-500'
-                            }`}></span>
-                            {j.status}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => handleOpenEditJadwal(j)}
-                              className="p-1.5 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white rounded-lg transition-all cursor-pointer"
-                              title="Edit Sesi Ujian"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleOpenDeleteJadwal(j)}
-                              className="p-1.5 bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white rounded-lg transition-all cursor-pointer"
-                              title="Hapus Sesi Ujian"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Manajemen Jadwal Ujian */}
+          <JadwalUjianSection
+            jadwalList={jadwalList}
+            onSaveJadwalList={saveJadwalList}
+            ujianList={ujianList}
+            bankSoalList={bankSoalList}
+            mapelList={mapelList}
+            rombelList={rombelList}
+            siswaList={siswaList}
+            guruList={guruList}
+            stafList={stafList}
+            schoolSettings={schoolSettings}
+            cbtSettings={cbtSettings}
+            currentRole={currentRole}
+            showToast={showToast}
+          />
 
           {/* Kartu Peserta Ujian Generator */}
           <div className="bg-[#121212] rounded-2xl p-6 border border-slate-800 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-800 pb-4">
               <div>
                 <h3 className="font-bold text-white text-base flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-purple-400" /> Cetak Kartu Peserta & Kartu Jadwal Ujian
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Kartu resmi peserta ujian CBT lengkap dengan nomor peserta, password login, barcode ID, dan jadwal lengkap
+                  Kartu resmi peserta ujian CBT (10 × 13 cm • 4 kartu/lembar HVS A4) lengkap dengan username & password dari database siswa
                 </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <div className="text-xs text-slate-400 font-medium">
+                  Menampilkan <span className="text-white font-bold">{filteredKartuSiswaList.length}</span> dari{' '}
+                  <span className="text-white font-bold">{siswaList.length}</span> siswa
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (batchKartuSiswaList.length === 0) return;
+                    setShowBatchPrintModal(true);
+                  }}
+                  disabled={batchKartuSiswaList.length === 0}
+                  className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-purple-900/30 transition-colors cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  {selectedKartuIds.length > 0
+                    ? `Cetak Terpilih (${selectedKartuIds.length} Kartu • A4)`
+                    : `Cetak Banyak (${filteredKartuSiswaList.length} Kartu • A4)`}
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {siswaList.map(siswa => (
-                <div
-                  key={siswa.id}
-                  className="p-3.5 bg-[#181818] rounded-xl border border-slate-800 flex items-center justify-between hover:border-purple-500/40 transition-all group gap-3"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
-                      {siswa.fotoUrl ? (
-                        <img src={siswa.fotoUrl} alt={siswa.nama} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      ) : (
-                        <User className="w-5 h-5 text-slate-400" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-white group-hover:text-purple-300 truncate">{siswa.nama}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">NISN: {siswa.nisn} | Kelas {siswa.kelas}</div>
-                      <div className="text-[9px] font-mono text-purple-400 mt-0.5">No Peserta: C2026-{siswa.nisn.slice(-4)}</div>
-                    </div>
-                  </div>
-
+            {/* Toolbar Pencarian Nama, Filter Kelas & Pilih Banyak */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={kartuSearchQuery}
+                  onChange={e => setKartuSearchQuery(e.target.value)}
+                  placeholder="Cari nama siswa, NISN, username, kelas, atau no peserta..."
+                  className="w-full pl-10 pr-9 py-2.5 bg-[#181818] border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/60 transition-colors"
+                />
+                {kartuSearchQuery && (
                   <button
-                    onClick={() => setSelectedKartuSiswa(siswa)}
-                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-md shrink-0 cursor-pointer"
+                    type="button"
+                    onClick={() => setKartuSearchQuery('')}
+                    aria-label="Hapus pencarian"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white rounded-md cursor-pointer"
                   >
-                    <Printer className="w-3.5 h-3.5" /> Kartu
+                    <X className="w-3.5 h-3.5" />
                   </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="relative flex-1 sm:flex-initial">
+                  <Filter className="w-3.5 h-3.5 text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <select
+                    value={kartuKelasFilter}
+                    onChange={e => setKartuKelasFilter(e.target.value)}
+                    aria-label="Filter berdasarkan kelas"
+                    className="w-full sm:w-52 pl-8 pr-8 py-2.5 bg-[#181818] border border-slate-800 rounded-xl text-xs font-medium text-white focus:outline-none focus:border-purple-500/60 transition-colors cursor-pointer"
+                  >
+                    <option value="ALL">Semua Kelas ({siswaList.length})</option>
+                    {kartuKelasOptions.map(([kelasNama, count]) => (
+                      <option key={kelasNama} value={kelasNama}>
+                        Kelas {kelasNama} ({count})
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              ))}
+
+                {filteredKartuSiswaList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleToggleSelectAllFilteredKartu}
+                    className={`px-3 py-2.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      allFilteredKartuSelected
+                        ? 'bg-purple-600/20 border-purple-500/50 text-purple-300'
+                        : 'bg-[#181818] hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {allFilteredKartuSelected ? (
+                      <CheckSquare className="w-3.5 h-3.5 text-purple-400" />
+                    ) : (
+                      <Square className="w-3.5 h-3.5 text-slate-400" />
+                    )}
+                    <span>{allFilteredKartuSelected ? 'Batal Pilih' : 'Pilih Semua'}</span>
+                  </button>
+                )}
+
+                {selectedKartuIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedKartuIds([])}
+                    className="px-3 py-2.5 bg-[#181818] hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Bersihkan ({selectedKartuIds.length})
+                  </button>
+                )}
+
+                {(kartuSearchQuery || kartuKelasFilter !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKartuSearchQuery('');
+                      setKartuKelasFilter('ALL');
+                    }}
+                    className="px-3 py-2.5 bg-[#181818] hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition-colors shrink-0 cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
             </div>
+
+            {filteredKartuSiswaList.length === 0 ? (
+              <div className="py-10 px-4 text-center rounded-xl border border-dashed border-slate-800 bg-[#181818]/60 space-y-2">
+                <Search className="w-7 h-7 text-slate-600 mx-auto" />
+                <p className="text-xs font-bold text-slate-300">Data siswa tidak ditemukan</p>
+                <p className="text-[11px] text-slate-500">
+                  Tidak ada siswa yang sesuai dengan kata kunci atau filter kelas yang dipilih.
+                </p>
+                {(kartuSearchQuery || kartuKelasFilter !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKartuSearchQuery('');
+                      setKartuKelasFilter('ALL');
+                    }}
+                    className="mt-1 px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold cursor-pointer"
+                  >
+                    Tampilkan Semua Siswa
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filteredKartuSiswaList.map(siswa => {
+                  const isChecked = selectedKartuIds.includes(siswa.id);
+                  return (
+                    <div
+                      key={siswa.id}
+                      onClick={() => handleToggleSelectKartu(siswa.id)}
+                      className={`p-3.5 rounded-xl border flex items-center justify-between transition-all group gap-2.5 cursor-pointer ${
+                        isChecked
+                          ? 'bg-purple-950/25 border-purple-500/60 shadow-sm shadow-purple-950/30'
+                          : 'bg-[#181818] border-slate-800 hover:border-purple-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleToggleSelectKartu(siswa.id);
+                          }}
+                          aria-label={`Pilih ${siswa.nama}`}
+                          className="text-slate-400 hover:text-purple-400 shrink-0 cursor-pointer"
+                        >
+                          {isChecked ? (
+                            <CheckSquare className="w-4 h-4 text-purple-400" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-600 group-hover:text-slate-400" />
+                          )}
+                        </button>
+                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+                          {siswa.fotoUrl ? (
+                            <img src={siswa.fotoUrl} alt={siswa.nama} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <User className="w-5 h-5 text-slate-400" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-white group-hover:text-purple-300 truncate">{siswa.nama}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">NISN: {siswa.nisn} | Kelas {siswa.kelas}</div>
+                          <div className="text-[9px] font-mono text-purple-400 mt-0.5 truncate">
+                            No Peserta: C2026-{siswa.nisn.slice(-4)} • User: {siswa.username?.trim() || '-'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          setSelectedKartuSiswa(siswa);
+                        }}
+                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-md shrink-0 cursor-pointer"
+                      >
+                        <Printer className="w-3.5 h-3.5" /> Kartu
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
         </div>
@@ -3205,7 +3625,20 @@ export const CbtView: React.FC<CbtViewProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setShowKolektifRaporModal(true)}
+                  onClick={() => {
+                    if (hasilMapelFilter !== 'Semua') {
+                      setSelectedMapelRapor(hasilMapelFilter);
+                    } else if (hasilUjianList.length > 0) {
+                      const currentCount = kolektifResultCountByMapel.get(selectedMapelRapor.toLowerCase()) || 0;
+                      if (currentCount === 0) {
+                        const firstWithData = kolektifMapelOptions.find(
+                          m => (kolektifResultCountByMapel.get(m.toLowerCase()) || 0) > 0
+                        );
+                        if (firstWithData) setSelectedMapelRapor(firstWithData);
+                      }
+                    }
+                    setShowKolektifRaporModal(true);
+                  }}
                   className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
                 >
                   <Printer className="w-4 h-4" /> Rapor Kolektif Per Mapel
@@ -3271,20 +3704,40 @@ export const CbtView: React.FC<CbtViewProps> = ({
               </div>
             </div>
 
-            {/* Filter Kelas & Table */}
+            {/* Filter Mapel, Filter Kelas & Table */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-700 w-full sm:w-auto">
-                <span className="uppercase text-[10px] text-slate-400 font-extrabold">Filter Kelas:</span>
-                <select
-                  value={hasilKelasFilter}
-                  onChange={e => setHasilKelasFilter(e.target.value)}
-                  className="p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 outline-none"
-                >
-                  <option value="Semua">Semua Kelas ({hasilUjianList.length} Hasil)</option>
-                  {availableKelasList.map(k => (
-                    <option key={k} value={k}>{k}</option>
-                  ))}
-                </select>
+              <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-700 w-full sm:w-auto">
+                <div className="flex items-center gap-2">
+                  <span className="uppercase text-[10px] text-slate-400 font-extrabold">Filter Mapel:</span>
+                  <select
+                    value={hasilMapelFilter}
+                    onChange={e => setHasilMapelFilter(e.target.value)}
+                    className="p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                  >
+                    <option value="Semua">Semua Mapel ({hasilUjianList.length})</option>
+                    {kolektifMapelOptions.map(m => {
+                      const cnt = kolektifResultCountByMapel.get(m.toLowerCase()) || 0;
+                      return (
+                        <option key={m} value={m}>
+                          {m}{cnt > 0 ? ` (${cnt})` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="uppercase text-[10px] text-slate-400 font-extrabold">Filter Kelas:</span>
+                  <select
+                    value={hasilKelasFilter}
+                    onChange={e => setHasilKelasFilter(e.target.value)}
+                    className="p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                  >
+                    <option value="Semua">Semua Kelas ({hasilUjianList.length} Hasil)</option>
+                    {availableKelasList.map(k => (
+                      <option key={k} value={k}>{k}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="text-xs text-slate-500 font-semibold">
                 Menampilkan <strong className="text-slate-800">{filteredHasilUjianList.length}</strong> dari {hasilUjianList.length} hasil ujian
@@ -3302,8 +3755,12 @@ export const CbtView: React.FC<CbtViewProps> = ({
             ) : filteredHasilUjianList.length === 0 ? (
               <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300">
                 <AlertCircle className="w-10 h-10 text-amber-400 mx-auto mb-2" />
-                <h4 className="font-bold text-slate-700 text-sm">Tidak Ada Hasil Ujian untuk Kelas {hasilKelasFilter}</h4>
-                <p className="text-xs text-slate-400 mt-1">Coba pilih kelas lain atau ubah filter ke "Semua Kelas".</p>
+                <h4 className="font-bold text-slate-700 text-sm">
+                  Tidak Ada Hasil Ujian untuk Filter yang Dipilih
+                </h4>
+                <p className="text-xs text-slate-400 mt-1">
+                  Coba pilih mata pelajaran atau kelas lain, atau ubah filter ke &quot;Semua&quot;.
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto border border-slate-100 rounded-xl">
@@ -3311,6 +3768,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold uppercase text-[10px]">
                     <tr>
                       <th className="p-3">Nama Siswa</th>
+                      <th className="p-3">Mata Pelajaran</th>
                       <th className="p-3">Kelas & NIS</th>
                       <th className="p-3">Waktu Submit</th>
                       <th className="p-3 text-center">Pelanggaran</th>
@@ -3320,9 +3778,16 @@ export const CbtView: React.FC<CbtViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {filteredHasilUjianList.map(h => (
+                    {filteredHasilUjianList.map(h => {
+                      const mapelLabel = resolveHasilMapel(h) || 'Umum';
+                      return (
                       <tr key={h.id} className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-slate-800">{h.siswaNama}</td>
+                        <td className="p-3">
+                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold rounded-md text-[10px] inline-block">
+                            {mapelLabel}
+                          </span>
+                        </td>
                         <td className="p-3 text-slate-500">
                           {h.kelas} <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded ml-1 font-mono">{h.nis}</span>
                         </td>
@@ -3373,7 +3838,8 @@ export const CbtView: React.FC<CbtViewProps> = ({
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -3382,13 +3848,19 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
           {/* Modal Rapor Hasil Ujian CBT */}
           {selectedRaporHasil && (
-            <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-              <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
-                <div className="p-5 border-b border-slate-100 flex items-center justify-between no-print bg-slate-50">
+            <div
+              className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
+              onClick={() => setSelectedRaporHasil(null)}
+            >
+              <div
+                className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="p-5 border-b border-slate-100 flex items-center justify-between gap-3 no-print bg-slate-50">
                   <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
-                    <Printer className="w-5 h-5 text-indigo-600" /> Cetak Rapor Hasil Ujian CBT
+                    <Printer className="w-5 h-5 text-indigo-600 shrink-0" /> Cetak Rapor Hasil Ujian CBT
                   </h3>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
                       onClick={handlePrintRapor}
@@ -3396,12 +3868,14 @@ export const CbtView: React.FC<CbtViewProps> = ({
                     >
                       <Printer className="w-4 h-4" /> Cetak / Print PDF
                     </button>
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       onClick={() => setSelectedRaporHasil(null)}
-                      className="text-slate-400 hover:text-slate-600 font-bold p-1.5 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer text-xs"
+                      aria-label="Tutup"
+                      title="Tutup (Esc)"
+                      className="inline-flex items-center gap-1 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold rounded-xl transition-colors cursor-pointer text-xs"
                     >
-                      ✕
+                      <X className="w-4 h-4" /> Tutup
                     </button>
                   </div>
                 </div>
@@ -3420,6 +3894,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                       <div><strong className="text-slate-500 w-24 inline-block">Nama Siswa:</strong> <span className="font-bold text-slate-900">{selectedRaporHasil.siswaNama}</span></div>
                       <div><strong className="text-slate-500 w-24 inline-block">Nomor Induk:</strong> <span className="font-mono">{selectedRaporHasil.nis}</span></div>
                       <div><strong className="text-slate-500 w-24 inline-block">Kelas:</strong> <span className="font-bold">{selectedRaporHasil.kelas}</span></div>
+                      <div><strong className="text-slate-500 w-24 inline-block">Mata Pelajaran:</strong> <span className="font-bold text-indigo-700">{resolveHasilMapel(selectedRaporHasil) || '-'}</span></div>
                     </div>
                     <div className="space-y-1 text-right sm:text-left">
                       <div><strong className="text-slate-500 w-28 inline-block">Waktu Submit:</strong> <span className="font-mono">{new Date(selectedRaporHasil.waktuSubmit).toLocaleString('id-ID')}</span></div>
@@ -3455,48 +3930,64 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
           {/* Modal Rapor Kolektif Per Mata Pelajaran */}
           {showKolektifRaporModal && (
-            <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-              <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
-                <div className="p-5 border-b border-slate-100 flex items-center justify-between no-print bg-slate-50">
-                  <div className="flex items-center gap-3">
+            <div
+              className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
+              onClick={() => setShowKolektifRaporModal(false)}
+            >
+              <div
+                className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="p-4 sm:p-5 border-b border-slate-200 space-y-3 no-print bg-slate-50">
+                  <div className="flex items-center justify-between gap-3">
                     <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
-                      <Printer className="w-5 h-5 text-indigo-600" /> Rapor Kolektif Semua Siswa Per Mata Pelajaran
+                      <Printer className="w-5 h-5 text-indigo-600 shrink-0" /> Rapor Kolektif Semua Siswa Per Mata Pelajaran
                     </h3>
-                    <select
-                      value={selectedMapelRapor}
-                      onChange={e => setSelectedMapelRapor(e.target.value)}
-                      className="p-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 outline-none"
+                    <button
+                      type="button"
+                      onClick={() => setShowKolektifRaporModal(false)}
+                      aria-label="Tutup Rapor Kolektif"
+                      title="Tutup (Esc)"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold rounded-xl transition-colors cursor-pointer text-xs shrink-0 shadow-xs"
                     >
-                      {availableMapelList.map(m => (
-                        <option key={m} value={m}>Mapel: {m}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={kolektifKelasFilter}
-                      onChange={e => setKolektifKelasFilter(e.target.value)}
-                      className="p-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 outline-none"
-                    >
-                      <option value="Semua">Semua Kelas</option>
-                      {availableKelasList.map(k => (
-                        <option key={k} value={k}>Kelas: {k}</option>
-                      ))}
-                    </select>
+                      <X className="w-4 h-4" /> Tutup
+                    </button>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={selectedMapelRapor}
+                        onChange={e => setSelectedMapelRapor(e.target.value)}
+                        className="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 outline-none focus:border-indigo-500"
+                      >
+                        {kolektifMapelOptions.map(m => {
+                          const cnt = kolektifResultCountByMapel.get(m.toLowerCase()) || 0;
+                          return (
+                            <option key={m} value={m}>
+                              Mapel: {m}{cnt > 0 ? ` (${cnt} nilai)` : ' (0 nilai)'}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <select
+                        value={kolektifKelasFilter}
+                        onChange={e => setKolektifKelasFilter(e.target.value)}
+                        className="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 outline-none focus:border-indigo-500"
+                      >
+                        <option value="Semua">Semua Kelas</option>
+                        {availableKelasList.map(k => (
+                          <option key={k} value={k}>Kelas: {k}</option>
+                        ))}
+                      </select>
+                    </div>
+
                     <button
                       type="button"
                       onClick={handlePrintKolektif}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
                     >
                       <Printer className="w-4 h-4" /> Cetak / Print PDF
-                    </button>
-                    <button 
-                      type="button" 
-                      onClick={() => setShowKolektifRaporModal(false)}
-                      className="text-slate-400 hover:text-slate-600 font-bold p-1.5 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer text-xs"
-                    >
-                      ✕
                     </button>
                   </div>
                 </div>
@@ -3505,9 +3996,37 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   {/* Header */}
                   <div className="text-center border-b-2 border-slate-900 pb-4 space-y-1">
                     <h2 className="text-lg font-black uppercase tracking-wider">{schoolSettings?.namaSekolah || 'SMP Islam Modern Al Fakhir'}</h2>
-                    <p className="text-xs text-slate-700 font-bold">DAFTAR NILAI & RAPOR KOLEKTIF UJIAN CBT</p>
-                    <p className="text-xs text-indigo-700 font-black">MATA PELAJARAN: {selectedMapelRapor.toUpperCase()} {kolektifKelasFilter !== 'Semua' ? `• KELAS ${kolektifKelasFilter.toUpperCase()}` : ''}</p>
-                    <p className="text-[10px] text-slate-500">Tahun Ajaran 2026/2027 • Semester Ganjil • Terverifikasi Database Firestore</p>
+                    <p className="text-xs text-slate-700 font-bold">
+                      DAFTAR NILAI &amp; RAPOR KOLEKTIF {cbtSettings?.namaUjian ? cbtSettings.namaUjian.toUpperCase() : 'UJIAN CBT'}
+                    </p>
+                    <p className="text-xs text-indigo-700 font-black">
+                      MATA PELAJARAN: {selectedMapelRapor.toUpperCase()} {kolektifKelasFilter !== 'Semua' ? `• KELAS ${kolektifKelasFilter.toUpperCase()}` : ''}
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      Tahun Ajaran {cbtSettings?.tahunAjaran || schoolSettings?.tahunAjaran || '2026/2027'} • Semester {cbtSettings?.semester || schoolSettings?.semesterAktif || 'Ganjil'} • Terverifikasi Database Firestore
+                    </p>
+                  </div>
+
+                  {/* Ringkasan Statistik Per Mapel Terpilih */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                      <div className="text-[10px] font-bold uppercase text-slate-500">Total Siswa</div>
+                      <div className="text-base font-black text-slate-900 tabular-nums mt-0.5">{kolektifRaporStats.totalSiswa}</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-center">
+                      <div className="text-[10px] font-bold uppercase text-emerald-700">Sudah Ujian</div>
+                      <div className="text-base font-black text-emerald-700 tabular-nums mt-0.5">{kolektifRaporStats.sudahUjian}</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                      <div className="text-[10px] font-bold uppercase text-slate-500">Belum Ujian</div>
+                      <div className="text-base font-black text-slate-700 tabular-nums mt-0.5">{kolektifRaporStats.belumUjian}</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-center">
+                      <div className="text-[10px] font-bold uppercase text-indigo-700">Rata-Rata Mapel</div>
+                      <div className="text-base font-black text-indigo-700 tabular-nums mt-0.5">
+                        {kolektifRaporStats.avgScore !== null ? `${kolektifRaporStats.avgScore} / 100` : '-'}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Master Grade Table */}
@@ -3525,21 +4044,27 @@ export const CbtView: React.FC<CbtViewProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
-                        {filteredSiswaListForKolektif.map((siswa, idx) => {
-                          const studentResult = hasilUjianList.find(h => h.siswaId === siswa.id || h.siswaNama.toLowerCase() === siswa.nama.toLowerCase());
-                          const nilai = studentResult ? studentResult.nilaiTotal : '-';
-                          const pelanggaran = studentResult ? (studentResult.pelanggaranCount || 0) : 0;
+                        {kolektifRaporRows.map((row, idx) => {
+                          const studentResult = row.result;
+                          const nilai = studentResult ? studentResult.nilaiTotal : null;
+                          const pelanggaran = studentResult ? (studentResult.pelanggaranCount || 0) : null;
                           const waktu = studentResult ? new Date(studentResult.waktuSubmit).toLocaleString('id-ID') : 'Belum Ujian';
 
                           return (
-                            <tr key={siswa.id} className="hover:bg-slate-50">
+                            <tr key={row.key} className="hover:bg-slate-50">
                               <td className="p-3 border-r border-slate-200 text-center font-bold">{idx + 1}</td>
-                              <td className="p-3 border-r border-slate-200 font-bold text-slate-900">{siswa.nama}</td>
-                              <td className="p-3 border-r border-slate-200 text-slate-700">{siswa.kelas}</td>
-                              <td className="p-3 border-r border-slate-200 font-mono text-slate-600">{siswa.nisn || siswa.nis}</td>
+                              <td className="p-3 border-r border-slate-200 font-bold text-slate-900">{row.nama}</td>
+                              <td className="p-3 border-r border-slate-200 text-slate-700">{row.kelas}</td>
+                              <td className="p-3 border-r border-slate-200 font-mono text-slate-600">{row.nisDisplay}</td>
                               <td className="p-3 border-r border-slate-200 text-center font-mono text-[11px] text-slate-600">{waktu}</td>
                               <td className="p-3 border-r border-slate-200 text-center font-bold">
-                                {pelanggaran > 0 ? <span className="text-rose-600">{pelanggaran}x</span> : <span className="text-emerald-600">Aman</span>}
+                                {pelanggaran === null ? (
+                                  <span className="text-slate-400 font-normal">-</span>
+                                ) : pelanggaran > 0 ? (
+                                  <span className="text-rose-600">{pelanggaran}x</span>
+                                ) : (
+                                  <span className="text-emerald-600">Aman</span>
+                                )}
                               </td>
                               <td className="p-3 text-right font-black text-sm">
                                 {typeof nilai === 'number' ? (
@@ -3557,15 +4082,45 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
                   {/* Signatures */}
                   <div className="pt-8 grid grid-cols-2 gap-8 text-xs text-center">
-                    <div className="space-y-16">
+                    <div className="flex flex-col items-center">
                       <p className="font-bold">Mengetahui,<br/>Kepala Sekolah</p>
-                      <p className="font-bold underline">( ______________________ )</p>
+                      <div className="h-16 flex items-center justify-center my-1">
+                        {cbtSettings?.ttdKepalaSekolahUrl ? (
+                          <img
+                            src={cbtSettings.ttdKepalaSekolahUrl}
+                            alt="TTD Kepala Sekolah"
+                            className="max-h-16 max-w-[160px] object-contain mix-blend-multiply"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : null}
+                      </div>
+                      <p className="font-bold underline">
+                        {cbtSettings?.kepalaSekolahNama || schoolSettings?.kepalaSekolah || '( ______________________ )'}
+                      </p>
                     </div>
-                    <div className="space-y-16">
-                      <p className="font-bold">Depok, {new Date().toLocaleDateString('id-ID')}<br/>Guru Mata Pelajaran {selectedMapelRapor}</p>
+                    <div className="flex flex-col items-center justify-between">
+                      <p className="font-bold">
+                        {cbtSettings?.kotaPenetapan || schoolSettings?.kotaKabupaten || 'Depok'}, {new Date().toLocaleDateString('id-ID')}<br/>
+                        Guru Mata Pelajaran {selectedMapelRapor}
+                      </p>
+                      <div className="h-16" />
                       <p className="font-bold underline">( ______________________ )</p>
                     </div>
                   </div>
+                </div>
+
+                {/* Modal Footer with Close action */}
+                <div className="px-5 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-3 no-print">
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Tekan <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700">Esc</kbd> atau klik area luar untuk menutup
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowKolektifRaporModal(false)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" /> Tutup
+                  </button>
                 </div>
               </div>
             </div>
@@ -4367,155 +4922,108 @@ export const CbtView: React.FC<CbtViewProps> = ({
         </div>
       )}
 
-      {/* PRINTABLE KARTU PESERTA & JADWAL UJIAN MODAL */}
-      {selectedKartuSiswa && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#121212] border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl">
+      {/* PRINTABLE KARTU PESERTA & JADWAL UJIAN MODAL (10 × 13 cm • A4) */}
+      {activeKartuSiswa && (
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto print:hidden">
+          <div className="bg-[#121212] border border-slate-800 rounded-2xl max-w-xl w-full p-5 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-purple-400" /> Pratinjau Cetak Kartu Peserta Ujian CBT
-              </h3>
+              <div>
+                <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-purple-400" /> Pratinjau Cetak Kartu Peserta Ujian CBT
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Ukuran fisik cetak: <strong className="text-slate-200">10 cm × 13 cm</strong> (HVS A4 Portrait)
+                </p>
+              </div>
               <button
+                type="button"
                 onClick={() => setSelectedKartuSiswa(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Printable Container */}
-            <div ref={printKartuRef} className="bg-white p-6 rounded-xl text-slate-900 border-2 border-slate-900 shadow-md space-y-4">
-              
-              {/* Header Kartu Ujian */}
-              <div className="flex items-center gap-3 border-b-2 border-slate-900 pb-3">
-                <div className="w-12 h-12 bg-slate-900 rounded-xl text-white font-bold flex items-center justify-center text-xl shrink-0 overflow-hidden">
-                  {schoolSettings?.logoUrl ? (
-                    <img src={schoolSettings.logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
-                  ) : (
-                    <Building2 className="w-7 h-7" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-black text-sm uppercase tracking-wide leading-tight">KARTU PESERTA & JADWAL UJIAN CBT 2026</h4>
-                  <p className="text-[10px] font-bold text-slate-600 uppercase">
-                    {schoolSettings?.namaSekolah || 'SMA PERMATA BANGSA'} • {schoolSettings?.semester ? `SEMESTER ${schoolSettings.semester.toUpperCase()}` : 'SEMESTER GANJIL'}
-                  </p>
-                  <p className="text-[9px] text-slate-500">
-                    {schoolSettings?.alamat || 'Jl. Education No. 123'} • Telp: {schoolSettings?.telepon || '(021) 555-0199'}
-                  </p>
-                </div>
-                <div className="text-right border-l-2 border-slate-900 pl-3">
-                  <div className="text-[9px] font-bold text-slate-500 uppercase">NO PESERTA</div>
-                  <div className="text-xs font-mono font-extrabold text-blue-800">C2026-{selectedKartuSiswa.nisn.slice(-4)}</div>
-                </div>
+            {/* Centered 10x13cm Card Preview */}
+            <div className="flex justify-center overflow-x-auto py-2 bg-slate-950/60 rounded-xl border border-slate-800/80">
+              <div className="shadow-xl rounded-sm overflow-hidden bg-white shrink-0">
+                <KartuPesertaCard
+                  siswa={activeKartuSiswa}
+                  jadwalList={jadwalList}
+                  rombelList={rombelList}
+                  schoolSettings={schoolSettings}
+                  cbtSettings={cbtSettings}
+                  showCutGuide={showKartuCutGuide}
+                />
               </div>
-
-              {/* Identity & Photo Grid */}
-              <div className="flex gap-3.5 items-start">
-                {/* Pasfoto Peserta (3x4 Aspect Ratio) */}
-                <div className="w-[84px] h-[112px] shrink-0 border-2 border-slate-900 rounded-lg overflow-hidden bg-slate-100 flex flex-col items-center justify-center relative shadow-sm">
-                  {selectedKartuSiswa.fotoUrl ? (
-                    <img 
-                      src={selectedKartuSiswa.fotoUrl} 
-                      alt={selectedKartuSiswa.nama} 
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center text-slate-400 p-1 text-center">
-                      <User className="w-8 h-8 text-slate-400 mb-1" />
-                      <span className="text-[8px] font-extrabold uppercase tracking-wider text-slate-500">FOTO 3x4</span>
-                    </div>
-                  )}
-                  <div className="absolute bottom-0 inset-x-0 bg-slate-900/85 text-white text-[7px] text-center font-bold py-0.5 uppercase tracking-wider">
-                    Peserta
-                  </div>
-                </div>
-
-                {/* Identity Grid */}
-                <div className="flex-1 grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Nama Peserta:</span>
-                    <span className="font-extrabold text-slate-900 text-sm leading-tight block">{selectedKartuSiswa.nama}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">NISN / NIS:</span>
-                    <span className="font-mono font-bold text-slate-800">{selectedKartuSiswa.nisn} / {selectedKartuSiswa.nis}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Kelas / Ruang Ujian:</span>
-                    <span className="font-bold text-slate-800">
-                      {selectedKartuSiswa.kelas} ({jadwalList.find(j => (j.kelasTarget && (j.kelasTarget.includes(selectedKartuSiswa.kelas) || (selectedKartuSiswa.rombel && j.kelasTarget.includes(selectedKartuSiswa.rombel)))) || j.kelasTarget === 'Semua Tingkat')?.ruang || rombelList.find(r => r.namaRombel === selectedKartuSiswa.kelas || r.namaRombel === selectedKartuSiswa.rombel)?.ruangan || 'Ruang 01'})
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Password Login CBT:</span>
-                    <span className="font-mono font-extrabold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 inline-block">
-                      CBT#{selectedKartuSiswa.nisn.slice(-4)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Jadwal Ringkas Table */}
-              <div className="pt-1">
-                <span className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block mb-1">
-                  Jadwal Sesi Ujian Terjadwal:
-                </span>
-                <table className="w-full text-left text-[10px] border-collapse border border-slate-300">
-                  <thead className="bg-slate-100 font-bold uppercase text-slate-700">
-                    <tr>
-                      <th className="border border-slate-300 p-1">Tgl / Waktu</th>
-                      <th className="border border-slate-300 p-1">Mata Pelajaran</th>
-                      <th className="border border-slate-300 p-1">Ruang</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {jadwalList.map(j => (
-                      <tr key={j.id}>
-                        <td className="border border-slate-300 p-1 font-mono">{j.tanggal} ({j.jamMulai})</td>
-                        <td className="border border-slate-300 p-1 font-bold">{j.mataPelajaran}</td>
-                        <td className="border border-slate-300 p-1">{j.ruang}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Barcode Footer */}
-              <div className="flex items-center justify-between pt-2 border-t-2 border-slate-900 text-[9px] text-slate-500">
-                <div>
-                  <p>Tanda Tangan Kepala Sekolah,</p>
-                  <div className="h-7"></div>
-                  <p className="font-bold text-slate-900">{schoolSettings?.kepalaSekolah || 'Dr. H. Ahmad Dahlan, M.Pd.'}</p>
-                </div>
-                <div className="text-center font-mono">
-                  <div className="bg-slate-900 text-white font-mono font-extrabold px-3 py-1 tracking-widest text-xs rounded">
-                    |||||| |||| ||||| |||||||
-                  </div>
-                  <div className="mt-0.5 text-[8px]">{selectedKartuSiswa.kodeBarcode || `SIS-${selectedKartuSiswa.nisn}`}</div>
-                </div>
-              </div>
-
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+            {(!activeKartuSiswa.username?.trim() || !activeKartuSiswa.password?.trim()) && (
+              <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-[11px] flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>
+                  Username atau password siswa ini belum diisi di Database Siswa. Silakan lengkapi pada menu <strong>Database Sekolah &rarr; Data Siswa</strong> agar otomatis tampil pada kartu.
+                </span>
+              </div>
+            )}
+
+            <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-800">
               <button
+                type="button"
                 onClick={() => setSelectedKartuSiswa(null)}
-                className="px-4 py-2 bg-[#181818] hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-bold"
+                className="px-4 py-2 bg-[#181818] hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
               >
                 Tutup
               </button>
               <button
-                onClick={handlePrintKartuUjian}
-                className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-lg"
+                type="button"
+                onClick={() => handleDownloadKartuPdf([activeKartuSiswa], activeKartuSiswa.nama)}
+                disabled={isDownloadingKartuPdf}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-lg cursor-pointer"
               >
-                <Printer className="w-4 h-4" /> Cetak Kartu Peserta
+                <Download className="w-4 h-4" />
+                {isDownloadingKartuPdf ? 'Mengunduh PDF...' : 'Unduh PDF'}
+              </button>
+              <button
+                type="button"
+                onClick={handlePrintKartuUjian}
+                disabled={isPrintingKartu}
+                className="px-5 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-lg cursor-pointer"
+              >
+                <Printer className="w-4 h-4" /> Cetak Kartu (10 × 13 cm)
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* MODAL PRATINJAU CETAK BANYAK KARTU PESERTA (HVS A4 • 4 KARTU/LEMBAR) */}
+      <KartuPesertaBatchModal
+        isOpen={showBatchPrintModal}
+        onClose={() => setShowBatchPrintModal(false)}
+        siswaList={batchKartuSiswaList}
+        jadwalList={jadwalList}
+        rombelList={rombelList}
+        schoolSettings={schoolSettings}
+        cbtSettings={cbtSettings}
+        showCutGuide={showKartuCutGuide}
+        onToggleCutGuide={() => setShowKartuCutGuide(prev => !prev)}
+        onTriggerPrint={targetList => triggerKartuA4Print(targetList)}
+        onTriggerDownloadPdf={(targetList, rangeSuffix) => handleDownloadKartuPdf(targetList, rangeSuffix)}
+        isPrinting={isPrintingKartu}
+        isDownloadingPdf={isDownloadingKartuPdf}
+        downloadProgress={downloadPdfProgress}
+      />
+
+      {/* TOP-LEVEL PRINT CONTAINER (HANYA TERLIHAT SAAT WINDOW.PRINT) */}
+      <KartuPesertaPrintContainer
+        siswaList={printKartuTargetList}
+        jadwalList={jadwalList}
+        rombelList={rombelList}
+        schoolSettings={schoolSettings}
+        cbtSettings={cbtSettings}
+        showCutGuide={showKartuCutGuide}
+      />
 
       {/* MODAL TAMBAH & EDIT SESI UJIAN CBT */}
       {showJadwalModal && (

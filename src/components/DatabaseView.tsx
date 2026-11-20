@@ -280,19 +280,21 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
   const [ekskulMemberSearch, setEkskulMemberSearch] = useState<string>('');
   const [ekskulMemberKelasFilter, setEkskulMemberKelasFilter] = useState<string>('Semua');
 
+  const [scheduleError, setScheduleError] = useState<string>('');
+
   // Form State for Ekstrakurikuler
   const [formEkskul, setFormEkskul] = useState<Omit<EkstrakurikulerItem, 'id'>>({
     kodeEkskul: 'EKS-01',
     namaEkskul: '',
     kategori: 'Olahraga',
-    pembinaNama: guruList[0]?.nama || 'Drs. H. Bambang Sutrisno',
-    nipPembina: guruList[0]?.nip || '197103251998021001',
-    kontakPembina: guruList[0]?.telepon || '081234567801',
+    pembinaNama: guruList[0]?.nama || '',
+    nipPembina: guruList[0]?.nip || '',
+    kontakPembina: guruList[0]?.telepon || '',
     hariLatihan: 'Jumat',
     jamMulai: '15:00',
     jamSelesai: '17:00',
     tempat: 'Lapangan Utama Sekolah',
-    tingkatTarget: 'Semua Tingkat',
+    tingkatTarget: 'Semua Tingkat (Kelas 7, 8, 9)',
     kuotaMaksimal: 30,
     anggotaSiswaIds: [],
     status: 'Aktif',
@@ -1018,36 +1020,35 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
       });
     } else if (subTab === 'mapel') {
       const defaultGuru = guruList[0];
+      setScheduleError('');
       setFormMapel({
         kodeMapel: `MP-${Date.now().toString().slice(-4)}`,
         namaMapel: '',
         kategori: 'Wajib Umum',
-        tingkatKelas: 'Kelas 7',
-        guruPengampuNama: defaultGuru?.nama || 'Drs. Hendra Kusuma, M.Pd.',
-        nipGuru: defaultGuru?.nip || '198501152010011002',
+        tingkatKelas: 'Semua Tingkat',
+        guruPengampuNama: defaultGuru?.nama || '',
+        nipGuru: defaultGuru?.nip || '',
         alokasiJamPerMinggu: 4,
         kkm: 75,
-        kurikulum: 'Kurikulum Merdeka' as any,
+        kurikulum: 'Kurikulum Merdeka',
         catatan: '',
-        jadwalMengajar: [
-          { id: `js-${Date.now()}`, hari: 'Senin', jamMulai: '07:30', jamSelesai: '09:00', kelasTarget: 'VIII - Al Biruni', ruangan: 'Ruang R.101 (Gedung A)' }
-        ]
+        jadwalMengajar: []
       });
     } else if (subTab === 'ekskul') {
       const defaultGuru = guruList[0];
       const newNum = String(activeEkskulList.length + 1).padStart(2, '0');
       setFormEkskul({
-        kodeEkskul: `EKS-0${newNum}`,
+        kodeEkskul: `EKS-${newNum}`,
         namaEkskul: '',
         kategori: 'Olahraga',
-        pembinaNama: defaultGuru?.nama || 'Drs. H. Bambang Sutrisno',
-        nipPembina: defaultGuru?.nip || '197103251998021001',
-        kontakPembina: defaultGuru?.telepon || '081234567801',
+        pembinaNama: defaultGuru?.nama || '',
+        nipPembina: defaultGuru?.nip || '',
+        kontakPembina: defaultGuru?.telepon || '',
         hariLatihan: 'Jumat',
         jamMulai: '15:00',
         jamSelesai: '17:00',
         tempat: 'Lapangan Utama / Aula',
-        tingkatTarget: 'Semua Tingkat',
+        tingkatTarget: 'Semua Tingkat (Kelas 7, 8, 9)',
         kuotaMaksimal: 30,
         anggotaSiswaIds: [],
         status: 'Aktif',
@@ -1449,6 +1450,40 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
         </div>
       </div>
 
+      {/* Quick Sub-Tab Navigation */}
+      <div className="flex flex-wrap items-center gap-2 bg-[#121212] p-2 rounded-xl border border-slate-800 shadow-sm">
+        {[
+          { id: 'siswa' as SubTab, label: 'Data Siswa', count: siswaList.length, icon: <GraduationCap className="w-3.5 h-3.5" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
+          { id: 'guru' as SubTab, label: 'Data Guru', count: guruList.length, icon: <UserCheck className="w-3.5 h-3.5" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
+          { id: 'staf' as SubTab, label: 'Data Staf', count: stafList.length, icon: <Users className="w-3.5 h-3.5" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
+          { id: 'mapel' as SubTab, label: 'Mata Pelajaran', count: activeMapelList.length, icon: <BookOpen className="w-3.5 h-3.5" />, activeCls: 'bg-amber-600/15 text-amber-400 border-amber-500/40' },
+          { id: 'ekskul' as SubTab, label: 'Ekstrakurikuler', count: activeEkskulList.length, icon: <Trophy className="w-3.5 h-3.5" />, activeCls: 'bg-emerald-600/15 text-emerald-400 border-emerald-500/40' }
+        ].map(tab => {
+          const active = subTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                setSubTab(tab.id);
+                setSearch('');
+              }}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${
+                active
+                  ? `${tab.activeCls} shadow-sm`
+                  : 'bg-[#181818] text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
+              }`}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+              <span className="px-1.5 py-0.5 rounded bg-slate-900/90 text-[10px] font-mono text-slate-300">
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Hidden File Input for Template Import */}
       <input 
         type="file" 
@@ -1541,10 +1576,12 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
               >
                 <option value="Semua">Semua Kategori Mapel</option>
                 <option value="Wajib Umum">Wajib Umum</option>
-                <option value="Peminatan IPA">Peminatan IPA</option>
+                <option value="Peminatan MIPA">Peminatan MIPA</option>
                 <option value="Peminatan IPS">Peminatan IPS</option>
                 <option value="Muatan Lokal">Muatan Lokal</option>
                 <option value="Informatika & Teknologi">Informatika & Teknologi</option>
+                <option value="Pilihan">Pilihan</option>
+                <option value="Vokasional">Vokasional</option>
               </select>
 
               <select
@@ -2878,32 +2915,38 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         </div>
 
                         <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                          {mapel.jadwalMengajar.map((jadwal, idx) => (
-                            <div 
-                              key={jadwal.id || idx}
-                              className="p-2 bg-[#121212] border border-slate-800 rounded-lg flex items-center justify-between text-xs hover:border-slate-700 transition-colors"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold">
-                                  {jadwal.hari}
-                                </span>
-                                <span className="font-mono text-slate-200 text-[11px]">
-                                  {jadwal.jamMulai} - {jadwal.jamSelesai}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-1.5 text-right">
-                                <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] font-bold">
-                                  {jadwal.kelasTarget}
-                                </span>
-                                {jadwal.ruangan && (
-                                  <span className="text-[10px] text-slate-400 truncate max-w-[80px]" title={jadwal.ruangan}>
-                                    {jadwal.ruangan}
-                                  </span>
-                                )}
-                              </div>
+                          {mapel.jadwalMengajar.length === 0 ? (
+                            <div className="p-2.5 bg-[#121212] border border-dashed border-slate-800 rounded-lg text-[11px] text-slate-500 text-center">
+                              Belum ada jadwal mengajar terdaftar.
                             </div>
-                          ))}
+                          ) : (
+                            mapel.jadwalMengajar.map((jadwal, idx) => (
+                              <div 
+                                key={jadwal.id || idx}
+                                className="p-2 bg-[#121212] border border-slate-800 rounded-lg flex items-center justify-between text-xs hover:border-slate-700 transition-colors"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold">
+                                    {jadwal.hari}
+                                  </span>
+                                  <span className="font-mono text-slate-200 text-[11px]">
+                                    {jadwal.jamMulai} - {jadwal.jamSelesai}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 text-right">
+                                  <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] font-bold">
+                                    {jadwal.kelasTarget}
+                                  </span>
+                                  {jadwal.ruangan && (
+                                    <span className="text-[10px] text-slate-400 truncate max-w-[80px]" title={jadwal.ruangan}>
+                                      {jadwal.ruangan}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
                         </div>
                       </div>
                     </div>
@@ -3168,7 +3211,18 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
           <div className="bg-[#121212] rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col border border-slate-800 shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between border-b border-slate-800 p-5 pb-4 shrink-0">
               <h3 className="font-bold text-white text-base">
-                {modalMode === 'add' ? 'Tambah Data Baru' : 'Edit Data'} ({subTab.toUpperCase()})
+                {modalMode === 'add' ? 'Tambah' : 'Edit'}{' '}
+                {subTab === 'siswa'
+                  ? 'Data Siswa'
+                  : subTab === 'guru'
+                  ? 'Data Guru'
+                  : subTab === 'staf'
+                  ? 'Data Staf'
+                  : subTab === 'mapel'
+                  ? 'Mata Pelajaran'
+                  : subTab === 'ekskul'
+                  ? 'Ekstrakurikuler'
+                  : 'Rombongan Belajar'}
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors">
                 <X className="w-5 h-5" />
@@ -4558,9 +4612,12 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold focus:outline-none focus:border-amber-500"
                       >
                         <option value="Wajib Umum">Wajib Umum</option>
-                        <option value="Peminatan">Peminatan</option>
+                        <option value="Peminatan MIPA">Peminatan MIPA</option>
+                        <option value="Peminatan IPS">Peminatan IPS</option>
                         <option value="Muatan Lokal">Muatan Lokal</option>
+                        <option value="Informatika & Teknologi">Informatika & Teknologi</option>
                         <option value="Pilihan">Pilihan</option>
+                        <option value="Vokasional">Vokasional</option>
                       </select>
                     </div>
                     <div>
@@ -4602,25 +4659,34 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[11px] font-bold text-slate-400">Guru Pengampu</label>
-                      <select 
-                        required 
-                        value={formMapel.guruPengampuNama} 
-                        onChange={e => {
-                          const selectedNama = e.target.value;
-                          const selectedGuru = guruList.find(g => g.nama === selectedNama);
-                          setFormMapel({ 
-                            ...formMapel, 
-                            guruPengampuNama: selectedNama,
-                            nipGuru: selectedGuru ? (selectedGuru.nip || '-') : '-'
-                          });
-                        }}
-                        className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold focus:outline-none focus:border-amber-500"
-                      >
-                        <option value="">-- Pilih Guru Pengampu --</option>
-                        {guruList.map(g => (
-                          <option key={g.id} value={g.nama}>{g.nama} ({g.nip || 'GTY'})</option>
-                        ))}
-                      </select>
+                      {guruList.length > 0 ? (
+                        <select 
+                          value={guruList.some(g => g.nama === formMapel.guruPengampuNama) ? formMapel.guruPengampuNama : ''} 
+                          onChange={e => {
+                            const selectedNama = e.target.value;
+                            const selectedGuru = guruList.find(g => g.nama === selectedNama);
+                            setFormMapel({ 
+                              ...formMapel, 
+                              guruPengampuNama: selectedNama,
+                              nipGuru: selectedGuru ? (selectedGuru.nip || '-') : '-'
+                            });
+                          }}
+                          className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold focus:outline-none focus:border-amber-500 mb-1.5"
+                        >
+                          <option value="">-- Pilih dari Daftar Guru --</option>
+                          {guruList.map(g => (
+                            <option key={g.id} value={g.nama}>{g.nama} ({g.nip || 'GTY'})</option>
+                          ))}
+                        </select>
+                      ) : null}
+                      <input
+                        type="text"
+                        required
+                        placeholder="Atau ketik nama guru pengampu..."
+                        value={formMapel.guruPengampuNama}
+                        onChange={e => setFormMapel({ ...formMapel, guruPengampuNama: e.target.value })}
+                        className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500"
+                      />
                     </div>
                     <div>
                       <label className="text-[11px] font-bold text-slate-400">Alokasi JP / Minggu</label>
@@ -4797,26 +4863,38 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         </div>
                       </div>
 
+                      {scheduleError && (
+                        <p className="text-[11px] text-rose-400 font-semibold flex items-center gap-1 pt-1">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {scheduleError}
+                        </p>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => {
                           if (!newScheduleKelasTarget) {
-                            alert('Silakan pilih Kelas / Rombel pengajaran terlebih dahulu!');
+                            setScheduleError('Silakan pilih Kelas / Rombel pengajaran terlebih dahulu.');
                             return;
                           }
+                          setScheduleError('');
+                          const trimmedRoom = newScheduleRuangan.trim();
+                          const formattedRoom = trimmedRoom
+                            ? trimmedRoom.toLowerCase().startsWith('ruang') || trimmedRoom.toLowerCase().startsWith('lab')
+                              ? trimmedRoom
+                              : `Ruang ${trimmedRoom}`
+                            : 'Ruang Kelas';
                           const newAssignment = {
                             id: `js-${Date.now()}`,
                             hari: newScheduleHari,
                             jamMulai: newScheduleJamMulai || '07:30',
                             jamSelesai: newScheduleJamSelesai || '09:00',
                             kelasTarget: newScheduleKelasTarget,
-                            ruangan: newScheduleRuangan ? `Ruang ${newScheduleRuangan}` : 'Ruang Kelas'
+                            ruangan: formattedRoom
                           };
                           setFormMapel({
                             ...formMapel,
                             jadwalMengajar: [...formMapel.jadwalMengajar, newAssignment]
                           });
-                          // Reset inputs
                           setNewScheduleRuangan('');
                         }}
                         className="w-full mt-2 py-1.5 bg-amber-600/20 hover:bg-amber-600/35 border border-amber-500/30 text-amber-300 text-[10px] font-bold rounded-lg transition-all"
@@ -4897,8 +4975,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                             setFormEkskul({
                               ...formEkskul,
                               pembinaNama: e.target.value,
-                              nipPembina: selectedGuru ? selectedGuru.nuptk : formEkskul.nipPembina,
-                              kontakPembina: selectedGuru ? selectedGuru.telepon : formEkskul.kontakPembina
+                              nipPembina: selectedGuru ? (selectedGuru.nip || '') : formEkskul.nipPembina,
+                              kontakPembina: selectedGuru ? (selectedGuru.telepon || '') : formEkskul.kontakPembina
                             });
                           }}
                           className="w-full p-2 bg-[#121212] border border-slate-700 text-white rounded-lg text-xs focus:outline-none focus:border-emerald-500"
@@ -5451,7 +5529,6 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                                   type="button"
                                   onClick={() => {
                                     if (activeEkskulMembersModal.anggotaSiswaIds.length >= activeEkskulMembersModal.kuotaMaksimal) {
-                                      alert('Kuota ekstrakurikuler sudah penuh!');
                                       return;
                                     }
                                     const updatedIds = [...activeEkskulMembersModal.anggotaSiswaIds, s.id];

@@ -99,6 +99,12 @@ service cloud.firestore {
     match /edu_denahRuangList/{denahId} {
       allow read, write: if isSignedIn();
     }
+    match /edu_jadwalUjianList/{jadwalId} {
+      allow read, write: if isSignedIn();
+    }
+    match /edu_cbtSettings/{settingId} {
+      allow read, write: if isSignedIn();
+    }
     
     // Test collection for connectivity check
     match /test/connection {

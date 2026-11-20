@@ -16,7 +16,7 @@ export interface RombelKelas {
 export type Role = 'admin' | 'guru' | 'siswa' | 'staf' | 'kepsek' | 'petugas_absensi' | 'guru_bk';
 export type SubTab = 'siswa' | 'guru' | 'staf' | 'rombel' | 'mapel' | 'ekskul';
 export type AbsensiSubTab = 'scan_barcode' | 'harian_siswa' | 'absensi_guru' | 'rekap_absensi' | 'redaksi' | 'perizinan' | 'jurnal_guru';
-export type CbtSubTab = 'bank_soal' | 'jadwal_kartu' | 'denah_ruang' | 'ai_generator' | 'simulasi_ujian' | 'hasil_ujian';
+export type CbtSubTab = 'bank_soal' | 'jadwal_kartu' | 'denah_ruang' | 'ai_generator' | 'simulasi_ujian' | 'hasil_ujian' | 'pengaturan_cbt';
 export type KeuanganSubTab = 'pembayaran' | 'pengaturan_biaya' | 'rekap' | 'redaksi' | 'gaji';
 export type AdministrasiSubTab = 'modul_ajar' | 'cp' | 'atp' | 'kktp' | 'prota' | 'prosem' | 'jadwal' | 'kalender' | 'jurnal_guru';
 export type PengaturanSubTab = 'identitas' | 'logo' | 'fonnte' | 'jadwal' | 'sistem';
@@ -163,13 +163,22 @@ export interface MataPelajaranItem {
   id: string;
   kodeMapel: string; // e.g. "MP-MAT-01"
   namaMapel: string; // e.g. "Matematika Tingkat Lanjut"
-  kategori: 'Wajib Umum' | 'Peminatan MIPA' | 'Peminatan IPS' | 'Muatan Lokal' | 'Vokasional';
-  tingkatKelas: string; // e.g. "Kelas 10", "Kelas 11", "Kelas 12", "Semua Tingkat"
+  kategori:
+    | 'Wajib Umum'
+    | 'Peminatan MIPA'
+    | 'Peminatan IPS'
+    | 'Peminatan'
+    | 'Muatan Lokal'
+    | 'Informatika & Teknologi'
+    | 'Pilihan'
+    | 'Vokasional'
+    | string;
+  tingkatKelas: string; // e.g. "Kelas 7", "Kelas 8", "Kelas 9", "Semua Tingkat"
   guruPengampuNama: string; // e.g. "Drs. Hendra Kusuma, M.Pd."
   nipGuru?: string;
   alokasiJamPerMinggu: number; // e.g. 4 (JP/Minggu)
   kkm: number; // e.g. 75
-  kurikulum: 'Kurikulum Merdeka' | 'Kurikulum 2013';
+  kurikulum: 'Kurikulum Merdeka' | 'Kurikulum 2013' | 'KTSP 2006' | string;
   jadwalMengajar: ScheduleSlot[];
   catatan?: string;
 }
@@ -295,6 +304,8 @@ export interface JadwalUjianItem {
   ujianId: string;
   judulUjian: string;
   mataPelajaran: string;
+  tingkatKelas?: string;
+  rombel?: string;
   kelasTarget: string;
   tanggal: string;
   jamMulai: string;
@@ -302,6 +313,19 @@ export interface JadwalUjianItem {
   ruang: string;
   pengawas: string;
   status: 'Aktif' | 'Selesai' | 'Mendatang';
+}
+
+export interface CbtExamSettings {
+  id: string;
+  namaUjian: string;
+  tahunAjaran: string;
+  semester: 'Ganjil' | 'Genap';
+  kepalaSekolahNama: string;
+  kepalaSekolahNip?: string;
+  kotaPenetapan?: string;
+  tanggalPenetapan?: string;
+  ttdKepalaSekolahUrl?: string;
+  updatedAt?: string;
 }
 
 export interface UjianCBT {
@@ -337,6 +361,8 @@ export interface JawabanSiswa {
 export interface HasilUjian {
   id: string;
   ujianId: string;
+  mataPelajaran?: string;
+  judulUjian?: string;
   siswaId: string;
   siswaNama: string;
   nis: string;

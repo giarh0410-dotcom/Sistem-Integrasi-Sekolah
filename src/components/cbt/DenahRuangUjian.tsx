@@ -18,9 +18,13 @@ import {
   UserPlus,
   UserMinus,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  ClipboardList,
+  Download,
+  Eye,
+  EyeOff
 } from 'lucide-react';
-import { Siswa, Guru, RombelKelas, SchoolSettings, Role } from '../../types/school';
+import { Siswa, Guru, RombelKelas, SchoolSettings, Role, CbtExamSettings } from '../../types/school';
 import { dbFetchCollection, dbSaveCollection } from '../../lib/firebaseSync';
 
 export interface DenahKursi {
@@ -50,11 +54,71 @@ interface DenahRuangUjianProps {
   guruList?: Guru[];
   rombelList?: RombelKelas[];
   schoolSettings?: SchoolSettings;
+  cbtSettings?: CbtExamSettings;
   currentRole?: Role;
   userEmail?: string;
 }
 
 const DEFAULT_JUDUL_UJIAN = 'SUMATIF AKHIR SEMESTER (SAS) GANJIL TAHUN PELAJARAN 2026/2027';
+
+function escapeHtmlStr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function printHtmlViaHiddenIframe(html: string): void {
+  try {
+    const existing = document.getElementById('cbt-denah-roster-print-iframe');
+    if (existing) existing.remove();
+
+    const iframe = document.createElement('iframe');
+    iframe.id = 'cbt-denah-roster-print-iframe';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '210mm';
+    iframe.style.height = '297mm';
+    iframe.style.opacity = '0';
+    iframe.style.pointerEvents = 'none';
+    iframe.style.border = '0';
+    iframe.style.zIndex = '-1';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    const win = iframe.contentWindow;
+    if (!doc || !win) {
+      iframe.remove();
+      return;
+    }
+
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    let printed = false;
+    const triggerPrint = () => {
+      if (printed) return;
+      printed = true;
+      setTimeout(() => {
+        try {
+          win.focus();
+          win.print();
+        } finally {
+          setTimeout(() => iframe.remove(), 1500);
+        }
+      }, 250);
+    };
+
+    iframe.onload = triggerPrint;
+    setTimeout(triggerPrint, 700);
+  } catch (err) {
+    console.error('Gagal mencetak daftar siswa ruang ujian:', err);
+  }
+}
 
 function createEmptySeats(count: number, existing: DenahKursi[] = []): DenahKursi[] {
   const safeCount = Math.min(Math.max(Math.round(count) || 1, 1), 80);
@@ -169,10 +233,14 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
   guruList = [],
   rombelList = [],
   schoolSettings,
+  cbtSettings,
   currentRole = 'admin',
   userEmail = ''
 }) => {
   const canEdit = currentRole !== 'siswa';
+  const configuredExamBanner = cbtSettings
+    ? `${cbtSettings.namaUjian.toUpperCase()} SEMESTER ${cbtSettings.semester.toUpperCase()} TAHUN PELAJARAN ${cbtSettings.tahunAjaran}`
+    : DEFAULT_JUDUL_UJIAN;
 
   const [rooms, setRooms] = useState<DenahRuangItem[]>(() => {
     try {
@@ -190,7 +258,12 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
   });
 
   const [selectedRoomId, setSelectedRoomId] = useState<string>(() => rooms[0]?.id || 'denah-ruang-1');
-  const [viewMode, setViewMode] = useState<'detail' | 'overview'>('detail');
+  const [viewMode, setViewMode] = useState<'detail' | 'roster' | 'overview'>('detail');
+  const [showRosterInPoster, setShowRosterInPoster] = useState<boolean>(true);
+  const [rosterScope, setRosterScope] = useState<'active' | 'all'>('active');
+  const [rosterSearch, setRosterSearch] = useState('');
+  const [rosterKelasFilter, setRosterKelasFilter] = useState('Semua');
+  const [rosterStatusFilter, setRosterStatusFilter] = useState<'semua' | 'terisi' | 'kosong'>('semua');
   const [searchQuery, setSearchQuery] = useState('');
   const [swapSourceSeat, setSwapSourceSeat] = useState<number | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -724,6 +797,297 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
     [rooms]
   );
 
+  // Lookup student record from siswaList to enrich roster rows (NISN, NIS, No. Peserta)
+  const siswaLookup = useMemo(() => {
+    const byId = new Map<string, Siswa>();
+    const byName = new Map<string, Siswa>();
+    siswaList.forEach(s => {
+      byId.set(s.id, s);
+      if (s.nama) byName.set(s.nama.trim().toLowerCase(), s);
+    });
+    return { byId, byName };
+  }, [siswaList]);
+
+  const enrichSeatRow = (room: DenahRuangItem, seat: DenahKursi) => {
+    const perTable = room.kursiPerMeja || 4;
+    const tableNo = Math.floor((seat.nomorKursi - 1) / perTable) + 1;
+    const isFilled = Boolean(seat.namaSiswa && seat.namaSiswa.trim());
+    const matchedSiswa = isFilled
+      ? (seat.siswaId ? siswaLookup.byId.get(seat.siswaId) : undefined) ||
+        siswaLookup.byName.get(seat.namaSiswa.trim().toLowerCase())
+      : undefined;
+    const nisn = matchedSiswa?.nisn || '';
+    const nis = matchedSiswa?.nis || seat.nomorPeserta || '';
+    const noPeserta = isFilled
+      ? (nisn || nis ? `C2026-${(nisn || nis).slice(-4)}` : seat.nomorPeserta || '-')
+      : '-';
+
+    return {
+      roomId: room.id,
+      roomName: room.namaRuang,
+      pengawas: room.pengawas,
+      seat,
+      nomorKursi: seat.nomorKursi,
+      tableNo,
+      isFilled,
+      namaSiswa: seat.namaSiswa.trim(),
+      kelasSiswa: (seat.kelasSiswa || matchedSiswa?.kelas || '').trim(),
+      nisn,
+      nis,
+      noPeserta
+    };
+  };
+
+  const activeRoomRoster = useMemo(() => {
+    if (!activeRoom) return [];
+    return activeRoom.kursiList.map(seat => enrichSeatRow(activeRoom, seat));
+  }, [activeRoom, siswaLookup]);
+
+  const activeRoomClassSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    activeRoomRoster.forEach(row => {
+      if (!row.isFilled) return;
+      const cls = row.kelasSiswa || 'Tanpa Kelas';
+      counts.set(cls, (counts.get(cls) || 0) + 1);
+    });
+    return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
+  }, [activeRoomRoster]);
+
+  const allRoomsRoster = useMemo(() => {
+    return rooms.flatMap(room => room.kursiList.map(seat => enrichSeatRow(room, seat)));
+  }, [rooms, siswaLookup]);
+
+  const scopedRosterBase = useMemo(() => {
+    return viewMode === 'roster' && rosterScope === 'all' ? allRoomsRoster : activeRoomRoster;
+  }, [viewMode, rosterScope, allRoomsRoster, activeRoomRoster]);
+
+  const availableRosterClasses = useMemo(() => {
+    const set = new Set<string>();
+    scopedRosterBase.forEach(row => {
+      if (row.isFilled && row.kelasSiswa) set.add(row.kelasSiswa);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [scopedRosterBase]);
+
+  const filteredRosterRows = useMemo(() => {
+    const q = rosterSearch.trim().toLowerCase();
+    return scopedRosterBase.filter(row => {
+      if (rosterStatusFilter === 'terisi' && !row.isFilled) return false;
+      if (rosterStatusFilter === 'kosong' && row.isFilled) return false;
+      if (rosterKelasFilter !== 'Semua' && row.kelasSiswa !== rosterKelasFilter) return false;
+      if (q) {
+        const seatCode = `#${String(row.nomorKursi).padStart(2, '0')}`;
+        const tableLabel = `meja ${row.tableNo}`;
+        const hit =
+          row.namaSiswa.toLowerCase().includes(q) ||
+          row.kelasSiswa.toLowerCase().includes(q) ||
+          row.nis.toLowerCase().includes(q) ||
+          row.nisn.toLowerCase().includes(q) ||
+          row.noPeserta.toLowerCase().includes(q) ||
+          row.roomName.toLowerCase().includes(q) ||
+          seatCode.includes(q) ||
+          String(row.nomorKursi) === q ||
+          tableLabel.includes(q);
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }, [scopedRosterBase, rosterSearch, rosterKelasFilter, rosterStatusFilter]);
+
+  const handlePrintRoomRoster = (scope: 'active' | 'all' = 'active') => {
+    const targetRooms = scope === 'all' ? rooms : activeRoom ? [activeRoom] : [];
+    if (targetRooms.length === 0) return;
+
+    const schoolName = (schoolSettings?.namaSekolah || 'SMP ISLAM MODERN AL FAKHIR').toUpperCase();
+    const examTitle =
+      activeRoom?.judulUjian && activeRoom.judulUjian !== DEFAULT_JUDUL_UJIAN
+        ? activeRoom.judulUjian
+        : configuredExamBanner;
+    const kota = cbtSettings?.kotaPenetapan || schoolSettings?.kotaKabupaten || 'Depok';
+    const kepsekNama = cbtSettings?.kepalaSekolahNama || schoolSettings?.kepalaSekolah || 'Kepala Sekolah';
+    const kepsekNip = (cbtSettings?.kepalaSekolahNip || schoolSettings?.nipKepalaSekolah || '').trim();
+    const tglStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const logoTag = schoolSettings?.logoUrl
+      ? `<img src="${escapeHtmlStr(schoolSettings.logoUrl)}" alt="Logo" class="kop-logo" referrerpolicy="no-referrer" />`
+      : '';
+
+    const pagesHtml = targetRooms
+      .map(room => {
+        const rows = room.kursiList.map(seat => enrichSeatRow(room, seat));
+        const filled = rows.filter(r => r.isFilled).length;
+        const classCounts = new Map<string, number>();
+        rows.forEach(r => {
+          if (r.isFilled) {
+            const c = r.kelasSiswa || '-';
+            classCounts.set(c, (classCounts.get(c) || 0) + 1);
+          }
+        });
+        const classSummaryText = Array.from(classCounts.entries())
+          .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(' • ');
+
+        const trHtml = rows
+          .map(
+            (r, idx) => `
+              <tr class="${r.isFilled ? '' : 'empty-seat'}">
+                <td class="c">${idx + 1}</td>
+                <td class="c bold">#${String(r.nomorKursi).padStart(2, '0')}</td>
+                <td class="c">Meja ${r.tableNo}</td>
+                <td class="c mono">${escapeHtmlStr(r.noPeserta)}</td>
+                <td class="bold">${r.isFilled ? escapeHtmlStr(r.namaSiswa) : '<em>(Kursi Kosong)</em>'}</td>
+                <td>${escapeHtmlStr(r.kelasSiswa || '-')}</td>
+                <td class="c mono">${escapeHtmlStr(r.nis || r.nisn || '-')}</td>
+                <td class="ttd-col">${idx % 2 === 0 ? `${idx + 1}.` : `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${idx + 1}.`}</td>
+              </tr>`
+          )
+          .join('');
+
+        return `
+          <section class="sheet">
+            <header class="kop">
+              ${logoTag}
+              <div class="kop-text">
+                <div class="kop-title">DAFTAR PESERTA &amp; PENEMPATAN DUDUK RUANG UJIAN</div>
+                <div class="kop-exam">${escapeHtmlStr(examTitle)}</div>
+                <div class="kop-school">${escapeHtmlStr(schoolName)}</div>
+              </div>
+              <div class="room-badge">
+                <div class="room-badge-lbl">RUANG UJIAN</div>
+                <div class="room-badge-val">${escapeHtmlStr(room.namaRuang.toUpperCase())}</div>
+              </div>
+            </header>
+
+            <div class="meta-bar">
+              <div><strong>Pengawas Ruang:</strong> ${escapeHtmlStr(room.pengawas || '-')}</div>
+              <div><strong>Jumlah Peserta:</strong> ${filled} / ${room.jumlahKursi} Kursi (${Math.ceil(room.jumlahKursi / (room.kursiPerMeja || 4))} Meja)</div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:5%">No</th>
+                  <th style="width:8%">Kursi</th>
+                  <th style="width:9%">Meja</th>
+                  <th style="width:13%">No. Peserta</th>
+                  <th style="width:30%">Nama Lengkap Siswa</th>
+                  <th style="width:13%">Kelas</th>
+                  <th style="width:11%">NIS / NISN</th>
+                  <th style="width:11%">Paraf</th>
+                </tr>
+              </thead>
+              <tbody>${trHtml}</tbody>
+            </table>
+
+            ${
+              classSummaryText
+                ? `<div class="class-rekap"><strong>Rekap per Kelas:</strong> ${escapeHtmlStr(classSummaryText)}</div>`
+                : ''
+            }
+
+            <div class="sig-row">
+              <div class="sig-box">
+                <div>Mengetahui,</div>
+                <div class="sig-role">Kepala Sekolah</div>
+                <div class="sig-space"></div>
+                <div class="sig-name">${escapeHtmlStr(kepsekNama)}</div>
+                ${kepsekNip && kepsekNip !== '-' ? `<div class="sig-nip">NIP. ${escapeHtmlStr(kepsekNip)}</div>` : ''}
+              </div>
+              <div class="sig-box">
+                <div>${escapeHtmlStr(kota)}, ${escapeHtmlStr(tglStr)}</div>
+                <div class="sig-role">Pengawas ${escapeHtmlStr(room.namaRuang)}</div>
+                <div class="sig-space"></div>
+                <div class="sig-name">${escapeHtmlStr(room.pengawas || '....................................')}</div>
+              </div>
+            </div>
+          </section>`;
+      })
+      .join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>Daftar Nama Siswa Ruang Ujian</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm 12mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; background: #fff; font-size: 9pt; }
+    .sheet { page-break-after: always; }
+    .sheet:last-child { page-break-after: auto; }
+    .kop { display: flex; align-items: center; gap: 12px; border-bottom: 2.5px solid #082f63; padding-bottom: 8px; margin-bottom: 8px; }
+    .kop-logo { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; }
+    .kop-text { flex: 1; text-align: center; }
+    .kop-title { font-size: 11.5pt; font-weight: 900; color: #082f63; letter-spacing: 0.3px; }
+    .kop-exam { font-size: 9pt; font-weight: 800; color: #1e293b; margin-top: 2px; }
+    .kop-school { font-size: 10pt; font-weight: 900; color: #0f172a; margin-top: 1px; }
+    .room-badge { border: 2px solid #082f63; border-radius: 6px; padding: 4px 10px; text-align: center; background: #f0f9ff; flex-shrink: 0; }
+    .room-badge-lbl { font-size: 6.5pt; font-weight: 800; color: #475569; }
+    .room-badge-val { font-size: 11pt; font-weight: 900; color: #082f63; }
+    .meta-bar { display: flex; justify-content: space-between; font-size: 8.5pt; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 10px; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 8.4pt; }
+    th, td { border: 1px solid #94a3b8; padding: 4px 6px; text-align: left; }
+    thead th { background: #082f63; color: #fff; font-weight: 800; text-transform: uppercase; font-size: 7.5pt; text-align: center; }
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    tbody tr.empty-seat { color: #94a3b8; }
+    .c { text-align: center; }
+    .bold { font-weight: 700; }
+    .mono { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .ttd-col { color: #64748b; font-size: 7.5pt; }
+    .class-rekap { margin-top: 7px; font-size: 8pt; color: #334155; background: #f1f5f9; padding: 5px 8px; border-radius: 5px; border: 1px solid #cbd5e1; }
+    .sig-row { display: flex; justify-content: space-between; margin-top: 18px; padding: 0 18px; font-size: 8.5pt; }
+    .sig-box { width: 42%; text-align: center; }
+    .sig-role { font-weight: 700; margin-top: 2px; }
+    .sig-space { height: 44px; }
+    .sig-name { font-weight: 800; text-decoration: underline; }
+    .sig-nip { font-size: 7.5pt; color: #475569; margin-top: 2px; }
+  </style>
+</head>
+<body>${pagesHtml}</body>
+</html>`;
+
+    printHtmlViaHiddenIframe(html);
+  };
+
+  const handleExportRoomRosterCsv = (scope: 'active' | 'all' = 'active') => {
+    const rows = scope === 'all' ? allRoomsRoster : activeRoomRoster;
+    const headers = ['Ruang Ujian', 'Pengawas', 'No Kursi', 'Meja', 'No Peserta', 'Nama Lengkap Siswa', 'Kelas', 'NIS', 'NISN', 'Status'];
+    const csvEscape = (v: string | number) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [
+      headers.map(csvEscape).join(','),
+      ...rows.map(r =>
+        [
+          r.roomName,
+          r.pengawas,
+          `#${String(r.nomorKursi).padStart(2, '0')}`,
+          `Meja ${r.tableNo}`,
+          r.noPeserta,
+          r.isFilled ? r.namaSiswa : '(Kosong)',
+          r.kelasSiswa || '-',
+          r.nis || '-',
+          r.nisn || '-',
+          r.isFilled ? 'Terisi' : 'Kosong'
+        ]
+          .map(csvEscape)
+          .join(',')
+      )
+    ];
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const fileLabel =
+      scope === 'all'
+        ? 'daftar-siswa-semua-ruang-ujian'
+        : `daftar-siswa-${(activeRoom?.namaRuang || 'ruang').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    link.href = url;
+    link.download = `${fileLabel}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast(`Berhasil mengunduh ${fileLabel}.csv (${rows.filter(r => r.isFilled).length} siswa).`);
+  };
+
   // Filtered students for seat picker modal
   const filteredModalStudents = useMemo(() => {
     const q = seatSearchStudent.trim().toLowerCase();
@@ -842,7 +1206,19 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Detail Kursi ({activeRoom.namaRuang})
+                Denah ({activeRoom.namaRuang})
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('roster')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                  viewMode === 'roster'
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <ClipboardList className="w-3.5 h-3.5" />
+                <span>Daftar Siswa ({filledCountActive})</span>
               </button>
               <button
                 type="button"
@@ -853,7 +1229,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Ringkasan Semua Ruang ({rooms.length})
+                Semua Ruang ({rooms.length})
               </button>
             </div>
 
@@ -880,6 +1256,31 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                 </button>
               </>
             )}
+
+            {viewMode === 'detail' && (
+              <button
+                type="button"
+                onClick={() => setShowRosterInPoster(prev => !prev)}
+                className={`px-3 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer border whitespace-nowrap ${
+                  showRosterInPoster
+                    ? 'bg-sky-950/70 text-sky-200 border-sky-500/50 hover:bg-sky-900/70'
+                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                }`}
+                title="Tampilkan atau sembunyikan tabel daftar nama siswa pada poster denah"
+              >
+                {showRosterInPoster ? <Eye className="w-3.5 h-3.5 text-sky-400" /> : <EyeOff className="w-3.5 h-3.5" />}
+                <span>Daftar di Denah</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => handlePrintRoomRoster(viewMode === 'roster' ? rosterScope : 'active')}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-md whitespace-nowrap"
+            >
+              <ClipboardList className="w-3.5 h-3.5" />
+              <span>Cetak Daftar Siswa</span>
+            </button>
 
             <button
               type="button"
@@ -1129,6 +1530,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
       {/* =====================================================================
           PRINTABLE POSTER AREA — FAITHFUL TO AL FAKHIR SEATING PLAN REFERENCE
          ===================================================================== */}
+      {viewMode !== 'roster' && (
       <div
         id="printable-denah-ruang"
         className="bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-300 p-4 sm:p-6 overflow-x-auto"
@@ -1150,7 +1552,9 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                 {viewMode === 'detail' ? ` — ${activeRoom.namaRuang.toUpperCase()}` : ''}
               </h1>
               <p className="text-sm sm:text-lg font-extrabold text-[#fde047] uppercase tracking-wide mt-0.5">
-                {activeRoom.judulUjian || DEFAULT_JUDUL_UJIAN}
+                {activeRoom.judulUjian && activeRoom.judulUjian !== DEFAULT_JUDUL_UJIAN
+                  ? activeRoom.judulUjian
+                  : configuredExamBanner}
               </p>
               <p className="text-base sm:text-xl font-black text-white uppercase tracking-wider mt-0.5">
                 {schoolDisplayName}
@@ -1503,58 +1907,435 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
               </div>
             </div>
           </div>
+
+          {/* 3. DAFTAR NAMA SISWA DI RUANG UJIAN (Tampil & Tercetak Langsung di Bawah Denah) */}
+          {viewMode === 'detail' && showRosterInPoster && (
+            <div className="rounded-2xl border-2 border-[#0a366b] overflow-hidden bg-white shadow-sm">
+              <div className="bg-gradient-to-r from-[#082f63] via-[#0c3f7e] to-[#082f63] text-white px-4 py-2.5 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-[#fde047] shrink-0" />
+                  <span className="text-sm font-black uppercase tracking-wide">
+                    Daftar Nama Siswa Peserta Ujian — {activeRoom.namaRuang}
+                  </span>
+                </div>
+                <div className="text-xs font-bold text-sky-100 tabular-nums">
+                  Pengawas: <span className="text-[#fde047]">{activeRoom.pengawas}</span> · Terisi{' '}
+                  <span className="text-white font-black">{filledCountActive}</span> / {activeRoom.jumlahKursi} Siswa
+                </div>
+              </div>
+
+              <div className="p-3 bg-white">
+                {activeRoomRoster.length > 8 ? (
+                  (() => {
+                    const half = Math.ceil(activeRoomRoster.length / 2);
+                    const chunks = [activeRoomRoster.slice(0, half), activeRoomRoster.slice(half)];
+                    const q = searchQuery.trim().toLowerCase();
+                    return (
+                      <div className="grid grid-cols-2 gap-3 items-start">
+                        {chunks.map((rows, chunkIdx) => (
+                          <table
+                            key={chunkIdx}
+                            className="w-full text-left border-collapse border border-slate-300 text-xs table-fixed"
+                          >
+                            <thead>
+                              <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-extrabold">
+                                <th className="border border-slate-300 px-2 py-1.5 text-center w-[11%]">Kursi</th>
+                                <th className="border border-slate-300 px-1.5 py-1.5 text-center w-[10%]">Meja</th>
+                                <th className="border border-slate-300 px-2 py-1.5 w-[44%]">Nama Lengkap Siswa</th>
+                                <th className="border border-slate-300 px-2 py-1.5 w-[18%]">Kelas</th>
+                                <th className="border border-slate-300 px-2 py-1.5 text-center w-[17%]">NIS / No.</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map(row => {
+                                const isHit = Boolean(
+                                  q &&
+                                    row.isFilled &&
+                                    (row.namaSiswa.toLowerCase().includes(q) ||
+                                      row.kelasSiswa.toLowerCase().includes(q) ||
+                                      row.nis.toLowerCase().includes(q))
+                                );
+                                const isSwap = swapSourceSeat === row.nomorKursi;
+                                return (
+                                  <tr
+                                    key={row.nomorKursi}
+                                    onClick={() => canEdit && handleSeatClick(row.seat)}
+                                    className={`${canEdit ? 'cursor-pointer hover:bg-sky-50' : ''} ${
+                                      isSwap
+                                        ? 'bg-amber-100'
+                                        : isHit
+                                        ? 'bg-emerald-100'
+                                        : row.nomorKursi % 2 === 0
+                                        ? 'bg-slate-50/70'
+                                        : 'bg-white'
+                                    }`}
+                                  >
+                                    <td className="border border-slate-300 px-1.5 py-1 text-center font-black text-[#082f63] tabular-nums">
+                                      #{String(row.nomorKursi).padStart(2, '0')}
+                                    </td>
+                                    <td className="border border-slate-300 px-1 py-1 text-center font-bold text-amber-800 tabular-nums">
+                                      M{row.tableNo}
+                                    </td>
+                                    <td
+                                      className={`border border-slate-300 px-2 py-1 truncate ${
+                                        row.isFilled ? 'font-bold text-slate-900' : 'italic text-slate-400'
+                                      }`}
+                                      title={row.isFilled ? row.namaSiswa : 'Kursi Kosong'}
+                                    >
+                                      {row.isFilled ? row.namaSiswa : '(Kosong)'}
+                                    </td>
+                                    <td className="border border-slate-300 px-2 py-1 font-semibold text-slate-700 truncate">
+                                      {row.kelasSiswa || '-'}
+                                    </td>
+                                    <td className="border border-slate-300 px-1.5 py-1 text-center font-semibold text-slate-700 tabular-nums truncate">
+                                      {row.nis || row.nisn || '-'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        ))}
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <table className="w-full text-left border-collapse border border-slate-300 text-xs table-fixed">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-extrabold">
+                        <th className="border border-slate-300 px-2 py-1.5 text-center w-[9%]">Kursi</th>
+                        <th className="border border-slate-300 px-2 py-1.5 text-center w-[9%]">Meja</th>
+                        <th className="border border-slate-300 px-2 py-1.5 w-[44%]">Nama Lengkap Siswa</th>
+                        <th className="border border-slate-300 px-2 py-1.5 w-[20%]">Kelas</th>
+                        <th className="border border-slate-300 px-2 py-1.5 text-center w-[18%]">NIS / No. Peserta</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeRoomRoster.map(row => (
+                        <tr
+                          key={row.nomorKursi}
+                          onClick={() => canEdit && handleSeatClick(row.seat)}
+                          className={`${canEdit ? 'cursor-pointer hover:bg-sky-50' : ''} ${
+                            row.nomorKursi % 2 === 0 ? 'bg-slate-50/70' : 'bg-white'
+                          }`}
+                        >
+                          <td className="border border-slate-300 px-2 py-1 text-center font-black text-[#082f63] tabular-nums">
+                            #{String(row.nomorKursi).padStart(2, '0')}
+                          </td>
+                          <td className="border border-slate-300 px-2 py-1 text-center font-bold text-amber-800 tabular-nums">
+                            Meja {row.tableNo}
+                          </td>
+                          <td
+                            className={`border border-slate-300 px-2 py-1 truncate ${
+                              row.isFilled ? 'font-bold text-slate-900' : 'italic text-slate-400'
+                            }`}
+                          >
+                            {row.isFilled ? row.namaSiswa : '(Kosong)'}
+                          </td>
+                          <td className="border border-slate-300 px-2 py-1 font-semibold text-slate-700 truncate">
+                            {row.kelasSiswa || '-'}
+                          </td>
+                          <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-700 tabular-nums truncate">
+                            {row.nis || row.nisn || '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                {activeRoomClassSummary.length > 0 && (
+                  <div className="mt-2.5 pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-extrabold text-slate-700 uppercase">Rekap Kelas:</span>
+                      {activeRoomClassSummary.map(([cls, count]) => (
+                        <span
+                          key={cls}
+                          className="px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-[#082f63] font-bold tabular-nums"
+                        >
+                          {cls}: {count}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="text-slate-500 font-semibold print:hidden">
+                      {canEdit ? 'Klik baris siswa untuk mengubah kursi' : ''}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
+      )}
 
       {/* =====================================================================
-          SEATING ROSTER TABLE (Quick Editable List Below Blueprint)
+          INTERACTIVE DAFTAR NAMA SISWA DI RUANG UJIAN (Search, Filter, Print, CSV)
          ===================================================================== */}
-      {viewMode === 'detail' && (
-        <div className="bg-[#121212] rounded-2xl p-5 border border-slate-800 shadow-xl space-y-3 print:hidden">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <Users className="w-4 h-4 text-sky-400" />
-              <span>Daftar Penempatan Duduk — {activeRoom.namaRuang}</span>
-            </h4>
-            <span className="text-xs text-slate-400 tabular-nums">
-              {filledCountActive} terisi · {activeRoom.jumlahKursi - filledCountActive} kosong
-            </span>
+      {(viewMode === 'detail' || viewMode === 'roster') && (
+        <div className="bg-[#121212] rounded-2xl p-5 border border-slate-800 shadow-xl space-y-4 print:hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+            <div>
+              <h4 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                <Users className="w-4 h-4 text-sky-400" />
+                <span>
+                  Daftar Nama Siswa —{' '}
+                  {viewMode === 'roster' && rosterScope === 'all'
+                    ? `Semua Ruang (${rooms.length} Ruang)`
+                    : activeRoom.namaRuang}
+                </span>
+              </h4>
+              <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
+                Menampilkan {filteredRosterRows.length} dari {scopedRosterBase.length} kursi ·{' '}
+                <span className="text-emerald-400 font-semibold">
+                  {scopedRosterBase.filter(r => r.isFilled).length} terisi
+                </span>{' '}
+                ·{' '}
+                <span className="text-slate-400">
+                  {scopedRosterBase.filter(r => !r.isFilled).length} kosong
+                </span>
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {viewMode === 'roster' && (
+                <div className="flex items-center bg-slate-900 border border-slate-700 rounded-xl p-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRosterScope('active');
+                      setRosterKelasFilter('Semua');
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                      rosterScope === 'active'
+                        ? 'bg-sky-600 text-white'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {activeRoom.namaRuang}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRosterScope('all');
+                      setRosterKelasFilter('Semua');
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                      rosterScope === 'all'
+                        ? 'bg-sky-600 text-white'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Semua Ruang
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => handlePrintRoomRoster(viewMode === 'roster' ? rosterScope : 'active')}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Cetak Daftar &amp; Absensi</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleExportRoomRosterCsv(viewMode === 'roster' ? rosterScope : 'active')}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Unduh Excel (CSV)</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {activeRoom.kursiList.map(seat => {
-              const tableNo = Math.floor((seat.nomorKursi - 1) / (activeRoom.kursiPerMeja || 4)) + 1;
-              const isFilled = Boolean(seat.namaSiswa.trim());
-              return (
+          {/* Filter Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={rosterSearch}
+                onChange={e => setRosterSearch(e.target.value)}
+                placeholder="Cari nama siswa, kelas, NIS, no. peserta, atau nomor kursi..."
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400"
+              />
+              {rosterSearch && (
                 <button
-                  key={seat.nomorKursi}
                   type="button"
-                  onClick={() => handleSeatClick(seat)}
-                  className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-2 ${
-                    isFilled
-                      ? 'bg-slate-900/90 border-slate-700 hover:border-sky-500'
-                      : 'bg-slate-950/60 border-slate-800 border-dashed hover:border-sky-500/70'
-                  } ${canEdit ? 'cursor-pointer' : 'cursor-default'}`}
+                  onClick={() => setRosterSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
                 >
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-bold text-sky-400 tabular-nums">
-                      Kursi #{String(seat.nomorKursi).padStart(2, '0')} · Meja {tableNo}
-                    </div>
-                    <div className={`text-xs mt-0.5 truncate ${isFilled ? 'font-bold text-white' : 'text-slate-500 italic'}`}>
-                      {isFilled ? seat.namaSiswa : 'Belum diisi'}
-                    </div>
-                    {isFilled && (
-                      <div className="text-[10px] text-slate-400 truncate tabular-nums">
-                        {seat.kelasSiswa || '-'} {seat.nomorPeserta ? `· ${seat.nomorPeserta}` : ''}
-                      </div>
-                    )}
-                  </div>
-                  {canEdit && (
-                    <Edit2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  )}
+                  <X className="w-3.5 h-3.5" />
                 </button>
-              );
-            })}
+              )}
+            </div>
+
+            <select
+              value={rosterKelasFilter}
+              onChange={e => setRosterKelasFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:outline-none focus:border-sky-400"
+            >
+              <option value="Semua">Semua Kelas ({availableRosterClasses.length})</option>
+              {availableRosterClasses.map(k => (
+                <option key={k} value={k}>
+                  Kelas {k}
+                </option>
+              ))}
+            </select>
+
+            <div className="flex items-center bg-slate-900 border border-slate-700 rounded-xl p-1 shrink-0">
+              {(
+                [
+                  { id: 'semua', label: 'Semua' },
+                  { id: 'terisi', label: 'Terisi' },
+                  { id: 'kosong', label: 'Kosong' }
+                ] as const
+              ).map(opt => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setRosterStatusFilter(opt.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                    rosterStatusFilter === opt.id
+                      ? 'bg-sky-600 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Class Summary Pills */}
+          {activeRoomClassSummary.length > 0 && !(viewMode === 'roster' && rosterScope === 'all') && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-400 mr-1">Sebaran Kelas:</span>
+              {activeRoomClassSummary.map(([cls, count]) => (
+                <button
+                  key={cls}
+                  type="button"
+                  onClick={() => setRosterKelasFilter(prev => (prev === cls ? 'Semua' : cls))}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer tabular-nums ${
+                    rosterKelasFilter === cls
+                      ? 'bg-sky-600 text-white border-sky-400'
+                      : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-sky-500/60'
+                  }`}
+                >
+                  {cls} ({count})
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Structured Student Roster Table */}
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-900/95 text-slate-300 uppercase text-[10px] font-extrabold border-b border-slate-800">
+                  <th className="px-3 py-2.5 w-12 text-center">No</th>
+                  {viewMode === 'roster' && rosterScope === 'all' && (
+                    <th className="px-3 py-2.5">Ruang</th>
+                  )}
+                  <th className="px-3 py-2.5 w-20 text-center">Kursi</th>
+                  <th className="px-3 py-2.5 w-20 text-center">Meja</th>
+                  <th className="px-3 py-2.5 w-28">No. Peserta</th>
+                  <th className="px-3 py-2.5">Nama Lengkap Siswa</th>
+                  <th className="px-3 py-2.5">Kelas</th>
+                  <th className="px-3 py-2.5">NIS / NISN</th>
+                  {canEdit && <th className="px-3 py-2.5 w-24 text-right">Aksi</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {filteredRosterRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={canEdit ? (viewMode === 'roster' && rosterScope === 'all' ? 9 : 8) : 7}
+                      className="px-4 py-8 text-center text-slate-500 italic"
+                    >
+                      Tidak ada data siswa yang cocok dengan filter pencarian.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRosterRows.map((row, idx) => (
+                    <tr
+                      key={`${row.roomId}-${row.nomorKursi}`}
+                      className={`transition-colors ${
+                        row.isFilled
+                          ? 'bg-slate-950/40 hover:bg-slate-900/80'
+                          : 'bg-slate-950/20 hover:bg-slate-900/50'
+                      }`}
+                    >
+                      <td className="px-3 py-2 text-center text-slate-500 font-semibold tabular-nums">
+                        {idx + 1}
+                      </td>
+                      {viewMode === 'roster' && rosterScope === 'all' && (
+                        <td className="px-3 py-2 font-bold text-sky-300 whitespace-nowrap">
+                          {row.roomName}
+                        </td>
+                      )}
+                      <td className="px-3 py-2 text-center">
+                        <span className="inline-block px-2 py-0.5 rounded-md bg-sky-500/15 border border-sky-500/30 text-sky-300 font-black tabular-nums">
+                          #{String(row.nomorKursi).padStart(2, '0')}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-center font-bold text-amber-300 tabular-nums whitespace-nowrap">
+                        Meja {row.tableNo}
+                      </td>
+                      <td className="px-3 py-2 font-bold text-indigo-300 tabular-nums whitespace-nowrap">
+                        {row.noPeserta}
+                      </td>
+                      <td className="px-3 py-2">
+                        {row.isFilled ? (
+                          <span className="font-bold text-white">{row.namaSiswa}</span>
+                        ) : (
+                          <span className="text-slate-500 italic">Kursi belum diisi</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-slate-300 font-semibold whitespace-nowrap">
+                        {row.kelasSiswa || '-'}
+                      </td>
+                      <td className="px-3 py-2 text-slate-400 tabular-nums whitespace-nowrap">
+                        {row.nis || row.nisn ? (
+                          <span>
+                            {row.nis || '-'}
+                            {row.nisn && row.nisn !== row.nis ? ` / ${row.nisn}` : ''}
+                          </span>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                      {canEdit && (
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (row.roomId !== activeRoom.id) {
+                                setSelectedRoomId(row.roomId);
+                              }
+                              setEditingSeatNo(row.seat.nomorKursi);
+                              setSeatManualNama(row.seat.namaSiswa || '');
+                              setSeatManualKelas(row.seat.kelasSiswa || '');
+                              setSeatManualNoPeserta(row.seat.nomorPeserta || '');
+                              setSeatSelectedSiswaId(row.seat.siswaId);
+                              setSeatSearchStudent('');
+                              setSeatFilterKelas('Semua');
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-sky-600 text-slate-200 hover:text-white inline-flex items-center gap-1 cursor-pointer transition-colors"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            <span>{row.isFilled ? 'Edit' : 'Isi'}</span>
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

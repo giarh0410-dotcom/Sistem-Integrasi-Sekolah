@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus,
   Minus,
@@ -22,10 +22,16 @@ import {
   ClipboardList,
   Download,
   Eye,
-  EyeOff
+  EyeOff,
+  Move
 } from 'lucide-react';
 import { Siswa, Guru, RombelKelas, SchoolSettings, Role, CbtExamSettings } from '../../types/school';
 import { dbFetchCollection, dbSaveCollection } from '../../lib/firebaseSync';
+
+export interface DenahPosOffset {
+  x: number;
+  y: number;
+}
 
 export interface DenahKursi {
   nomorKursi: number;
@@ -46,6 +52,9 @@ export interface DenahRuangItem {
   labelJendela: string;
   ketentuanTambahan: string;
   kursiList: DenahKursi[];
+  pengawasOffset?: DenahPosOffset;
+  tableOffsets?: Record<string, DenahPosOffset>;
+  seatOffsets?: Record<string, DenahPosOffset>;
   updatedAt?: string;
 }
 
@@ -204,22 +213,6 @@ const DoorSvg: React.FC<{ className?: string }> = ({ className = 'w-11 h-24' }) 
   </svg>
 );
 
-const WindowPaneSvg: React.FC<{ className?: string }> = ({ className = 'w-7 h-20' }) => (
-  <svg viewBox="0 0 32 90" className={className} aria-hidden="true">
-    <polygon points="4,4 28,12 28,78 4,86" fill="#e0f2fe" stroke="#1e3a8a" strokeWidth="2.5" strokeLinejoin="round" />
-    <polygon points="8,10 24,15 24,75 8,80" fill="url(#winGrad)" stroke="#38bdf8" strokeWidth="1.2" />
-    <line x1="10" y1="30" x2="22" y2="22" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" opacity="0.85" />
-    <line x1="10" y1="54" x2="22" y2="44" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" opacity="0.7" />
-    <defs>
-      <linearGradient id="winGrad" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stopColor="#bae6fd" />
-        <stop offset="50%" stopColor="#38bdf8" />
-        <stop offset="100%" stopColor="#e0f2fe" />
-      </linearGradient>
-    </defs>
-  </svg>
-);
-
 const LegendChairIcon: React.FC = () => (
   <svg viewBox="0 0 40 40" className="w-8 h-8 shrink-0" aria-hidden="true">
     <rect x="7" y="5" width="26" height="10" rx="5" fill="#1d4ed8" stroke="#0f172a" strokeWidth="2.2" />
@@ -267,6 +260,19 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [swapSourceSeat, setSwapSourceSeat] = useState<number | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Interactive drag-to-move state for Meja Pengawas, Meja Peserta, and Kursi Peserta
+  const [dragMoveEnabled, setDragMoveEnabled] = useState<boolean>(true);
+  const [activeDrag, setActiveDrag] = useState<{
+    kind: 'pengawas' | 'table' | 'seat';
+    key: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const suppressNextClickRef = useRef<boolean>(false);
+  const floorplanFrameRef = useRef<HTMLDivElement | null>(null);
+  const roomsRef = useRef<DenahRuangItem[]>(rooms);
+  roomsRef.current = rooms;
 
   // Seat edit modal state
   const [editingSeatNo, setEditingSeatNo] = useState<number | null>(null);
@@ -477,14 +483,170 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
     if (!canEdit || !activeRoom) return;
     const updated = rooms.map(r =>
       r.id === activeRoom.id
-        ? { ...r, kursiPerMeja: perTable, updatedAt: new Date().toISOString() }
+        ? {
+            ...r,
+            kursiPerMeja: perTable,
+            tableOffsets: {},
+            seatOffsets: {},
+            updatedAt: new Date().toISOString()
+          }
         : r
     );
     persistRooms(updated);
   };
 
+  const getElementOffset = (
+    room: DenahRuangItem | undefined,
+    kind: 'pengawas' | 'table' | 'seat',
+    key: string
+  ): DenahPosOffset => {
+    if (activeDrag && activeDrag.kind === kind && activeDrag.key === key) {
+      return { x: activeDrag.x, y: activeDrag.y };
+    }
+    if (!room) return { x: 0, y: 0 };
+    if (kind === 'pengawas') {
+      return room.pengawasOffset || { x: 0, y: 0 };
+    }
+    if (kind === 'table') {
+      return room.tableOffsets?.[key] || { x: 0, y: 0 };
+    }
+    return room.seatOffsets?.[key] || { x: 0, y: 0 };
+  };
+
+  const hasCustomLayoutPositions = useMemo(() => {
+    if (!activeRoom) return false;
+    const pOff = activeRoom.pengawasOffset;
+    if (pOff && (pOff.x !== 0 || pOff.y !== 0)) return true;
+    if (
+      activeRoom.tableOffsets &&
+      Object.values(activeRoom.tableOffsets).some(o => o && (o.x !== 0 || o.y !== 0))
+    ) {
+      return true;
+    }
+    if (
+      activeRoom.seatOffsets &&
+      Object.values(activeRoom.seatOffsets).some(o => o && (o.x !== 0 || o.y !== 0))
+    ) {
+      return true;
+    }
+    return false;
+  }, [activeRoom]);
+
+  const handleResetLayoutPositions = () => {
+    if (!canEdit || !activeRoom) return;
+    const updated = rooms.map(r =>
+      r.id === activeRoom.id
+        ? {
+            ...r,
+            pengawasOffset: { x: 0, y: 0 },
+            tableOffsets: {},
+            seatOffsets: {},
+            updatedAt: new Date().toISOString()
+          }
+        : r
+    );
+    persistRooms(updated);
+    showToast(`Posisi meja dan kursi di ${activeRoom.namaRuang} dikembalikan ke tata letak awal.`);
+  };
+
+  const startDragMove = (
+    e: React.PointerEvent<HTMLElement>,
+    kind: 'pengawas' | 'table' | 'seat',
+    key: string
+  ) => {
+    if (!canEdit || !dragMoveEnabled || viewMode !== 'detail' || !activeRoom) return;
+    if (e.button !== 0) return;
+    // Do not hijack clicks on delete (X) buttons inside tables
+    const targetEl = e.target as HTMLElement | null;
+    if (targetEl?.closest('[data-no-drag="true"]')) return;
+    // Allow Seat Swap clicks to stay clean without dragging chairs
+    if (kind === 'seat' && swapSourceSeat !== null) return;
+
+    e.stopPropagation();
+
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
+    const baseOffset = getElementOffset(activeRoom, kind, key);
+    const roomId = activeRoom.id;
+    let dragged = false;
+    let latestX = baseOffset.x;
+    let latestY = baseOffset.y;
+
+    const frameRect = floorplanFrameRef.current?.getBoundingClientRect();
+    const maxRangeX = frameRect ? Math.max(320, Math.round(frameRect.width * 0.72)) : 520;
+    const maxRangeY = frameRect ? Math.max(320, Math.round(frameRect.height * 0.75)) : 520;
+
+    const handlePointerMove = (moveEvt: PointerEvent) => {
+      const dx = moveEvt.clientX - startClientX;
+      const dy = moveEvt.clientY - startClientY;
+      if (!dragged && Math.hypot(dx, dy) < 5) return;
+
+      if (!dragged) {
+        dragged = true;
+        document.body.style.userSelect = 'none';
+      }
+
+      // Snap gently to 4px grid for tidy alignment while feeling smooth
+      const snappedX = Math.round((baseOffset.x + dx) / 4) * 4;
+      const snappedY = Math.round((baseOffset.y + dy) / 4) * 4;
+      latestX = Math.max(-maxRangeX, Math.min(maxRangeX, snappedX));
+      latestY = Math.max(-maxRangeY, Math.min(maxRangeY, snappedY));
+      setActiveDrag({ kind, key, x: latestX, y: latestY });
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+      document.body.style.userSelect = '';
+
+      if (dragged) {
+        suppressNextClickRef.current = true;
+        window.setTimeout(() => {
+          suppressNextClickRef.current = false;
+        }, 120);
+
+        const nextRooms = roomsRef.current.map(r => {
+          if (r.id !== roomId) return r;
+          if (kind === 'pengawas') {
+            return {
+              ...r,
+              pengawasOffset: { x: latestX, y: latestY },
+              updatedAt: new Date().toISOString()
+            };
+          }
+          if (kind === 'table') {
+            return {
+              ...r,
+              tableOffsets: {
+                ...(r.tableOffsets || {}),
+                [key]: { x: latestX, y: latestY }
+              },
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return {
+            ...r,
+            seatOffsets: {
+              ...(r.seatOffsets || {}),
+              [key]: { x: latestX, y: latestY }
+            },
+            updatedAt: new Date().toISOString()
+          };
+        });
+        persistRooms(nextRooms);
+      }
+      setActiveDrag(null);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  };
+
   // Click on a blue chair
   const handleSeatClick = (seat: DenahKursi) => {
+    if (suppressNextClickRef.current) return;
     if (!canEdit || !activeRoom) return;
 
     // If swap mode is active, perform swap
@@ -1115,50 +1277,95 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
 
     const shapeClasses =
       orientation === 'left'
-        ? 'rounded-l-2xl rounded-r-md'
+        ? 'rounded-l-xl rounded-r-md'
         : orientation === 'right'
-        ? 'rounded-r-2xl rounded-l-md'
+        ? 'rounded-r-xl rounded-l-md'
         : orientation === 'top'
-        ? 'rounded-t-2xl rounded-b-md'
-        : 'rounded-b-2xl rounded-t-md';
+        ? 'rounded-t-xl rounded-b-md'
+        : 'rounded-b-xl rounded-t-md';
+
+    const seatKey = String(seat.nomorKursi);
+    const seatOffset = getElementOffset(activeRoom, 'seat', seatKey);
+    const isDraggingThisSeat = activeDrag?.kind === 'seat' && activeDrag.key === seatKey;
+    const canDragSeat = canEdit && dragMoveEnabled && viewMode === 'detail' && swapSourceSeat === null;
 
     return (
       <button
         key={seat.nomorKursi}
         type="button"
+        onPointerDown={e => startDragMove(e, 'seat', seatKey)}
         onClick={() => handleSeatClick(seat)}
-        title={isFilled ? `Kursi #${seat.nomorKursi}: ${seat.namaSiswa} (${seat.kelasSiswa || '-'})${canEdit ? ' — Klik untuk edit' : ''}` : `Kursi #${seat.nomorKursi}: Kosong${canEdit ? ' — Klik untuk pilih siswa' : ''}`}
-        className={`group relative transition-all duration-150 border-2 text-left flex flex-col justify-center ${shapeClasses} ${
+        style={{
+          transform:
+            seatOffset.x !== 0 || seatOffset.y !== 0
+              ? `translate3d(${seatOffset.x}px, ${seatOffset.y}px, 0)`
+              : undefined
+        }}
+        title={
+          isFilled
+            ? `Kursi #${seat.nomorKursi}: ${seat.namaSiswa} (${seat.kelasSiswa || '-'})${
+                canDragSeat
+                  ? ' — Klik untuk edit, tahan & geser untuk memindah posisi kursi'
+                  : canEdit
+                  ? ' — Klik untuk edit'
+                  : ''
+              }`
+            : `Kursi #${seat.nomorKursi}: Kosong${
+                canDragSeat
+                  ? ' — Klik untuk pilih siswa, tahan & geser untuk memindah posisi kursi'
+                  : canEdit
+                  ? ' — Klik untuk pilih siswa'
+                  : ''
+              }`
+        }
+        className={`group relative border-[1.5px] text-left flex flex-col justify-center select-none ${
+          isDraggingThisSeat
+            ? 'transition-none z-50 ring-3 ring-sky-300 shadow-2xl scale-[1.03]'
+            : 'transition-[background,box-shadow,border-color] duration-150'
+        } ${shapeClasses} ${
           isSwapSource
-            ? 'bg-amber-500 border-amber-900 text-white ring-4 ring-amber-300 scale-105 z-20'
+            ? 'bg-amber-500 border-amber-900 text-white ring-3 ring-amber-300 scale-105 z-20'
             : isSearchHit || isMySeat
-            ? 'bg-emerald-600 border-emerald-950 text-white ring-4 ring-emerald-300 scale-105 z-20'
+            ? 'bg-emerald-600 border-emerald-950 text-white ring-3 ring-emerald-300 scale-105 z-20'
             : isFilled
-            ? 'bg-gradient-to-b from-[#2563eb] to-[#1d4ed8] hover:from-[#3b82f6] hover:to-[#1d4ed8] border-slate-900 text-white shadow-[0_3px_0_#0f172a]'
-            : 'bg-gradient-to-b from-[#60a5fa]/75 to-[#3b82f6]/85 hover:from-[#3b82f6] hover:to-[#2563eb] border-slate-800/80 border-dashed text-white/95 shadow-[0_2px_0_#1e3a8a]'
-        } ${canEdit ? 'cursor-pointer active:translate-y-0.5' : 'cursor-default'} ${
+            ? 'bg-gradient-to-b from-[#2563eb] to-[#1d4ed8] hover:from-[#3b82f6] hover:to-[#1d4ed8] border-slate-900 text-white shadow-[0_2px_0_#0f172a]'
+            : 'bg-gradient-to-b from-[#60a5fa]/75 to-[#3b82f6]/85 hover:from-[#3b82f6] hover:to-[#2563eb] border-slate-800/80 border-dashed text-white/95 shadow-[0_1.5px_0_#1e3a8a]'
+        } ${
+          canDragSeat
+            ? isDraggingThisSeat
+              ? 'cursor-grabbing touch-none'
+              : 'cursor-grab touch-none'
+            : canEdit
+            ? 'cursor-pointer active:translate-y-0.5'
+            : 'cursor-default'
+        } ${
           orientation === 'left' || orientation === 'right'
-            ? 'w-[96px] min-h-[56px] px-2 py-1.5'
+            ? 'w-[78px] min-h-[40px] px-1.5 py-1'
             : orientation === 'single'
-            ? 'w-full min-h-[58px] px-2.5 py-1.5'
-            : 'w-[132px] min-h-[48px] px-2 py-1.5'
+            ? 'w-full min-h-[42px] px-1.5 py-1'
+            : 'w-[104px] min-h-[38px] px-1.5 py-1'
         }`}
       >
-        <div className="flex items-center justify-between gap-1">
-          <span className="text-[10px] font-black tracking-tight bg-slate-950/35 px-1.5 py-0.2 rounded tabular-nums">
+        <div className="flex items-center justify-between gap-0.5">
+          <span className="text-[8.5px] font-black tracking-tight bg-slate-950/35 px-1 py-0 rounded tabular-nums leading-tight">
             #{String(seat.nomorKursi).padStart(2, '0')}
           </span>
-          {seat.kelasSiswa && (
-            <span className="text-[9px] font-bold text-sky-100 truncate max-w-[66px]">
-              {seat.kelasSiswa.split(' - ')[0]}
-            </span>
-          )}
+          <div className="flex items-center gap-0.5 min-w-0">
+            {seat.kelasSiswa && (
+              <span className="text-[7.5px] font-bold text-sky-100 truncate max-w-[46px] leading-tight">
+                {seat.kelasSiswa.split(' - ')[0]}
+              </span>
+            )}
+            {canDragSeat && (
+              <Move className="w-2 h-2 text-sky-100/80 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+            )}
+          </div>
         </div>
-        <div className={`text-[11px] leading-tight mt-0.5 truncate ${isFilled ? 'font-extrabold text-white' : 'font-semibold text-blue-50 italic'}`}>
+        <div className={`text-[9.5px] leading-tight mt-0.5 truncate ${isFilled ? 'font-extrabold text-white' : 'font-semibold text-blue-50 italic'}`}>
           {shortName}
         </div>
         {seat.nomorPeserta && isFilled && (
-          <div className="text-[9px] text-blue-100/90 font-mono truncate tabular-nums">
+          <div className="text-[7.5px] leading-tight text-blue-100/90 font-mono truncate tabular-nums">
             {seat.nomorPeserta}
           </div>
         )}
@@ -1476,6 +1683,42 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setDragMoveEnabled(prev => {
+                    const next = !prev;
+                    showToast(
+                      next
+                        ? 'Mode Geser aktif: tahan & seret Meja Pengawas, Meja, atau Kursi untuk mengatur posisi.'
+                        : 'Mode Geser dikunci: posisi meja dan kursi terkunci.'
+                    );
+                    return next;
+                  });
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 cursor-pointer transition-all ${
+                  dragMoveEnabled
+                    ? 'bg-cyan-500/20 text-cyan-200 border-cyan-500/50 hover:bg-cyan-500/30'
+                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                }`}
+                title="Aktifkan atau kunci fitur geser posisi meja & kursi"
+              >
+                <Move className="w-3.5 h-3.5" />
+                <span>{dragMoveEnabled ? 'Geser Meja & Kursi: Aktif' : 'Geser Meja & Kursi: Terkunci'}</span>
+              </button>
+
+              {hasCustomLayoutPositions && (
+                <button
+                  type="button"
+                  onClick={handleResetLayoutPositions}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-950/70 text-sky-200 border border-sky-500/50 hover:bg-sky-900/70 flex items-center gap-1.5 cursor-pointer transition-all"
+                  title="Kembalikan posisi semua meja & kursi ke tata letak awal"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Posisi</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
                   if (swapSourceSeat !== null) {
                     setSwapSourceSeat(null);
                   } else {
@@ -1535,7 +1778,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
         id="printable-denah-ruang"
         className="bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-300 p-4 sm:p-6 overflow-x-auto"
       >
-        <div className="min-w-[1140px] space-y-4">
+        <div className="min-w-[960px] space-y-4">
           {/* 1. NAVY HEADER BANNER (Matching Reference Image) */}
           <div className="bg-gradient-to-r from-[#082f63] via-[#0c3f7e] to-[#082f63] rounded-2xl px-6 py-4 flex items-center gap-5 shadow-md border-2 border-[#06234a]">
             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white p-1.5 flex items-center justify-center shrink-0 shadow-md">
@@ -1562,93 +1805,144 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
             </div>
           </div>
 
-          {/* 2. MAIN BODY: LEFT CALLOUTS + FLOORPLAN ROOM + RIGHT LEGEND/RULES */}
-          <div className="grid grid-cols-[120px_1fr_220px] gap-3 items-stretch">
-            {/* LEFT CALLOUT LABELS (Pintu & Jendela) */}
-            <div className="relative flex flex-col justify-start pt-6 gap-28 select-none">
-              <div className="flex items-center gap-1">
-                <div className="bg-[#dc2626] text-white rounded-xl px-2 py-2 text-center shadow-md border border-red-800 w-full">
-                  <div className="text-xs font-black leading-tight">Pintu</div>
-                  <div className="text-[10px] font-bold text-red-100 leading-tight mt-0.5">
-                    {activeRoom.labelPintu.replace(/^Pintu\s*/i, '') || '(di sebelah kiri)'}
-                  </div>
-                </div>
-                <span className="text-red-600 font-black text-xl leading-none -mr-2">→</span>
-              </div>
-
-              <div className="flex items-center gap-1 mt-10">
-                <div className="bg-[#1d4ed8] text-white rounded-xl px-2 py-2 text-center shadow-md border border-blue-900 w-full">
-                  <div className="text-xs font-black leading-tight">Jendela</div>
-                  <div className="text-[10px] font-bold text-blue-100 leading-tight mt-0.5">
-                    {activeRoom.labelJendela.replace(/^Jendela\s*/i, '') || '(samping kiri)'}
-                  </div>
-                </div>
-                <span className="text-red-600 font-black text-xl leading-none -mr-2">→</span>
-              </div>
-            </div>
-
+          {/* 2. MAIN BODY: WIDE FLOORPLAN ROOM + RIGHT LEGEND/RULES */}
+          <div className="grid grid-cols-[1fr_210px] gap-3 items-stretch">
             {/* CENTER FLOORPLAN ROOM FRAME */}
-            <div className="relative rounded-lg border-[8px] border-[#64748b] shadow-[inset_0_0_0_2px_#1e293b,0_10px_25px_rgba(15,23,42,0.12)] bg-[#f8fafc] bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] [background-size:36px_36px] min-h-[540px] flex flex-col justify-between p-5">
-              {/* Left-wall architectural Door & Windows */}
-              <div className="absolute -left-[6px] top-3 z-10 pointer-events-none flex flex-col items-start gap-2">
+            <div
+              ref={floorplanFrameRef}
+              className="relative rounded-lg border-[8px] border-[#64748b] shadow-[inset_0_0_0_2px_#1e293b,0_10px_25px_rgba(15,23,42,0.12)] bg-[#f8fafc] bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] [background-size:36px_36px] min-h-[540px] flex flex-col justify-between p-5"
+            >
+              {/* Left-wall architectural Door */}
+              <div className="absolute -left-[6px] top-3 z-10 pointer-events-none flex flex-col items-start">
                 <DoorSvg className="w-10 h-24 drop-shadow" />
-                <div className="flex flex-col gap-1.5 mt-1">
-                  <WindowPaneSvg className="w-7 h-20" />
-                  <WindowPaneSvg className="w-7 h-20" />
-                  <WindowPaneSvg className="w-7 h-20" />
-                </div>
               </div>
 
               {/* TOP ZONE: Corner Plants + Meja Pengawas */}
               <div className="relative flex items-start justify-between pl-14 pr-4 pt-1 pb-4">
                 <PottedPlantSvg className="w-11 h-11" />
 
-                {/* Meja Pengawas */}
-                <div className="flex flex-col items-center">
-                  {/* Black supervisor chair behind desk */}
-                  <div className="w-16 h-7 rounded-t-xl bg-gradient-to-b from-slate-600 to-slate-900 border-2 border-slate-950 -mb-2 z-0 shadow" />
-                  <div className="relative z-10 bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 rounded-lg px-7 py-2.5 shadow-[0_5px_0_#92591b] flex items-center gap-3 min-w-[270px] justify-center">
-                    <PottedPlantSvg className="w-7 h-7 -ml-3 shrink-0" />
-                    <div className="text-center">
-                      <div className="bg-white/95 px-4 py-0.5 rounded-md border border-amber-700/20 text-xs font-black tracking-wider text-slate-900 uppercase">
-                        MEJA PENGAWAS
-                      </div>
-                      <div className="text-[11px] font-bold text-amber-950 mt-0.5">
-                        {activeRoom.pengawas}
+                {/* Meja Pengawas (Draggable) */}
+                {(() => {
+                  const pengawasOffset = getElementOffset(activeRoom, 'pengawas', 'pengawas');
+                  const isDraggingPengawas = activeDrag?.kind === 'pengawas';
+                  const canDragPengawas = canEdit && dragMoveEnabled && viewMode === 'detail';
+                  return (
+                    <div
+                      onPointerDown={e => startDragMove(e, 'pengawas', 'pengawas')}
+                      style={{
+                        transform:
+                          pengawasOffset.x !== 0 || pengawasOffset.y !== 0
+                            ? `translate3d(${pengawasOffset.x}px, ${pengawasOffset.y}px, 0)`
+                            : undefined
+                      }}
+                      title={
+                        canDragPengawas
+                          ? 'Tahan & geser untuk memindahkan posisi Meja Pengawas'
+                          : undefined
+                      }
+                      className={`group/pengawas flex flex-col items-center select-none ${
+                        isDraggingPengawas ? 'z-50' : 'z-10'
+                      } ${
+                        canDragPengawas
+                          ? isDraggingPengawas
+                            ? 'cursor-grabbing touch-none'
+                            : 'cursor-grab touch-none'
+                          : ''
+                      }`}
+                    >
+                      {/* Black supervisor chair behind desk */}
+                      <div className="w-16 h-7 rounded-t-xl bg-gradient-to-b from-slate-600 to-slate-900 border-2 border-slate-950 -mb-2 z-0 shadow" />
+                      <div
+                        className={`relative z-10 bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 rounded-lg px-7 py-2.5 shadow-[0_5px_0_#92591b] flex items-center gap-3 min-w-[270px] justify-center ${
+                          isDraggingPengawas ? 'ring-4 ring-amber-400 shadow-2xl' : ''
+                        }`}
+                      >
+                        {canDragPengawas && (
+                          <span className="print:hidden opacity-0 group-hover/pengawas:opacity-100 transition-opacity absolute top-1.5 right-2 text-amber-950/75">
+                            <Move className="w-3.5 h-3.5" />
+                          </span>
+                        )}
+                        <PottedPlantSvg className="w-7 h-7 -ml-3 shrink-0" />
+                        <div className="text-center">
+                          <div className="bg-white/95 px-4 py-0.5 rounded-md border border-amber-700/20 text-xs font-black tracking-wider text-slate-900 uppercase">
+                            MEJA PENGAWAS
+                          </div>
+                          <div className="text-[11px] font-bold text-amber-950 mt-0.5">
+                            {activeRoom.pengawas}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  );
+                })()}
 
                 <PottedPlantSvg className="w-11 h-11" />
               </div>
 
               {/* MIDDLE ZONE: SEATING CLUSTERS OR OVERVIEW ROOMS */}
               {viewMode === 'detail' ? (
-                <div className="flex-1 flex flex-col items-center justify-center pl-14 pr-4 py-3 gap-5">
+                <div className="flex-1 flex flex-col items-center justify-center px-4 py-3 gap-5">
                   {activeRoom.kursiPerMeja === 4 ? (
-                    /* 4-SEAT CLUSTER TABLES (Exact Match to Reference Image, Zero Overlap!) */
+                    /* 4-SEAT CLUSTER TABLES (Exact Match to Reference Image, Draggable Tables & Chairs!) */
                     <div className="grid grid-cols-2 gap-x-8 gap-y-7 w-full place-items-center">
                       {activeRoomTables.map(table => {
                         const [topSeat, leftSeat, rightSeat, bottomSeat] = table.seats;
+                        const tableKey = String(table.tableIndex);
+                        const tableOffset = getElementOffset(activeRoom, 'table', tableKey);
+                        const isDraggingTable = activeDrag?.kind === 'table' && activeDrag.key === tableKey;
+                        const canDragTable = canEdit && dragMoveEnabled;
+
                         return (
-                          <div key={table.tableIndex} className="group/table flex flex-col items-center gap-1.5">
+                          <div
+                            key={table.tableIndex}
+                            style={{
+                              transform:
+                                tableOffset.x !== 0 || tableOffset.y !== 0
+                                  ? `translate3d(${tableOffset.x}px, ${tableOffset.y}px, 0)`
+                                  : undefined
+                            }}
+                            className={`group/table flex flex-col items-center gap-1 relative ${
+                              isDraggingTable ? 'z-50' : 'z-10'
+                            }`}
+                          >
                             {/* Top Chair */}
-                            <div className="min-h-[48px] flex items-end justify-center">
+                            <div className="min-h-[38px] flex items-end justify-center">
                               {topSeat && renderChairButton(topSeat, 'top')}
                             </div>
 
                             {/* Middle Row: Left Chair + Wooden Table + Right Chair */}
-                            <div className="flex items-center gap-1.5">
-                              <div className="w-[96px] flex justify-end shrink-0">
+                            <div className="flex items-center gap-1">
+                              <div className="w-[78px] flex justify-end shrink-0">
                                 {leftSeat && renderChairButton(leftSeat, 'left')}
                               </div>
 
-                              {/* Wooden Cluster Table */}
-                              <div className="relative w-[112px] h-[82px] shrink-0 rounded-xl bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_5px_0_#92591b] flex flex-col items-center justify-center p-2">
+                              {/* Wooden Cluster Table (Drag here to move table + chairs together) */}
+                              <div
+                                onPointerDown={e => startDragMove(e, 'table', tableKey)}
+                                title={
+                                  canDragTable
+                                    ? `Tahan & geser Meja ${table.tableIndex} untuk memindah meja beserta kursinya`
+                                    : undefined
+                                }
+                                className={`relative w-[112px] h-[82px] shrink-0 rounded-xl bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_5px_0_#92591b] flex flex-col items-center justify-center p-2 select-none ${
+                                  isDraggingTable ? 'ring-4 ring-amber-400 shadow-2xl scale-[1.03]' : ''
+                                } ${
+                                  canDragTable
+                                    ? isDraggingTable
+                                      ? 'cursor-grabbing touch-none'
+                                      : 'cursor-grab touch-none'
+                                    : ''
+                                }`}
+                              >
+                                {canDragTable && (
+                                  <span className="print:hidden opacity-0 group-hover/table:opacity-100 transition-opacity absolute top-1 left-1.5 text-amber-950/70">
+                                    <Move className="w-3 h-3" />
+                                  </span>
+                                )}
                                 {canEdit && activeRoomTables.length > 1 && (
                                   <button
                                     type="button"
+                                    data-no-drag="true"
                                     onClick={() => handleRemoveTable(table.tableIndex)}
                                     title={`Hapus Meja ${table.tableIndex}`}
                                     className="print:hidden opacity-0 group-hover/table:opacity-100 focus:opacity-100 transition-opacity absolute -top-2.5 -right-2.5 w-5 h-5 rounded-full bg-red-600 hover:bg-red-500 text-white border border-white shadow flex items-center justify-center cursor-pointer z-20"
@@ -1664,13 +1958,13 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                                 </div>
                               </div>
 
-                              <div className="w-[96px] flex justify-start shrink-0">
+                              <div className="w-[78px] flex justify-start shrink-0">
                                 {rightSeat && renderChairButton(rightSeat, 'right')}
                               </div>
                             </div>
 
                             {/* Bottom Chair */}
-                            <div className="min-h-[48px] flex items-start justify-center">
+                            <div className="min-h-[38px] flex items-start justify-center">
                               {bottomSeat && renderChairButton(bottomSeat, 'bottom')}
                             </div>
                           </div>
@@ -1697,33 +1991,69 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                       )}
                     </div>
                   ) : activeRoom.kursiPerMeja === 2 ? (
-                    /* 2-SEAT EXAM DESKS */
+                    /* 2-SEAT EXAM DESKS (Draggable Tables & Chairs) */
                     <div className="grid grid-cols-3 gap-5 w-full">
-                      {activeRoomTables.map(table => (
-                        <div key={table.tableIndex} className="group/table flex flex-col items-center gap-1.5">
-                          <div className="relative w-full rounded-xl bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_4px_0_#92591b] py-2 px-3 flex items-center justify-between">
-                            {canEdit && activeRoomTables.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveTable(table.tableIndex)}
-                                title={`Hapus Meja ${table.tableIndex}`}
-                                className="print:hidden opacity-0 group-hover/table:opacity-100 focus:opacity-100 transition-opacity absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 hover:bg-red-500 text-white border border-white shadow flex items-center justify-center cursor-pointer z-20"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                            <span className="bg-white/95 px-2.5 py-0.5 rounded text-[11px] font-black text-slate-900">
-                              Meja {table.tableIndex}
-                            </span>
-                            <span className="text-[10px] font-bold text-amber-950 tabular-nums">
-                              {table.seats.filter(s => s.namaSiswa.trim()).length}/{table.seats.length}
-                            </span>
+                      {activeRoomTables.map(table => {
+                        const tableKey = String(table.tableIndex);
+                        const tableOffset = getElementOffset(activeRoom, 'table', tableKey);
+                        const isDraggingTable = activeDrag?.kind === 'table' && activeDrag.key === tableKey;
+                        const canDragTable = canEdit && dragMoveEnabled;
+
+                        return (
+                          <div
+                            key={table.tableIndex}
+                            style={{
+                              transform:
+                                tableOffset.x !== 0 || tableOffset.y !== 0
+                                  ? `translate3d(${tableOffset.x}px, ${tableOffset.y}px, 0)`
+                                  : undefined
+                            }}
+                            className={`group/table flex flex-col items-center gap-1.5 relative ${
+                              isDraggingTable ? 'z-50' : 'z-10'
+                            }`}
+                          >
+                            <div
+                              onPointerDown={e => startDragMove(e, 'table', tableKey)}
+                              title={
+                                canDragTable
+                                  ? `Tahan & geser Meja ${table.tableIndex} untuk memindah meja beserta kursinya`
+                                  : undefined
+                              }
+                              className={`relative w-full rounded-xl bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_4px_0_#92591b] py-2 px-3 flex items-center justify-between select-none ${
+                                isDraggingTable ? 'ring-4 ring-amber-400 shadow-2xl' : ''
+                              } ${
+                                canDragTable
+                                  ? isDraggingTable
+                                    ? 'cursor-grabbing touch-none'
+                                    : 'cursor-grab touch-none'
+                                  : ''
+                              }`}
+                            >
+                              {canEdit && activeRoomTables.length > 1 && (
+                                <button
+                                  type="button"
+                                  data-no-drag="true"
+                                  onClick={() => handleRemoveTable(table.tableIndex)}
+                                  title={`Hapus Meja ${table.tableIndex}`}
+                                  className="print:hidden opacity-0 group-hover/table:opacity-100 focus:opacity-100 transition-opacity absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 hover:bg-red-500 text-white border border-white shadow flex items-center justify-center cursor-pointer z-20"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                              <span className="bg-white/95 px-2.5 py-0.5 rounded text-[11px] font-black text-slate-900 flex items-center gap-1">
+                                {canDragTable && <Move className="w-3 h-3 text-amber-700 print:hidden" />}
+                                Meja {table.tableIndex}
+                              </span>
+                              <span className="text-[10px] font-bold text-amber-950 tabular-nums">
+                                {table.seats.filter(s => s.namaSiswa.trim()).length}/{table.seats.length}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5 w-full">
+                              {table.seats.map(seat => renderChairButton(seat, 'single'))}
+                            </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-1.5 w-full">
-                            {table.seats.map(seat => renderChairButton(seat, 'single'))}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
 
                       {canEdit && activeRoom.jumlahKursi < 80 && (
                         <button
@@ -1738,28 +2068,64 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                       )}
                     </div>
                   ) : (
-                    /* 1-SEAT INDIVIDUAL DESKS */
+                    /* 1-SEAT INDIVIDUAL DESKS (Draggable Tables & Chairs) */
                     <div className="grid grid-cols-4 gap-3.5 w-full">
-                      {activeRoom.kursiList.map(seat => (
-                        <div key={seat.nomorKursi} className="group/table flex flex-col items-center gap-1">
-                          <div className="relative w-full h-7 rounded-lg bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_3px_0_#92591b] flex items-center justify-center">
-                            {canEdit && activeRoom.kursiList.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveTable(seat.nomorKursi)}
-                                title={`Hapus Meja ${seat.nomorKursi}`}
-                                className="print:hidden opacity-0 group-hover/table:opacity-100 focus:opacity-100 transition-opacity absolute -top-2 -right-2 w-4 h-4 rounded-full bg-red-600 hover:bg-red-500 text-white border border-white shadow flex items-center justify-center cursor-pointer z-20"
-                              >
-                                <X className="w-2.5 h-2.5" />
-                              </button>
-                            )}
-                            <span className="bg-white/95 px-2 py-0.2 rounded text-[10px] font-black text-slate-900">
-                              Meja {seat.nomorKursi}
-                            </span>
+                      {activeRoom.kursiList.map(seat => {
+                        const tableKey = String(seat.nomorKursi);
+                        const tableOffset = getElementOffset(activeRoom, 'table', tableKey);
+                        const isDraggingTable = activeDrag?.kind === 'table' && activeDrag.key === tableKey;
+                        const canDragTable = canEdit && dragMoveEnabled;
+
+                        return (
+                          <div
+                            key={seat.nomorKursi}
+                            style={{
+                              transform:
+                                tableOffset.x !== 0 || tableOffset.y !== 0
+                                  ? `translate3d(${tableOffset.x}px, ${tableOffset.y}px, 0)`
+                                  : undefined
+                            }}
+                            className={`group/table flex flex-col items-center gap-1 relative ${
+                              isDraggingTable ? 'z-50' : 'z-10'
+                            }`}
+                          >
+                            <div
+                              onPointerDown={e => startDragMove(e, 'table', tableKey)}
+                              title={
+                                canDragTable
+                                  ? `Tahan & geser Meja ${seat.nomorKursi} untuk memindah meja beserta kursinya`
+                                  : undefined
+                              }
+                              className={`relative w-full h-7 rounded-lg bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_3px_0_#92591b] flex items-center justify-center select-none ${
+                                isDraggingTable ? 'ring-4 ring-amber-400 shadow-2xl' : ''
+                              } ${
+                                canDragTable
+                                  ? isDraggingTable
+                                    ? 'cursor-grabbing touch-none'
+                                    : 'cursor-grab touch-none'
+                                  : ''
+                              }`}
+                            >
+                              {canEdit && activeRoom.kursiList.length > 1 && (
+                                <button
+                                  type="button"
+                                  data-no-drag="true"
+                                  onClick={() => handleRemoveTable(seat.nomorKursi)}
+                                  title={`Hapus Meja ${seat.nomorKursi}`}
+                                  className="print:hidden opacity-0 group-hover/table:opacity-100 focus:opacity-100 transition-opacity absolute -top-2 -right-2 w-4 h-4 rounded-full bg-red-600 hover:bg-red-500 text-white border border-white shadow flex items-center justify-center cursor-pointer z-20"
+                                >
+                                  <X className="w-2.5 h-2.5" />
+                                </button>
+                              )}
+                              <span className="bg-white/95 px-2 py-0.2 rounded text-[10px] font-black text-slate-900 flex items-center gap-1">
+                                {canDragTable && <Move className="w-2.5 h-2.5 text-amber-700 print:hidden" />}
+                                Meja {seat.nomorKursi}
+                              </span>
+                            </div>
+                            {renderChairButton(seat, 'single')}
                           </div>
-                          {renderChairButton(seat, 'single')}
-                        </div>
-                      ))}
+                        );
+                      })}
 
                       {canEdit && activeRoom.jumlahKursi < 80 && (
                         <button
@@ -1835,7 +2201,9 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                 <span className="print:hidden text-sky-700 font-semibold">
                   {canEdit
                     ? viewMode === 'detail'
-                      ? 'Tip: Klik kursi biru untuk mengubah nama siswa'
+                      ? dragMoveEnabled
+                        ? 'Tip: Tahan & geser Meja atau Kursi untuk mengatur posisi · Klik kursi biru untuk ubah nama siswa'
+                        : 'Tip: Klik kursi biru untuk mengubah nama siswa'
                       : 'Tip: Klik salah satu ruang untuk mengatur kursi & siswa'
                     : 'Mode Lihat Denah Peserta'}
                 </span>
@@ -1868,13 +2236,6 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                   <div className="flex items-center gap-3">
                     <DoorSvg className="w-8 h-10 shrink-0" />
                     <div>: Pintu Masuk</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <WindowPaneSvg className="w-8 h-9 shrink-0 -rotate-90" />
-                    <div className="leading-tight">
-                      : Jendela<br />
-                      <span className="text-slate-600">(di sisi kiri)</span>
-                    </div>
                   </div>
                 </div>
               </div>

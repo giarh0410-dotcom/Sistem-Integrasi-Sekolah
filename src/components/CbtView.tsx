@@ -73,6 +73,7 @@ import {
   printKartuViaHiddenIframe
 } from './cbt/KartuPesertaPrint';
 import { downloadKartuPesertaA4Pdf } from './cbt/kartuPesertaPdf';
+import { enhanceSignatureForDisplay } from './cbt/signatureUtils';
 
 interface CbtViewProps {
   bankSoalList: BankSoal[];
@@ -701,17 +702,24 @@ export const CbtView: React.FC<CbtViewProps> = ({
     });
   };
 
-  const triggerKartuA4Print = (targetList: Siswa[]) => {
+  const triggerKartuA4Print = async (targetList: Siswa[]) => {
     if (targetList.length === 0) return;
     setIsPrintingKartu(true);
     setPrintKartuTargetList(targetList);
+
+    const sharpTtdUrl = cbtSettings.ttdKepalaSekolahUrl
+      ? await enhanceSignatureForDisplay(cbtSettings.ttdKepalaSekolahUrl)
+      : cbtSettings.ttdKepalaSekolahUrl;
 
     const html = buildKartuA4PrintHtml({
       siswaList: targetList,
       jadwalList,
       rombelList,
       schoolSettings,
-      cbtSettings,
+      cbtSettings: {
+        ...cbtSettings,
+        ttdKepalaSekolahUrl: sharpTtdUrl
+      },
       showCutGuide: showKartuCutGuide
     });
 
@@ -2651,13 +2659,13 @@ export const CbtView: React.FC<CbtViewProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* Left: Bank List */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
-            <div className="flex items-center justify-between border-b pb-2.5">
-              <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Daftar Paket Bank Soal</h3>
+          <div className="bg-[#121212] text-slate-100 rounded-2xl p-5 border border-slate-800 shadow-xl space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <h3 className="font-bold text-slate-100 text-xs uppercase tracking-wider">Daftar Paket Bank Soal</h3>
               <button 
                 type="button"
                 onClick={handleDownloadTemplate}
-                className="text-[11px] text-emerald-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" /> Template JSON
               </button>
@@ -2675,14 +2683,14 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
             {/* Filter Mapel Guru (Opsional saat peran Guru aktif) */}
             {currentRole === 'guru' && activeGuru?.mataPelajaran && (
-              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+              <div className="flex items-center gap-1.5 bg-[#181818] border border-slate-800 p-1 rounded-xl">
                 <button
                   type="button"
                   onClick={() => setFilterBankByGuruMapel(false)}
                   className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
                     !filterBankByGuruMapel
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800'
+                      ? 'bg-slate-800 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   Semua ({bankSoalList.length})
@@ -2693,7 +2701,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer truncate ${
                     filterBankByGuruMapel
                       ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                   title={`Tampilkan hanya paket ${activeGuru.mataPelajaran}`}
                 >
@@ -2704,14 +2712,14 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
             <div className="space-y-2.5">
               {displayedBankSoalList.length === 0 ? (
-                <div className="p-5 text-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 space-y-2">
-                  <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p className="text-xs font-bold text-slate-700">
+                <div className="p-5 text-center rounded-2xl border border-dashed border-slate-700 bg-[#181818] space-y-2">
+                  <BookOpen className="w-8 h-8 text-slate-600 mx-auto" />
+                  <p className="text-xs font-bold text-slate-200">
                     {filterBankByGuruMapel
                       ? `Belum ada paket untuk mapel ${activeGuru?.mataPelajaran}`
                       : 'Belum ada Paket Bank Soal'}
                   </p>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-slate-400">
                     Klik tombol "Tambah Paket Bank Soal" di atas untuk membuat paket soal baru.
                   </p>
                 </div>
@@ -2722,25 +2730,25 @@ export const CbtView: React.FC<CbtViewProps> = ({
                     onClick={() => setSelectedBankId(b.id)}
                     className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2.5 relative group ${
                       b.id === activeBank?.id
-                        ? 'border-emerald-500 bg-emerald-50/40 text-slate-900 font-semibold shadow-sm'
-                        : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100/80 text-slate-700'
+                        ? 'border-emerald-500/80 bg-emerald-950/30 text-white font-semibold shadow-md shadow-emerald-950/30'
+                        : 'border-slate-800 bg-[#181818] hover:bg-slate-800/80 hover:border-slate-700 text-slate-300'
                     }`}
                   >
-                    <h4 className="text-xs font-extrabold text-slate-900 leading-snug">{b.judul}</h4>
-                    <div className="text-[11px] text-slate-500 font-medium">{b.mataPelajaran} • {b.kelas}</div>
+                    <h4 className="text-xs font-extrabold text-white leading-snug">{b.judul}</h4>
+                    <div className="text-[11px] text-slate-400 font-medium">{b.mataPelajaran} • {b.kelas}</div>
                     {b.dibuatOleh && (
-                      <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                      <div className="text-[10px] text-slate-500 flex items-center gap-1">
                         <User className="w-3 h-3" />
                         <span className="truncate">Penyusun: {b.dibuatOleh}</span>
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-200/60">
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-200/90 text-slate-700 font-extrabold truncate max-w-[95px]" title={b.kode}>
+                    <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-800">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-200 font-extrabold truncate max-w-[95px]" title={b.kode}>
                         {b.kode}
                       </span>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full">
+                        <span className="text-[10px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-extrabold px-2 py-0.5 rounded-full">
                           {b.jumlahSoal} Soal
                         </span>
                         <button
@@ -2749,7 +2757,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                             e.stopPropagation();
                             handleOpenEditBankModal(b);
                           }}
-                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm border border-blue-200"
+                          className="p-1.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm border border-blue-500/30"
                           title="Edit Info Paket Bank Soal"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -2760,7 +2768,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                             e.stopPropagation();
                             setDeleteTargetBankSoal(b);
                           }}
-                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm border border-rose-200"
+                          className="px-2 py-1 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm border border-rose-500/30"
                           title="Hapus Paket Bank Soal"
                         >
                           <Trash2 className="w-3.5 h-3.5" /> Hapus
@@ -2774,19 +2782,19 @@ export const CbtView: React.FC<CbtViewProps> = ({
           </div>
 
           {/* Right: Question Inspector & Manual Addition */}
-          <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+          <div className="lg:col-span-2 bg-[#121212] text-slate-100 rounded-2xl p-6 border border-slate-800 shadow-xl space-y-4">
             {activeBank ? (
               <>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-slate-900 text-base">{activeBank.judul}</h3>
-                      <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono font-bold">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-white text-base">{activeBank.judul}</h3>
+                      <span className="text-[10px] bg-slate-800 border border-slate-700 text-slate-200 px-2 py-0.5 rounded font-mono font-bold">
                         {activeBank.kode}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      <span className="font-semibold text-emerald-700">{activeBank.mataPelajaran}</span> • Kelas <span className="font-semibold">{activeBank.kelas}</span> | Durasi: {activeBank.durasiMenit} Menit • Total: <span className="font-bold text-slate-900">{activeBank.daftarSoal.length} Soal</span>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      <span className="font-semibold text-emerald-400">{activeBank.mataPelajaran}</span> • Kelas <span className="font-semibold text-slate-200">{activeBank.kelas}</span> | Durasi: {activeBank.durasiMenit} Menit • Total: <span className="font-bold text-white">{activeBank.daftarSoal.length} Soal</span>
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -2826,53 +2834,53 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 {/* List of Questions in Bank */}
                 <div className="space-y-4">
                   {activeBank.daftarSoal.length === 0 && (
-                    <div className="p-8 text-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/70 space-y-3">
-                      <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto border border-indigo-200">
+                    <div className="p-8 text-center rounded-2xl border-2 border-dashed border-slate-700 bg-[#181818] space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 text-indigo-400 flex items-center justify-center mx-auto border border-indigo-500/30">
                         <BookOpen className="w-6 h-6" />
                       </div>
                       <div>
-                        <h4 className="text-sm font-extrabold text-slate-800">
+                        <h4 className="text-sm font-extrabold text-slate-100">
                           Paket "{activeBank.judul}" Masih Kosong
                         </h4>
-                        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                          Silakan mulai menambahkan butir soal untuk mata pelajaran <span className="font-bold text-emerald-700">{activeBank.mataPelajaran}</span> menggunakan tombol <strong className="text-indigo-600">Tambah Soal AI</strong> atau <strong className="text-emerald-700">Tambah Soal Manual</strong> di atas.
+                        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                          Silakan mulai menambahkan butir soal untuk mata pelajaran <span className="font-bold text-emerald-400">{activeBank.mataPelajaran}</span> menggunakan tombol <strong className="text-indigo-400">Tambah Soal AI</strong> atau <strong className="text-emerald-400">Tambah Soal Manual</strong> di atas.
                         </p>
                       </div>
                     </div>
                   )}
                   {activeBank.daftarSoal.map((soal, idx) => (
-                    <div key={soal.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
-                      <div className="flex items-center justify-between">
+                    <div key={soal.id} className="p-4 rounded-xl border border-slate-800 bg-[#181818] space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 bg-slate-200 text-slate-800 font-mono font-bold rounded text-[10px]">
+                          <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-200 font-mono font-bold rounded text-[10px]">
                             Soal #{idx + 1} • {soal.tipe.toUpperCase()}
                           </span>
-                          <span className="text-[11px] font-bold text-emerald-700">Bobot: {soal.bobot} Poin</span>
+                          <span className="text-[11px] font-bold text-emerald-400">Bobot: {soal.bobot} Poin</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={() => handleOpenEditSoal(soal)}
-                            className="px-2.5 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 shadow-sm"
+                            className="px-2.5 py-1 bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/30 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 shadow-sm cursor-pointer"
                             title="Edit Soal"
                           >
                             <Edit2 className="w-3 h-3" /> Edit
                           </button>
                           <button
                             onClick={() => handleDeleteSoal(soal.id)}
-                            className="px-2.5 py-1 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 shadow-sm"
+                            className="px-2.5 py-1 bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 border border-rose-500/30 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 shadow-sm cursor-pointer"
                             title="Hapus Soal"
                           >
                             <Trash2 className="w-3 h-3" /> Hapus
                           </button>
                         </div>
                       </div>
-                      <p className="font-bold text-slate-900 text-xs leading-relaxed">{soal.pertanyaan}</p>
+                      <p className="font-bold text-slate-100 text-xs leading-relaxed">{soal.pertanyaan}</p>
 
                       {/* Media Display (Image / Video) */}
                       {(soal.imageUrl || soal.videoUrl) && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 my-2.5">
                           {soal.imageUrl && (
-                            <div className="rounded-xl overflow-hidden border border-slate-200 bg-white p-1">
+                            <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-900 p-1">
                               <img 
                                 src={soal.imageUrl} 
                                 alt={`Media Soal #${idx + 1}`} 
@@ -2882,7 +2890,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                             </div>
                           )}
                           {soal.videoUrl && (
-                            <div className="rounded-xl overflow-hidden border border-slate-200 bg-white p-1 flex items-center justify-center">
+                            <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-900 p-1 flex items-center justify-center">
                               <video 
                                 src={soal.videoUrl} 
                                 controls 
@@ -2897,17 +2905,17 @@ export const CbtView: React.FC<CbtViewProps> = ({
                       {soal.opsi && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pl-2 pt-1">
                           {soal.opsi.map(o => (
-                            <div key={o.id} className="text-xs text-slate-700 flex items-center gap-2">
-                              <span className="font-bold text-slate-500">{o.id}.</span>
+                            <div key={o.id} className="text-xs text-slate-200 flex items-center gap-2">
+                              <span className="font-bold text-slate-400">{o.id}.</span>
                               <span>{o.teks}</span>
                             </div>
                           ))}
                         </div>
                       )}
 
-                      <div className="text-[11px] bg-emerald-50 text-emerald-900 p-2 rounded-lg border border-emerald-200 mt-2">
-                        <span className="font-bold">Kunci Jawaban:</span> {Array.isArray(soal.kunciJawaban) ? soal.kunciJawaban.join(', ') : soal.kunciJawaban}
-                        {soal.pembahasan && <div className="text-[10px] text-emerald-700 mt-0.5">Pembahasan: {soal.pembahasan}</div>}
+                      <div className="text-[11px] bg-emerald-950/40 text-emerald-200 p-2.5 rounded-lg border border-emerald-500/30 mt-2">
+                        <span className="font-bold text-emerald-300">Kunci Jawaban:</span> {Array.isArray(soal.kunciJawaban) ? soal.kunciJawaban.join(', ') : soal.kunciJawaban}
+                        {soal.pembahasan && <div className="text-[10px] text-emerald-300/90 mt-0.5">Pembahasan: {soal.pembahasan}</div>}
                       </div>
                     </div>
                   ))}
@@ -2932,7 +2940,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                       setNewVideoUrl('');
                       setShowAddSoalModal(true);
                     }}
-                    className="w-full py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 border border-emerald-200 shadow-sm cursor-pointer"
+                    className="w-full py-3 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 border border-emerald-500/30 shadow-sm cursor-pointer"
                   >
                     <Plus className="w-4 h-4" /> Tambah Soal Baru
                   </button>
@@ -3613,17 +3621,17 @@ export const CbtView: React.FC<CbtViewProps> = ({
       {/* SUBTAB 5: HASIL UJIAN FROM FIREBASE */}
       {subTab === 'hasil_ujian' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
+          <div className="bg-[#121212] text-slate-100 rounded-2xl p-6 border border-slate-800 shadow-xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
               <div>
-                <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-amber-500" /> Hasil Penilaian Ujian CBT (Database Firebase)
+                <h3 className="font-extrabold text-white text-base flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-amber-400" /> Hasil Penilaian Ujian CBT (Database Firebase)
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-400">
                   Daftar hasil pengerjaan ujian siswa yang telah tersimpan secara aman dan realtime di Firestore cloud database.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => {
                     if (hasilMapelFilter !== 'Semua') {
@@ -3639,51 +3647,51 @@ export const CbtView: React.FC<CbtViewProps> = ({
                     }
                     setShowKolektifRaporModal(true);
                   }}
-                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
                 >
                   <Printer className="w-4 h-4" /> Rapor Kolektif Per Mapel
                 </button>
                 <button
                   onClick={() => {
                     if (hasilUjianList.length === 0) {
-                      alert('Tidak ada data hasil ujian untuk dihapus.');
                       return;
                     }
                     setDeleteTargetHasilUjian('all');
                   }}
-                  className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  disabled={hasilUjianList.length === 0}
+                  className="px-3.5 py-2 bg-rose-500/15 hover:bg-rose-500/25 disabled:opacity-40 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
                   title="Hapus Semua Hasil Ujian"
                 >
                   <Trash2 className="w-4 h-4" /> Hapus Semua
                 </button>
-                <button
-                  onClick={() => alert('Data hasil ujian telah sinkron 100% dengan Cloud Firestore.')}
-                  className="px-3.5 py-2 bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                <div
+                  className="px-3.5 py-2 bg-amber-500/15 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap"
+                  title="Data hasil ujian tersinkronisasi realtime dengan Cloud Firestore"
                 >
                   <Cloud className="w-4 h-4" /> Cloud Terhubung
-                </button>
+                </div>
               </div>
             </div>
 
             {/* Overview cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+              <div className="p-4 bg-[#181818] rounded-xl border border-slate-800 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-500/15 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold shrink-0">
                   <FileText className="w-5 h-5" />
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Hasil Disimpan</span>
-                  <span className="text-lg font-bold text-slate-800 block">{hasilUjianList.length} Lembar</span>
+                  <span className="text-lg font-bold text-white block">{hasilUjianList.length} Lembar</span>
                 </div>
               </div>
 
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
+              <div className="p-4 bg-[#181818] rounded-xl border border-slate-800 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold shrink-0">
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Rata-Rata Nilai</span>
-                  <span className="text-lg font-bold text-slate-800 block">
+                  <span className="text-lg font-bold text-white block">
                     {hasilUjianList.length > 0 
                       ? Math.round(hasilUjianList.reduce((acc, h) => acc + h.nilaiTotal, 0) / hasilUjianList.length)
                       : 0} / 100
@@ -3691,13 +3699,13 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 </div>
               </div>
 
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center font-bold">
+              <div className="p-4 bg-[#181818] rounded-xl border border-slate-800 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center justify-center font-bold shrink-0">
                   <ShieldAlert className="w-5 h-5" />
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Sesi Dengan Pelanggaran</span>
-                  <span className="text-lg font-bold text-slate-800 block">
+                  <span className="text-lg font-bold text-white block">
                     {hasilUjianList.filter(h => (h.pelanggaranCount || 0) > 0).length} Sesi
                   </span>
                 </div>
@@ -3706,13 +3714,13 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
             {/* Filter Mapel, Filter Kelas & Table */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-              <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-700 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-300 w-full sm:w-auto">
                 <div className="flex items-center gap-2">
                   <span className="uppercase text-[10px] text-slate-400 font-extrabold">Filter Mapel:</span>
                   <select
                     value={hasilMapelFilter}
                     onChange={e => setHasilMapelFilter(e.target.value)}
-                    className="p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                    className="p-2 bg-[#181818] border border-slate-700 rounded-xl text-xs font-bold text-slate-100 outline-none focus:border-cyan-500/60"
                   >
                     <option value="Semua">Semua Mapel ({hasilUjianList.length})</option>
                     {kolektifMapelOptions.map(m => {
@@ -3730,7 +3738,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   <select
                     value={hasilKelasFilter}
                     onChange={e => setHasilKelasFilter(e.target.value)}
-                    className="p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                    className="p-2 bg-[#181818] border border-slate-700 rounded-xl text-xs font-bold text-slate-100 outline-none focus:border-cyan-500/60"
                   >
                     <option value="Semua">Semua Kelas ({hasilUjianList.length} Hasil)</option>
                     {availableKelasList.map(k => (
@@ -3739,23 +3747,23 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   </select>
                 </div>
               </div>
-              <div className="text-xs text-slate-500 font-semibold">
-                Menampilkan <strong className="text-slate-800">{filteredHasilUjianList.length}</strong> dari {hasilUjianList.length} hasil ujian
+              <div className="text-xs text-slate-400 font-semibold">
+                Menampilkan <strong className="text-white">{filteredHasilUjianList.length}</strong> dari {hasilUjianList.length} hasil ujian
               </div>
             </div>
 
             {hasilUjianList.length === 0 ? (
-              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300">
-                <ShieldCheck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <h4 className="font-bold text-slate-700 text-sm">Belum Ada Hasil Ujian Tersimpan</h4>
+              <div className="p-8 text-center bg-[#181818] rounded-2xl border border-dashed border-slate-700">
+                <ShieldCheck className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                <h4 className="font-bold text-slate-200 text-sm">Belum Ada Hasil Ujian Tersimpan</h4>
                 <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                  Silakan buka tab <strong className="text-slate-600">"Simulasi CBT Anti-Cheat"</strong>, pilih paket bank soal, lalu selesaikan ujian untuk mensimulasikan penyimpanan data otomatis ke Firebase.
+                  Silakan buka tab <strong className="text-slate-200">"Simulasi CBT Anti-Cheat"</strong>, pilih paket bank soal, lalu selesaikan ujian untuk mensimulasikan penyimpanan data otomatis ke Firebase.
                 </p>
               </div>
             ) : filteredHasilUjianList.length === 0 ? (
-              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+              <div className="p-8 text-center bg-[#181818] rounded-2xl border border-dashed border-slate-700">
                 <AlertCircle className="w-10 h-10 text-amber-400 mx-auto mb-2" />
-                <h4 className="font-bold text-slate-700 text-sm">
+                <h4 className="font-bold text-slate-200 text-sm">
                   Tidak Ada Hasil Ujian untuk Filter yang Dipilih
                 </h4>
                 <p className="text-xs text-slate-400 mt-1">
@@ -3763,9 +3771,9 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto border border-slate-100 rounded-xl">
+              <div className="overflow-x-auto border border-slate-800 rounded-xl bg-[#161822]/40">
                 <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold uppercase text-[10px]">
+                  <thead className="bg-[#181818] border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
                     <tr>
                       <th className="p-3">Nama Siswa</th>
                       <th className="p-3">Mata Pelajaran</th>
@@ -3777,45 +3785,45 @@ export const CbtView: React.FC<CbtViewProps> = ({
                       <th className="p-3 text-center">Aksi / Hapus</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50">
+                  <tbody className="divide-y divide-slate-800/80">
                     {filteredHasilUjianList.map(h => {
                       const mapelLabel = resolveHasilMapel(h) || 'Umum';
                       return (
-                      <tr key={h.id} className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold text-slate-800">{h.siswaNama}</td>
+                      <tr key={h.id} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-bold text-white">{h.siswaNama}</td>
                         <td className="p-3">
-                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold rounded-md text-[10px] inline-block">
+                          <span className="px-2 py-0.5 bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-bold rounded-md text-[10px] inline-block">
                             {mapelLabel}
                           </span>
                         </td>
-                        <td className="p-3 text-slate-500">
-                          {h.kelas} <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded ml-1 font-mono">{h.nis}</span>
+                        <td className="p-3 text-slate-300">
+                          {h.kelas} <span className="text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded ml-1 font-mono">{h.nis}</span>
                         </td>
-                        <td className="p-3 text-slate-500 font-mono text-[11px]">
+                        <td className="p-3 text-slate-400 font-mono text-[11px]">
                           {new Date(h.waktuSubmit).toLocaleString('id-ID')}
                         </td>
                         <td className="p-3 text-center">
                           {(h.pelanggaranCount || 0) > 0 ? (
-                            <span className="px-2 py-0.5 bg-rose-100 text-rose-800 font-bold rounded-full text-[9px] inline-flex items-center gap-1">
+                            <span className="px-2 py-0.5 bg-rose-500/15 text-rose-300 border border-rose-500/30 font-bold rounded-full text-[9px] inline-flex items-center gap-1">
                               <ShieldAlert className="w-3 h-3" /> {h.pelanggaranCount}x
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded-full text-[9px]">
+                            <span className="px-2 py-0.5 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold rounded-full text-[9px]">
                               Aman
                             </span>
                           )}
                         </td>
                         <td className="p-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] ${
+                          <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] border ${
                             h.statusPenilaian === 'Selesai' 
-                              ? 'bg-blue-100 text-blue-800' 
-                              : 'bg-amber-100 text-amber-800'
+                              ? 'bg-blue-500/15 text-blue-300 border-blue-500/30' 
+                              : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
                           }`}>
                             {h.statusPenilaian}
                           </span>
                         </td>
-                        <td className="p-3 text-right font-extrabold text-slate-900 text-sm">
-                          <span className={h.nilaiTotal >= 75 ? 'text-emerald-600' : 'text-amber-600'}>
+                        <td className="p-3 text-right font-extrabold text-sm">
+                          <span className={h.nilaiTotal >= 75 ? 'text-emerald-400' : 'text-amber-400'}>
                             {h.nilaiTotal} / 100
                           </span>
                         </td>
@@ -3823,14 +3831,14 @@ export const CbtView: React.FC<CbtViewProps> = ({
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               onClick={() => setSelectedRaporHasil(h)}
-                              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer"
+                              className="px-2.5 py-1 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
                               title="Cetak Rapor Hasil Ujian"
                             >
                               <Printer className="w-3 h-3" /> Rapor
                             </button>
                             <button
                               onClick={() => handleDeleteHasilUjian(h.id)}
-                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer border border-rose-200"
+                              className="px-2.5 py-1 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
                               title="Hapus Hasil Ujian Siswa"
                             >
                               <Trash2 className="w-3 h-3" /> Hapus
@@ -3943,15 +3951,6 @@ export const CbtView: React.FC<CbtViewProps> = ({
                     <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
                       <Printer className="w-5 h-5 text-indigo-600 shrink-0" /> Rapor Kolektif Semua Siswa Per Mata Pelajaran
                     </h3>
-                    <button
-                      type="button"
-                      onClick={() => setShowKolektifRaporModal(false)}
-                      aria-label="Tutup Rapor Kolektif"
-                      title="Tutup (Esc)"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold rounded-xl transition-colors cursor-pointer text-xs shrink-0 shadow-xs"
-                    >
-                      <X className="w-4 h-4" /> Tutup
-                    </button>
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2.5">

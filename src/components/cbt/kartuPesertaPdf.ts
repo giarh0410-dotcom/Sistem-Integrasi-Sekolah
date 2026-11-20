@@ -6,6 +6,7 @@ import {
   SchoolSettings,
   CbtExamSettings
 } from '../../types/school';
+import { enhanceSignatureForDisplay } from './signatureUtils';
 
 interface LoadedImageAsset {
   dataUrl: string;
@@ -62,7 +63,8 @@ function formatJamRange(jamMulai?: string, jamSelesai?: string): string {
 async function loadImageAsset(
   url: string | undefined,
   cache: Map<string, LoadedImageAsset | null>,
-  preferJpeg = false
+  preferJpeg = false,
+  maxDim = preferJpeg ? 640 : 1400
 ): Promise<LoadedImageAsset | null> {
   const cleanUrl = (url || '').trim();
   if (!cleanUrl) return null;
@@ -93,7 +95,6 @@ async function loadImageAsset(
           finish(null);
           return;
         }
-        const maxDim = 480;
         const scale = Math.min(1, maxDim / Math.max(w, h));
         const cw = Math.max(1, Math.round(w * scale));
         const ch = Math.max(1, Math.round(h * scale));
@@ -107,6 +108,8 @@ async function loadImageAsset(
           return;
         }
 
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         if (preferJpeg) {
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, cw, ch);
@@ -114,7 +117,7 @@ async function loadImageAsset(
         ctx.drawImage(img, 0, 0, cw, ch);
         const format: 'PNG' | 'JPEG' = preferJpeg ? 'JPEG' : 'PNG';
         const dataUrl = preferJpeg
-          ? canvas.toDataURL('image/jpeg', 0.88)
+          ? canvas.toDataURL('image/jpeg', 0.92)
           : canvas.toDataURL('image/png');
         finish({ dataUrl, format, width: cw, height: ch });
       } catch {
@@ -160,7 +163,16 @@ function drawImageContained(
   const dh = asset.height * ratio;
   const dx = alignLeft ? boxX : boxX + (boxW - dw) / 2;
   const dy = boxY + (boxH - dh) / 2;
-  doc.addImage(asset.dataUrl, asset.format, dx, dy, dw, dh, undefined, 'FAST');
+  doc.addImage(
+    asset.dataUrl,
+    asset.format,
+    dx,
+    dy,
+    dw,
+    dh,
+    undefined,
+    asset.format === 'PNG' ? 'NONE' : 'FAST'
+  );
 }
 
 function drawSingleKartuOnPdf(params: {
@@ -461,7 +473,7 @@ function drawSingleKartuOnPdf(params: {
   // =========================================================
   // 3. FOOTER (PENGESAHAN KEPALA SEKOLAH + BARCODE)
   // =========================================================
-  const footerH = isCompactMode ? (showNip ? 21.0 : 18.8) : showNip ? 24.2 : 21.8;
+  const footerH = isCompactMode ? (showNip ? 23.6 : 21.4) : showNip ? 26.8 : 24.4;
   const footerTopY = bottomY - footerH;
 
   doc.setDrawColor(0, 0, 0);
@@ -474,15 +486,16 @@ function drawSingleKartuOnPdf(params: {
   const nameY = bottomY - (showNip ? (isCompactMode ? 2.6 : 2.9) : 0.6);
 
   if (ttdAsset) {
-    const sigBoxTop = roleY - 0.15;
-    const sigBoxH = Math.max(8, nameY - 1.65 - sigBoxTop);
+    const sigBoxTop = roleY - (isCompactMode ? 0.45 : 0.6);
+    const sigBoxBottom = nameY - (isCompactMode ? 1.0 : 1.15);
+    const sigBoxH = Math.max(12, sigBoxBottom - sigBoxTop);
     drawImageContained(
       doc,
       ttdAsset,
       cx,
       sigBoxTop,
-      isCompactMode ? 44 : 48,
-      Math.min(isCompactMode ? 11.6 : 13.8, sigBoxH),
+      isCompactMode ? 54 : 58,
+      Math.min(isCompactMode ? 14.6 : 16.5, sigBoxH),
       true
     );
   }
@@ -775,11 +788,14 @@ export async function downloadKartuPesertaA4Pdf(params: DownloadKartuPdfParams):
   const rawNip = (cbtSettings.kepalaSekolahNip || schoolSettings?.nipKepalaSekolah || '').trim();
   const showNip = rawNip !== '' && rawNip !== '-';
 
-  // Cache shared images (logo + signature) once across all cards
+  // Cache shared images (logo + enhanced crisp signature) once across all cards
   const imageCache = new Map<string, LoadedImageAsset | null>();
+  const sharpSignatureUrl = cbtSettings.ttdKepalaSekolahUrl
+    ? await enhanceSignatureForDisplay(cbtSettings.ttdKepalaSekolahUrl)
+    : undefined;
   const [logoAsset, ttdAsset] = await Promise.all([
-    loadImageAsset(schoolSettings?.logoUrl, imageCache, false),
-    loadImageAsset(cbtSettings.ttdKepalaSekolahUrl, imageCache, false)
+    loadImageAsset(schoolSettings?.logoUrl, imageCache, false, 1000),
+    loadImageAsset(sharpSignatureUrl, imageCache, false, 1400)
   ]);
 
   // Exact A4 2x2 grid positions for 100mm x 130mm cards:

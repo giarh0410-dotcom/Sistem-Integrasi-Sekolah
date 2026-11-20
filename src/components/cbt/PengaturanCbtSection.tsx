@@ -11,6 +11,7 @@ import {
   Upload
 } from 'lucide-react';
 import { CbtExamSettings, Role, SchoolSettings } from '../../types/school';
+import { processSignatureForStorage } from './signatureUtils';
 
 interface PengaturanCbtSectionProps {
   cbtSettings: CbtExamSettings;
@@ -92,7 +93,7 @@ export const PengaturanCbtSection: React.FC<PengaturanCbtSectionProps> = ({
     setIsDirty(true);
   };
 
-  // --- Image Upload & Safe Compression (<50KB PNG data URL) ---
+  // --- Image Upload (High-Res Crisp PNG with Auto-Trim, Firestore-safe) ---
   const handleUploadSignature = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -103,34 +104,15 @@ export const PengaturanCbtSection: React.FC<PengaturanCbtSectionProps> = ({
     }
 
     const reader = new FileReader();
-    reader.onload = ev => {
+    reader.onload = async ev => {
       const src = String(ev.target?.result || '');
-      const img = new Image();
-      img.onload = () => {
-        const maxW = 520;
-        const maxH = 180;
-        const scale = Math.min(maxW / img.width, maxH / img.height, 1);
-        const w = Math.max(1, Math.round(img.width * scale));
-        const h = Math.max(1, Math.round(img.height * scale));
-        const off = document.createElement('canvas');
-        off.width = w;
-        off.height = h;
-        const ctx = off.getContext('2d');
-        if (!ctx) {
-          updateField('ttdKepalaSekolahUrl', src);
-          showToast('Gambar tanda tangan berhasil dimuat.');
-          return;
-        }
-        ctx.clearRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-        const compressed = off.toDataURL('image/png');
-        updateField('ttdKepalaSekolahUrl', compressed);
-        showToast('Gambar tanda tangan kepala sekolah berhasil diunggah.');
-      };
-      img.onerror = () => {
+      try {
+        const processed = await processSignatureForStorage(src);
+        updateField('ttdKepalaSekolahUrl', processed);
+        showToast('Gambar tanda tangan kepala sekolah berhasil diunggah dalam resolusi tajam.');
+      } catch {
         showToast('Gagal memproses file gambar tanda tangan.', 'error');
-      };
-      img.src = src;
+      }
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -162,7 +144,7 @@ export const PengaturanCbtSection: React.FC<PengaturanCbtSectionProps> = ({
     if (ctx) {
       ctx.fillStyle = inkColor;
       ctx.beginPath();
-      ctx.arc(pt.x, pt.y, penSize / 2, 0, Math.PI * 2);
+      ctx.arc(pt.x, pt.y, penSize, 0, Math.PI * 2);
       ctx.fill();
       setHasCanvasStrokes(true);
     }
@@ -178,7 +160,7 @@ export const PengaturanCbtSection: React.FC<PengaturanCbtSectionProps> = ({
     const ctx = canvas.getContext('2d');
     if (ctx) {
       ctx.strokeStyle = inkColor;
-      ctx.lineWidth = penSize;
+      ctx.lineWidth = penSize * 2;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.beginPath();
@@ -205,14 +187,15 @@ export const PengaturanCbtSection: React.FC<PengaturanCbtSectionProps> = ({
     setHasCanvasStrokes(false);
   };
 
-  const handleApplyCanvasSignature = () => {
+  const handleApplyCanvasSignature = async () => {
     const canvas = canvasRef.current;
     if (!canvas || !hasCanvasStrokes) {
       showToast('Silakan goreskan tanda tangan pada kanvas terlebih dahulu.', 'error');
       return;
     }
-    const dataUrl = canvas.toDataURL('image/png');
-    updateField('ttdKepalaSekolahUrl', dataUrl);
+    const rawDataUrl = canvas.toDataURL('image/png');
+    const processed = await processSignatureForStorage(rawDataUrl);
+    updateField('ttdKepalaSekolahUrl', processed);
     showToast('Tanda tangan dari kanvas diterapkan. Klik Simpan Pengaturan untuk menyimpan.');
   };
 
@@ -650,8 +633,8 @@ export const PengaturanCbtSection: React.FC<PengaturanCbtSectionProps> = ({
                       <div className="bg-white rounded-xl border border-slate-300 overflow-hidden relative">
                         <canvas
                           ref={canvasRef}
-                          width={520}
-                          height={180}
+                          width={1040}
+                          height={360}
                           onPointerDown={handlePointerDown}
                           onPointerMove={handlePointerMove}
                           onPointerUp={handlePointerUp}

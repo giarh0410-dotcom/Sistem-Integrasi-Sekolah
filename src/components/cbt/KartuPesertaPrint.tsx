@@ -22,6 +22,7 @@ import {
   SchoolSettings,
   CbtExamSettings
 } from '../../types/school';
+import { useEnhancedSignature } from './signatureUtils';
 
 export interface KartuPesertaCardProps {
   siswa: Siswa;
@@ -660,21 +661,22 @@ export function buildKartuA4PrintHtml(params: {
       z-index: 1;
     }
     .sig-img-wrap {
-      height: 10.5mm;
+      height: 12.8mm;
       display: flex;
       align-items: center;
-      margin: 0;
+      margin: 0.2mm 0;
       overflow: visible;
     }
     .ttd-img {
-      height: 13mm;
-      max-height: 13mm;
+      height: 16mm;
+      max-height: 16mm;
       width: auto;
-      max-width: 48mm;
+      max-width: 60mm;
       object-fit: contain;
       object-position: left center;
       mix-blend-mode: multiply;
-      margin: -1.2mm 0;
+      margin: -1.4mm 0;
+      image-rendering: -webkit-optimize-contrast;
     }
     .sig-name {
       font-size: 7.6pt;
@@ -861,16 +863,17 @@ export function buildKartuA4PrintHtml(params: {
       line-height: 1.15;
     }
     .kartu-slot.is-compact .sig-img-wrap {
-      height: 8.4mm;
-      margin: 0;
+      height: 11.2mm;
+      margin: 0.2mm 0;
       overflow: visible;
     }
     .kartu-slot.is-compact .ttd-img {
-      height: 11mm;
-      max-height: 11mm;
+      height: 14.2mm;
+      max-height: 14.2mm;
       width: auto;
-      max-width: 44mm;
+      max-width: 54mm;
       margin: -1.3mm 0;
+      image-rendering: -webkit-optimize-contrast;
     }
     .kartu-slot.is-compact .sig-name {
       font-size: 7pt;
@@ -1001,6 +1004,7 @@ export const KartuPesertaCard: React.FC<KartuPesertaCardProps> = ({
   const noPeserta = `C2026-${(siswa.nisn || siswa.nis || '0000').slice(-4)}`;
   const rawNip = (cbtSettings.kepalaSekolahNip || schoolSettings?.nipKepalaSekolah || '').trim();
   const showNip = rawNip !== '' && rawNip !== '-';
+  const sharpSignatureUrl = useEnhancedSignature(cbtSettings.ttdKepalaSekolahUrl);
 
   const totalMapel = sortedJadwal.length;
   const isCompactMode = totalMapel > 8;
@@ -1345,18 +1349,18 @@ export const KartuPesertaCard: React.FC<KartuPesertaCardProps> = ({
             <p className="font-extrabold text-black leading-tight relative z-10">Kepala Sekolah,</p>
             <div
               className={`flex items-center justify-start relative overflow-visible ${
-                isCompactMode ? 'h-[31px] my-0' : 'h-[38px] my-0'
+                isCompactMode ? 'h-[43px] my-[1px]' : 'h-[49px] my-[1px]'
               }`}
             >
-              {cbtSettings.ttdKepalaSekolahUrl ? (
+              {sharpSignatureUrl ? (
                 <img
-                  src={cbtSettings.ttdKepalaSekolahUrl}
+                  src={sharpSignatureUrl}
                   alt="Tanda Tangan Kepala Sekolah"
                   className={`${
                     isCompactMode
-                      ? 'h-[40px] max-h-[40px] max-w-[165px] -my-1.5'
-                      : 'h-[48px] max-h-[48px] max-w-[185px] -my-1.5'
-                  } w-auto object-contain object-left mix-blend-multiply`}
+                      ? 'h-[53px] max-h-[53px] max-w-[205px] -my-1'
+                      : 'h-[61px] max-h-[61px] max-w-[230px] -my-1.5'
+                  } w-auto object-contain object-left mix-blend-multiply pointer-events-none select-none`}
                   referrerPolicy="no-referrer"
                 />
               ) : null}

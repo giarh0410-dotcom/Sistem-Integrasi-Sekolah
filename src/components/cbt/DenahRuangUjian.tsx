@@ -23,10 +23,20 @@ import {
   Download,
   Eye,
   EyeOff,
-  Move
+  Move,
+  FileDown,
+  Loader2,
+  CalendarDays
 } from 'lucide-react';
-import { Siswa, Guru, RombelKelas, SchoolSettings, Role, CbtExamSettings } from '../../types/school';
+import { Siswa, Guru, RombelKelas, SchoolSettings, Role, CbtExamSettings, JadwalUjianItem } from '../../types/school';
 import { dbFetchCollection, dbSaveCollection } from '../../lib/firebaseSync';
+import {
+  downloadDaftarSiswaRuangPdf,
+  DaftarSiswaPdfRoom,
+  ExamAttendanceDay,
+  abbreviateMapel
+} from './daftarSiswaRuangPdf';
+import { downloadDenahRuangPdf } from './denahRuangPdf';
 
 export interface DenahPosOffset {
   x: number;
@@ -64,8 +74,102 @@ interface DenahRuangUjianProps {
   rombelList?: RombelKelas[];
   schoolSettings?: SchoolSettings;
   cbtSettings?: CbtExamSettings;
+  jadwalUjianList?: JadwalUjianItem[];
   currentRole?: Role;
   userEmail?: string;
+}
+
+const HARI_ID = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const HARI_SHORT_ID = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+const BULAN_ID = [
+  'Januari',
+  'Februari',
+  'Maret',
+  'April',
+  'Mei',
+  'Juni',
+  'Juli',
+  'Agustus',
+  'September',
+  'Oktober',
+  'November',
+  'Desember'
+];
+const BULAN_SHORT_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+function parseIsoDateLocal(isoDate: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec((isoDate || '').trim());
+  if (!m) return null;
+  const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function buildExamAttendanceDays(jadwalList: JadwalUjianItem[]): ExamAttendanceDay[] {
+  const byDate = new Map<string, JadwalUjianItem[]>();
+  jadwalList.forEach(item => {
+    const key = (item.tanggal || '').trim().slice(0, 10);
+    if (!key) return;
+    const arr = byDate.get(key) || [];
+    arr.push(item);
+    byDate.set(key, arr);
+  });
+
+  const sortedDates = Array.from(byDate.keys()).sort((a, b) => a.localeCompare(b));
+  if (sortedDates.length === 0) {
+    const now = new Date();
+    const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+      now.getDate()
+    ).padStart(2, '0')}`;
+    return [
+      {
+        dayIndex: 1,
+        tanggal: iso,
+        hariTanggalLabel: `${HARI_ID[now.getDay()]}, ${now.getDate()} ${BULAN_ID[now.getMonth()]} ${now.getFullYear()}`,
+        shortLabel: `${HARI_SHORT_ID[now.getDay()]}, ${String(now.getDate()).padStart(2, '0')} ${BULAN_SHORT_ID[now.getMonth()]} ${now.getFullYear()}`,
+        tanggalPenetapanLabel: `${now.getDate()} ${BULAN_ID[now.getMonth()]} ${now.getFullYear()}`,
+        sessions: []
+      }
+    ];
+  }
+
+  return sortedDates.map((iso, idx) => {
+    const items = (byDate.get(iso) || []).slice().sort((a, b) =>
+      (a.jamMulai || '').localeCompare(b.jamMulai || '')
+    );
+    const seen = new Set<string>();
+    const sessions: ExamAttendanceDay['sessions'] = [];
+    items.forEach(it => {
+      const mapel = (it.mataPelajaran || it.judulUjian || 'Ujian').trim();
+      const dedupeKey = `${mapel.toLowerCase()}|${it.jamMulai || ''}`;
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      sessions.push({
+        mataPelajaran: mapel,
+        jamMulai: (it.jamMulai || '').trim(),
+        jamSelesai: (it.jamSelesai || '').trim()
+      });
+    });
+
+    const dt = parseIsoDateLocal(iso);
+    const hariTanggalLabel = dt
+      ? `${HARI_ID[dt.getDay()]}, ${dt.getDate()} ${BULAN_ID[dt.getMonth()]} ${dt.getFullYear()}`
+      : iso;
+    const shortLabel = dt
+      ? `${HARI_SHORT_ID[dt.getDay()]}, ${String(dt.getDate()).padStart(2, '0')} ${BULAN_SHORT_ID[dt.getMonth()]} ${dt.getFullYear()}`
+      : iso;
+    const tanggalPenetapanLabel = dt
+      ? `${dt.getDate()} ${BULAN_ID[dt.getMonth()]} ${dt.getFullYear()}`
+      : iso;
+
+    return {
+      dayIndex: idx + 1,
+      tanggal: iso,
+      hariTanggalLabel,
+      shortLabel,
+      tanggalPenetapanLabel,
+      sessions
+    };
+  });
 }
 
 const DEFAULT_JUDUL_UJIAN = 'SUMATIF AKHIR SEMESTER (SAS) GANJIL TAHUN PELAJARAN 2026/2027';
@@ -227,6 +331,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
   rombelList = [],
   schoolSettings,
   cbtSettings,
+  jadwalUjianList = [],
   currentRole = 'admin',
   userEmail = ''
 }) => {
@@ -257,9 +362,24 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
   const [rosterSearch, setRosterSearch] = useState('');
   const [rosterKelasFilter, setRosterKelasFilter] = useState('Semua');
   const [rosterStatusFilter, setRosterStatusFilter] = useState<'semua' | 'terisi' | 'kosong'>('semua');
+  const [selectedAttendanceDay, setSelectedAttendanceDay] = useState<string>('all_days');
   const [searchQuery, setSearchQuery] = useState('');
   const [swapSourceSeat, setSwapSourceSeat] = useState<number | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [isDownloadingRosterPdf, setIsDownloadingRosterPdf] = useState(false);
+  const [isDownloadingDenahPdf, setIsDownloadingDenahPdf] = useState(false);
+
+  const examAttendanceDays = useMemo(
+    () => buildExamAttendanceDays(jadwalUjianList),
+    [jadwalUjianList]
+  );
+
+  const selectedDaysForOutput = useMemo<ExamAttendanceDay[] | undefined>(() => {
+    if (selectedAttendanceDay === 'general') return undefined;
+    if (selectedAttendanceDay === 'all_days') return examAttendanceDays;
+    const found = examAttendanceDays.find(d => d.tanggal === selectedAttendanceDay);
+    return found ? [found] : examAttendanceDays;
+  }, [selectedAttendanceDay, examAttendanceDays]);
 
   // Interactive drag-to-move state for Meja Pengawas, Meja Peserta, and Kursi Peserta
   const [dragMoveEnabled, setDragMoveEnabled] = useState<boolean>(true);
@@ -271,6 +391,8 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
   } | null>(null);
   const suppressNextClickRef = useRef<boolean>(false);
   const floorplanFrameRef = useRef<HTMLDivElement | null>(null);
+  const denahPosterRef = useRef<HTMLDivElement | null>(null);
+  const denahPosterRosterRef = useRef<HTMLDivElement | null>(null);
   const roomsRef = useRef<DenahRuangItem[]>(rooms);
   roomsRef.current = rooms;
 
@@ -1068,15 +1190,22 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
     const kota = cbtSettings?.kotaPenetapan || schoolSettings?.kotaKabupaten || 'Depok';
     const kepsekNama = cbtSettings?.kepalaSekolahNama || schoolSettings?.kepalaSekolah || 'Kepala Sekolah';
     const kepsekNip = (cbtSettings?.kepalaSekolahNip || schoolSettings?.nipKepalaSekolah || '').trim();
-    const tglStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const todayStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
     const logoTag = schoolSettings?.logoUrl
       ? `<img src="${escapeHtmlStr(schoolSettings.logoUrl)}" alt="Logo" class="kop-logo" referrerpolicy="no-referrer" />`
       : '';
+    const sigImgTag = cbtSettings?.ttdKepalaSekolahUrl
+      ? `<img src="${escapeHtmlStr(cbtSettings.ttdKepalaSekolahUrl)}" alt="TTD" class="sig-img" referrerpolicy="no-referrer" />`
+      : '';
+
+    const daysToPrint: Array<ExamAttendanceDay | null> =
+      selectedDaysForOutput && selectedDaysForOutput.length > 0 ? selectedDaysForOutput : [null];
 
     const pagesHtml = targetRooms
-      .map(room => {
+      .flatMap(room => {
         const rows = room.kursiList.map(seat => enrichSeatRow(room, seat));
         const filled = rows.filter(r => r.isFilled).length;
+        const totalMeja = Math.ceil(room.jumlahKursi / (room.kursiPerMeja || 4));
         const classCounts = new Map<string, number>();
         rows.forEach(r => {
           if (r.isFilled) {
@@ -1089,80 +1218,203 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
           .map(([k, v]) => `${k}: ${v}`)
           .join(' • ');
 
-        const trHtml = rows
-          .map(
-            (r, idx) => `
-              <tr class="${r.isFilled ? '' : 'empty-seat'}">
-                <td class="c">${idx + 1}</td>
-                <td class="c bold">#${String(r.nomorKursi).padStart(2, '0')}</td>
-                <td class="c">Meja ${r.tableNo}</td>
-                <td class="c mono">${escapeHtmlStr(r.noPeserta)}</td>
-                <td class="bold">${r.isFilled ? escapeHtmlStr(r.namaSiswa) : '<em>(Kursi Kosong)</em>'}</td>
-                <td>${escapeHtmlStr(r.kelasSiswa || '-')}</td>
-                <td class="c mono">${escapeHtmlStr(r.nis || r.nisn || '-')}</td>
-                <td class="ttd-col">${idx % 2 === 0 ? `${idx + 1}.` : `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${idx + 1}.`}</td>
-              </tr>`
-          )
-          .join('');
+        return daysToPrint.map(day => {
+          if (!day) {
+            const trHtml = rows
+              .map(
+                (r, idx) => `
+                  <tr class="${r.isFilled ? '' : 'empty-seat'}">
+                    <td class="c">${idx + 1}</td>
+                    <td class="c bold">#${String(r.nomorKursi).padStart(2, '0')}</td>
+                    <td class="c">Meja ${r.tableNo}</td>
+                    <td class="c mono">${escapeHtmlStr(r.noPeserta)}</td>
+                    <td class="bold">${r.isFilled ? escapeHtmlStr(r.namaSiswa) : '<em>(Kursi Kosong)</em>'}</td>
+                    <td>${escapeHtmlStr(r.kelasSiswa || '-')}</td>
+                    <td class="c mono">${escapeHtmlStr(r.nis || r.nisn || '-')}</td>
+                    <td class="ttd-col">${idx % 2 === 0 ? `${idx + 1}.` : `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${idx + 1}.`}</td>
+                  </tr>`
+              )
+              .join('');
 
-        return `
-          <section class="sheet">
-            <header class="kop">
-              ${logoTag}
-              <div class="kop-text">
-                <div class="kop-title">DAFTAR PESERTA &amp; PENEMPATAN DUDUK RUANG UJIAN</div>
-                <div class="kop-exam">${escapeHtmlStr(examTitle)}</div>
-                <div class="kop-school">${escapeHtmlStr(schoolName)}</div>
+            return `
+              <section class="sheet">
+                <header class="kop">
+                  ${logoTag}
+                  <div class="kop-text">
+                    <div class="kop-title">DAFTAR PESERTA &amp; PENEMPATAN DUDUK RUANG UJIAN</div>
+                    <div class="kop-exam">${escapeHtmlStr(examTitle)}</div>
+                    <div class="kop-school">${escapeHtmlStr(schoolName)}</div>
+                  </div>
+                  <div class="room-badge">
+                    <div class="room-badge-lbl">RUANG UJIAN</div>
+                    <div class="room-badge-val">${escapeHtmlStr(room.namaRuang.toUpperCase())}</div>
+                  </div>
+                </header>
+
+                <div class="meta-bar">
+                  <div><strong>Pengawas Ruang:</strong> ${escapeHtmlStr(room.pengawas || '-')}</div>
+                  <div><strong>Jumlah Peserta:</strong> ${filled} / ${room.jumlahKursi} Kursi (${totalMeja} Meja)</div>
+                </div>
+
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width:5%">No</th>
+                      <th style="width:8%">Kursi</th>
+                      <th style="width:9%">Meja</th>
+                      <th style="width:13%">No. Peserta</th>
+                      <th style="width:30%">Nama Lengkap Siswa</th>
+                      <th style="width:13%">Kelas</th>
+                      <th style="width:11%">NIS / NISN</th>
+                      <th style="width:11%">Paraf</th>
+                    </tr>
+                  </thead>
+                  <tbody>${trHtml}</tbody>
+                </table>
+
+                ${
+                  classSummaryText
+                    ? `<div class="class-rekap"><strong>Rekap per Kelas:</strong> ${escapeHtmlStr(classSummaryText)}</div>`
+                    : ''
+                }
+
+                <div class="sig-row">
+                  <div class="sig-box">
+                    <div>Mengetahui,</div>
+                    <div class="sig-role">Kepala Sekolah</div>
+                    <div class="sig-space">${sigImgTag}</div>
+                    <div class="sig-name">${escapeHtmlStr(kepsekNama)}</div>
+                    ${kepsekNip && kepsekNip !== '-' ? `<div class="sig-nip">NIP. ${escapeHtmlStr(kepsekNip)}</div>` : ''}
+                  </div>
+                  <div class="sig-box">
+                    <div>${escapeHtmlStr(kota)}, ${escapeHtmlStr(todayStr)}</div>
+                    <div class="sig-role">Pengawas ${escapeHtmlStr(room.namaRuang)}</div>
+                    <div class="sig-space"></div>
+                    <div class="sig-name">${escapeHtmlStr(room.pengawas || '....................................')}</div>
+                  </div>
+                </div>
+              </section>`;
+          }
+
+          const sessions = day.sessions.slice(0, 4);
+          const sessionHeaders =
+            sessions.length <= 1
+              ? `<th style="width:24%">PARAF${sessions[0] ? `<div class="th-sub">${escapeHtmlStr(abbreviateMapel(sessions[0].mataPelajaran))}</div>` : ''}</th><th style="width:11%">KET.<div class="th-sub">H/S/I/A</div></th>`
+              : `${sessions
+                  .map(
+                    (s, i) =>
+                      `<th style="width:${sessions.length === 2 ? '13.5%' : sessions.length === 3 ? '9.6%' : '7.2%'}">SESI ${i + 1}<div class="th-sub">${escapeHtmlStr(abbreviateMapel(s.mataPelajaran))}</div></th>`
+                  )
+                  .join('')}<th style="width:${sessions.length === 2 ? '8%' : '6.2%'}">KET.<div class="th-sub">H/S/I/A</div></th>`;
+
+          const sessionColCount = Math.max(1, sessions.length);
+          const trHtml = rows
+            .map((r, idx) => {
+              const parafCells = Array.from({ length: sessionColCount })
+                .map(
+                  () =>
+                    `<td class="ttd-col">${idx % 2 === 0 ? `${idx + 1}.` : `&nbsp;&nbsp;&nbsp;&nbsp;${idx + 1}.`}</td>`
+                )
+                .join('');
+              return `
+                <tr class="${r.isFilled ? '' : 'empty-seat'}">
+                  <td class="c">${idx + 1}</td>
+                  <td class="c bold">#${String(r.nomorKursi).padStart(2, '0')}</td>
+                  <td class="c">M${r.tableNo}</td>
+                  <td class="c mono">${escapeHtmlStr(r.noPeserta)}</td>
+                  <td class="bold">${r.isFilled ? escapeHtmlStr(r.namaSiswa) : '<em>(Kursi Kosong)</em>'}</td>
+                  <td>${escapeHtmlStr(r.kelasSiswa || '-')}</td>
+                  ${parafCells}
+                  <td></td>
+                </tr>`;
+            })
+            .join('');
+
+          const scheduleText =
+            day.sessions.length > 0
+              ? day.sessions
+                  .map(
+                    (s, i) =>
+                      `Sesi ${i + 1}: ${s.mataPelajaran}${s.jamMulai ? ` (${s.jamMulai}-${s.jamSelesai})` : ''}`
+                  )
+                  .join(' • ')
+              : 'Sesuai jadwal ujian harian';
+
+          return `
+            <section class="sheet">
+              <header class="kop">
+                ${logoTag}
+                <div class="kop-text">
+                  <div class="kop-title">DAFTAR HADIR PESERTA UJIAN (ABSENSI HARIAN)</div>
+                  <div class="kop-exam">${escapeHtmlStr(examTitle)}</div>
+                  <div class="kop-school">${escapeHtmlStr(schoolName)}</div>
+                </div>
+                <div class="room-badge">
+                  <div class="room-badge-lbl">RUANG UJIAN</div>
+                  <div class="room-badge-val">${escapeHtmlStr(room.namaRuang.toUpperCase())}</div>
+                  <div class="day-pill">HARI KE-${day.dayIndex}</div>
+                </div>
+              </header>
+
+              <div class="meta-bar daily-meta">
+                <div class="meta-row">
+                  <div><strong>Hari / Tanggal:</strong> ${escapeHtmlStr(day.hariTanggalLabel)}</div>
+                  <div><strong>Jumlah Peserta:</strong> ${filled} / ${room.jumlahKursi} Kursi (${totalMeja} Meja)</div>
+                </div>
+                <div class="meta-row">
+                  <div><strong>Pengawas Ruang:</strong> ${escapeHtmlStr(room.pengawas || '-')}</div>
+                  <div><strong>${day.sessions.length > 0 ? `${day.sessions.length} Mata Pelajaran` : 'Absensi Harian'}</strong></div>
+                </div>
+                <div class="meta-schedule"><strong>Jadwal Sesi:</strong> ${escapeHtmlStr(scheduleText)}</div>
               </div>
-              <div class="room-badge">
-                <div class="room-badge-lbl">RUANG UJIAN</div>
-                <div class="room-badge-val">${escapeHtmlStr(room.namaRuang.toUpperCase())}</div>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:4%">No</th>
+                    <th style="width:6.2%">Kursi</th>
+                    <th style="width:5.4%">Meja</th>
+                    <th style="width:11.4%">No. Peserta</th>
+                    <th style="width:26%">Nama Lengkap Siswa</th>
+                    <th style="width:12%">Kelas</th>
+                    ${sessionHeaders}
+                  </tr>
+                </thead>
+                <tbody>${trHtml}</tbody>
+              </table>
+
+              <div class="hadir-rekap">
+                <strong>Rekap Kehadiran Harian:</strong>
+                &nbsp;&nbsp;Terdaftar: <strong>${filled}</strong>
+                &nbsp;&nbsp;|&nbsp;&nbsp;Hadir: ..........
+                &nbsp;&nbsp;|&nbsp;&nbsp;Sakit: ..........
+                &nbsp;&nbsp;|&nbsp;&nbsp;Izin: ..........
+                &nbsp;&nbsp;|&nbsp;&nbsp;Alfa: ..........
               </div>
-            </header>
 
-            <div class="meta-bar">
-              <div><strong>Pengawas Ruang:</strong> ${escapeHtmlStr(room.pengawas || '-')}</div>
-              <div><strong>Jumlah Peserta:</strong> ${filled} / ${room.jumlahKursi} Kursi (${Math.ceil(room.jumlahKursi / (room.kursiPerMeja || 4))} Meja)</div>
-            </div>
+              ${
+                classSummaryText
+                  ? `<div class="class-rekap"><strong>Rekap per Kelas:</strong> ${escapeHtmlStr(classSummaryText)}</div>`
+                  : ''
+              }
 
-            <table>
-              <thead>
-                <tr>
-                  <th style="width:5%">No</th>
-                  <th style="width:8%">Kursi</th>
-                  <th style="width:9%">Meja</th>
-                  <th style="width:13%">No. Peserta</th>
-                  <th style="width:30%">Nama Lengkap Siswa</th>
-                  <th style="width:13%">Kelas</th>
-                  <th style="width:11%">NIS / NISN</th>
-                  <th style="width:11%">Paraf</th>
-                </tr>
-              </thead>
-              <tbody>${trHtml}</tbody>
-            </table>
-
-            ${
-              classSummaryText
-                ? `<div class="class-rekap"><strong>Rekap per Kelas:</strong> ${escapeHtmlStr(classSummaryText)}</div>`
-                : ''
-            }
-
-            <div class="sig-row">
-              <div class="sig-box">
-                <div>Mengetahui,</div>
-                <div class="sig-role">Kepala Sekolah</div>
-                <div class="sig-space"></div>
-                <div class="sig-name">${escapeHtmlStr(kepsekNama)}</div>
-                ${kepsekNip && kepsekNip !== '-' ? `<div class="sig-nip">NIP. ${escapeHtmlStr(kepsekNip)}</div>` : ''}
+              <div class="sig-row">
+                <div class="sig-box">
+                  <div>Mengetahui,</div>
+                  <div class="sig-role">Kepala Sekolah</div>
+                  <div class="sig-space">${sigImgTag}</div>
+                  <div class="sig-name">${escapeHtmlStr(kepsekNama)}</div>
+                  ${kepsekNip && kepsekNip !== '-' ? `<div class="sig-nip">NIP. ${escapeHtmlStr(kepsekNip)}</div>` : ''}
+                </div>
+                <div class="sig-box">
+                  <div>${escapeHtmlStr(kota)}, ${escapeHtmlStr(day.tanggalPenetapanLabel)}</div>
+                  <div class="sig-role">Pengawas ${escapeHtmlStr(room.namaRuang)}</div>
+                  <div class="sig-space"></div>
+                  <div class="sig-name">${escapeHtmlStr(room.pengawas || '....................................')}</div>
+                </div>
               </div>
-              <div class="sig-box">
-                <div>${escapeHtmlStr(kota)}, ${escapeHtmlStr(tglStr)}</div>
-                <div class="sig-role">Pengawas ${escapeHtmlStr(room.namaRuang)}</div>
-                <div class="sig-space"></div>
-                <div class="sig-name">${escapeHtmlStr(room.pengawas || '....................................')}</div>
-              </div>
-            </div>
-          </section>`;
+            </section>`;
+        });
       })
       .join('');
 
@@ -1170,39 +1422,46 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <title>Daftar Nama Siswa Ruang Ujian</title>
+  <title>Absensi Ujian Per Hari — Daftar Nama Siswa</title>
   <style>
-    @page { size: A4 portrait; margin: 12mm 12mm; }
+    @page { size: A4 portrait; margin: 10mm 11mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; background: #fff; font-size: 9pt; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; background: #fff; font-size: 8.6pt; }
     .sheet { page-break-after: always; }
     .sheet:last-child { page-break-after: auto; }
-    .kop { display: flex; align-items: center; gap: 12px; border-bottom: 2.5px solid #082f63; padding-bottom: 8px; margin-bottom: 8px; }
-    .kop-logo { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; }
+    .kop { display: flex; align-items: center; gap: 12px; border-bottom: 2.5px solid #082f63; padding-bottom: 7px; margin-bottom: 7px; }
+    .kop-logo { width: 46px; height: 46px; object-fit: contain; flex-shrink: 0; }
     .kop-text { flex: 1; text-align: center; }
-    .kop-title { font-size: 11.5pt; font-weight: 900; color: #082f63; letter-spacing: 0.3px; }
-    .kop-exam { font-size: 9pt; font-weight: 800; color: #1e293b; margin-top: 2px; }
-    .kop-school { font-size: 10pt; font-weight: 900; color: #0f172a; margin-top: 1px; }
-    .room-badge { border: 2px solid #082f63; border-radius: 6px; padding: 4px 10px; text-align: center; background: #f0f9ff; flex-shrink: 0; }
-    .room-badge-lbl { font-size: 6.5pt; font-weight: 800; color: #475569; }
-    .room-badge-val { font-size: 11pt; font-weight: 900; color: #082f63; }
-    .meta-bar { display: flex; justify-content: space-between; font-size: 8.5pt; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 10px; margin-bottom: 8px; }
-    table { width: 100%; border-collapse: collapse; font-size: 8.4pt; }
-    th, td { border: 1px solid #94a3b8; padding: 4px 6px; text-align: left; }
-    thead th { background: #082f63; color: #fff; font-weight: 800; text-transform: uppercase; font-size: 7.5pt; text-align: center; }
+    .kop-title { font-size: 11pt; font-weight: 900; color: #082f63; letter-spacing: 0.3px; }
+    .kop-exam { font-size: 8.6pt; font-weight: 800; color: #1e293b; margin-top: 2px; }
+    .kop-school { font-size: 9.6pt; font-weight: 900; color: #0f172a; margin-top: 1px; }
+    .room-badge { border: 2px solid #082f63; border-radius: 6px; padding: 4px 10px; text-align: center; background: #f0f9ff; flex-shrink: 0; min-width: 96px; }
+    .room-badge-lbl { font-size: 6.2pt; font-weight: 800; color: #475569; }
+    .room-badge-val { font-size: 10.5pt; font-weight: 900; color: #082f63; }
+    .day-pill { margin-top: 2px; background: #082f63; color: #fde047; font-size: 6.4pt; font-weight: 800; border-radius: 3px; padding: 1px 6px; }
+    .meta-bar { display: flex; justify-content: space-between; font-size: 8.2pt; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 9px; margin-bottom: 7px; }
+    .daily-meta { flex-direction: column; gap: 3px; }
+    .meta-row { display: flex; justify-content: space-between; gap: 8px; }
+    .meta-schedule { font-size: 7.6pt; color: #334155; border-top: 1px dashed #cbd5e1; padding-top: 3px; }
+    table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+    th, td { border: 1px solid #94a3b8; padding: 3.5px 5px; text-align: left; }
+    thead th { background: #082f63; color: #fff; font-weight: 800; text-transform: uppercase; font-size: 7.1pt; text-align: center; line-height: 1.2; }
+    .th-sub { font-size: 6.2pt; font-weight: 600; color: #e0f2fe; text-transform: none; margin-top: 1px; }
     tbody tr:nth-child(even) { background: #f8fafc; }
     tbody tr.empty-seat { color: #94a3b8; }
     .c { text-align: center; }
     .bold { font-weight: 700; }
     .mono { font-variant-numeric: tabular-nums; font-weight: 600; }
-    .ttd-col { color: #64748b; font-size: 7.5pt; }
-    .class-rekap { margin-top: 7px; font-size: 8pt; color: #334155; background: #f1f5f9; padding: 5px 8px; border-radius: 5px; border: 1px solid #cbd5e1; }
-    .sig-row { display: flex; justify-content: space-between; margin-top: 18px; padding: 0 18px; font-size: 8.5pt; }
+    .ttd-col { color: #94a3b8; font-size: 7pt; }
+    .hadir-rekap { margin-top: 6px; font-size: 7.9pt; color: #0f172a; background: #f0f9ff; padding: 5px 8px; border-radius: 5px; border: 1px solid #93c5fd; }
+    .class-rekap { margin-top: 5px; font-size: 7.6pt; color: #334155; background: #f1f5f9; padding: 4px 8px; border-radius: 5px; border: 1px solid #cbd5e1; }
+    .sig-row { display: flex; justify-content: space-between; margin-top: 14px; padding: 0 18px; font-size: 8.2pt; }
     .sig-box { width: 42%; text-align: center; }
     .sig-role { font-weight: 700; margin-top: 2px; }
-    .sig-space { height: 44px; }
+    .sig-space { height: 42px; display: flex; align-items: center; justify-content: center; }
+    .sig-img { max-height: 40px; max-width: 120px; object-fit: contain; }
     .sig-name { font-weight: 800; text-decoration: underline; }
-    .sig-nip { font-size: 7.5pt; color: #475569; margin-top: 2px; }
+    .sig-nip { font-size: 7.4pt; color: #475569; margin-top: 2px; }
   </style>
 </head>
 <body>${pagesHtml}</body>
@@ -1248,6 +1507,178 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
     link.remove();
     URL.revokeObjectURL(url);
     showToast(`Berhasil mengunduh ${fileLabel}.csv (${rows.filter(r => r.isFilled).length} siswa).`);
+  };
+
+  const handleDownloadRoomRosterPdf = async (scope: 'active' | 'all' = 'active') => {
+    if (isDownloadingRosterPdf) return;
+    const targetRooms = scope === 'all' ? rooms : activeRoom ? [activeRoom] : [];
+    if (targetRooms.length === 0) return;
+
+    const q = rosterSearch.trim().toLowerCase();
+    const hasFilter =
+      rosterKelasFilter !== 'Semua' || rosterStatusFilter !== 'semua' || Boolean(q);
+
+    const pdfRooms: DaftarSiswaPdfRoom[] = [];
+    for (const room of targetRooms) {
+      let rows = room.kursiList.map(seat => enrichSeatRow(room, seat));
+      if (hasFilter) {
+        rows = rows.filter(row => {
+          if (rosterStatusFilter === 'terisi' && !row.isFilled) return false;
+          if (rosterStatusFilter === 'kosong' && row.isFilled) return false;
+          if (rosterKelasFilter !== 'Semua' && row.kelasSiswa !== rosterKelasFilter) return false;
+          if (q) {
+            const seatCode = `#${String(row.nomorKursi).padStart(2, '0')}`;
+            const tableLabel = `meja ${row.tableNo}`;
+            const hit =
+              row.namaSiswa.toLowerCase().includes(q) ||
+              row.kelasSiswa.toLowerCase().includes(q) ||
+              row.nis.toLowerCase().includes(q) ||
+              row.nisn.toLowerCase().includes(q) ||
+              row.noPeserta.toLowerCase().includes(q) ||
+              row.roomName.toLowerCase().includes(q) ||
+              seatCode.includes(q) ||
+              String(row.nomorKursi) === q ||
+              tableLabel.includes(q);
+            if (!hit) return false;
+          }
+          return true;
+        });
+      }
+      if (!hasFilter || rows.length > 0) {
+        pdfRooms.push({
+          roomName: room.namaRuang,
+          pengawas: room.pengawas,
+          jumlahKursi: room.jumlahKursi,
+          kursiPerMeja: room.kursiPerMeja || 4,
+          rows: rows.map(r => ({
+            nomorKursi: r.nomorKursi,
+            tableNo: r.tableNo,
+            noPeserta: r.noPeserta,
+            namaSiswa: r.namaSiswa,
+            kelasSiswa: r.kelasSiswa,
+            nis: r.nis,
+            nisn: r.nisn,
+            isFilled: r.isFilled
+          }))
+        });
+      }
+    }
+
+    if (pdfRooms.length === 0) {
+      showToast('Tidak ada data siswa yang cocok dengan filter untuk diunduh ke PDF.');
+      return;
+    }
+
+    const filterParts: string[] = [];
+    if (rosterKelasFilter !== 'Semua') filterParts.push(`Kelas ${rosterKelasFilter}`);
+    if (rosterStatusFilter !== 'semua') {
+      filterParts.push(rosterStatusFilter === 'terisi' ? 'Kursi Terisi' : 'Kursi Kosong');
+    }
+    if (rosterSearch.trim()) filterParts.push(`Pencarian "${rosterSearch.trim()}"`);
+
+    const schoolName = (schoolSettings?.namaSekolah || 'SMP ISLAM MODERN AL FAKHIR').toUpperCase();
+    const examTitle =
+      activeRoom?.judulUjian && activeRoom.judulUjian !== DEFAULT_JUDUL_UJIAN
+        ? activeRoom.judulUjian
+        : configuredExamBanner;
+    const kota = cbtSettings?.kotaPenetapan || schoolSettings?.kotaKabupaten || 'Depok';
+    const kepsekNama = cbtSettings?.kepalaSekolahNama || schoolSettings?.kepalaSekolah || 'Kepala Sekolah';
+    const kepsekNip = (cbtSettings?.kepalaSekolahNip || schoolSettings?.nipKepalaSekolah || '').trim();
+
+    const roomSlug =
+      scope === 'all'
+        ? 'semua-ruang'
+        : (activeRoom?.namaRuang || 'ruang').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const daySlug =
+      selectedAttendanceDay === 'general'
+        ? `daftar-siswa-${roomSlug}`
+        : selectedAttendanceDay === 'all_days'
+        ? `absensi-ujian-perhari-${roomSlug}`
+        : `absensi-ujian-${selectedAttendanceDay}-${roomSlug}`;
+
+    setIsDownloadingRosterPdf(true);
+    try {
+      await downloadDaftarSiswaRuangPdf({
+        rooms: pdfRooms,
+        attendanceDays: selectedDaysForOutput,
+        schoolName,
+        examTitle,
+        kota,
+        kepsekNama,
+        kepsekNip,
+        logoUrl: schoolSettings?.logoUrl,
+        ttdKepalaSekolahUrl: cbtSettings?.ttdKepalaSekolahUrl,
+        filterNote: filterParts.length > 0 ? filterParts.join(' · ') : undefined,
+        fileName: `${daySlug}.pdf`
+      });
+      const totalSiswa = pdfRooms.reduce(
+        (sum, r) => sum + r.rows.filter(row => row.isFilled).length,
+        0
+      );
+      const dayInfo = selectedDaysForOutput
+        ? ` · ${selectedDaysForOutput.length} hari ujian`
+        : '';
+      showToast(`Berhasil mengunduh ${daySlug}.pdf (${totalSiswa} siswa${dayInfo}).`);
+    } catch (err) {
+      console.error('Gagal mengunduh PDF daftar nama siswa:', err);
+      showToast('Gagal membuat file PDF daftar nama siswa.');
+    } finally {
+      setIsDownloadingRosterPdf(false);
+    }
+  };
+
+  // Direct PDF download for the visual floorplan poster (Denah Ruang Ujian)
+  const handleDownloadDenahPdf = async () => {
+    if (isDownloadingDenahPdf) return;
+    setIsDownloadingDenahPdf(true);
+    setSwapSourceSeat(null);
+    setActiveDrag(null);
+
+    const wasRosterMode = viewMode === 'roster';
+    if (wasRosterMode) {
+      setViewMode('detail');
+      await new Promise(resolve => setTimeout(resolve, 180));
+    } else {
+      await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)));
+    }
+
+    try {
+      const posterEl = denahPosterRef.current;
+      if (!posterEl) {
+        showToast('Tampilan denah belum siap untuk diunduh.');
+        return;
+      }
+
+      const effectiveMode = wasRosterMode ? 'detail' : viewMode;
+      const roomSlug = (activeRoom?.namaRuang || 'ruang')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      const fileName =
+        effectiveMode === 'overview'
+          ? 'denah-semua-ruang-ujian.pdf'
+          : `denah-ruang-ujian-${roomSlug || 'ruang'}.pdf`;
+
+      const rosterEl =
+        effectiveMode === 'detail' && showRosterInPoster ? denahPosterRosterRef.current : null;
+
+      await downloadDenahRuangPdf({
+        posterEl,
+        rosterEl,
+        fileName
+      });
+
+      showToast(
+        rosterEl
+          ? `Berhasil mengunduh ${fileName} (Denah + Daftar Nama Siswa).`
+          : `Berhasil mengunduh ${fileName}.`
+      );
+    } catch (err) {
+      console.error('Gagal mengunduh PDF denah ruang ujian:', err);
+      showToast('Gagal membuat file PDF denah ruang ujian.');
+    } finally {
+      setIsDownloadingDenahPdf(false);
+    }
   };
 
   // Filtered students for seat picker modal
@@ -1487,6 +1918,21 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
             >
               <ClipboardList className="w-3.5 h-3.5" />
               <span>Cetak Daftar Siswa</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDownloadDenahPdf}
+              disabled={isDownloadingDenahPdf}
+              className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-md whitespace-nowrap"
+              title="Unduh denah ruang ujian langsung dalam format file PDF siap cetak"
+            >
+              {isDownloadingDenahPdf ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FileDown className="w-3.5 h-3.5" />
+              )}
+              <span>{isDownloadingDenahPdf ? 'Menyiapkan PDF...' : 'Unduh Denah PDF'}</span>
             </button>
 
             <button
@@ -1779,6 +2225,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
         className="bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-300 p-4 sm:p-6 overflow-x-auto"
       >
         <div className="min-w-[960px] space-y-4">
+          <div ref={denahPosterRef} className="space-y-4 bg-white">
           {/* 1. NAVY HEADER BANNER (Matching Reference Image) */}
           <div className="bg-gradient-to-r from-[#082f63] via-[#0c3f7e] to-[#082f63] rounded-2xl px-6 py-4 flex items-center gap-5 shadow-md border-2 border-[#06234a]">
             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white p-1.5 flex items-center justify-center shrink-0 shadow-md">
@@ -2268,10 +2715,11 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
               </div>
             </div>
           </div>
+          </div>
 
           {/* 3. DAFTAR NAMA SISWA DI RUANG UJIAN (Tampil & Tercetak Langsung di Bawah Denah) */}
           {viewMode === 'detail' && showRosterInPoster && (
-            <div className="rounded-2xl border-2 border-[#0a366b] overflow-hidden bg-white shadow-sm">
+            <div ref={denahPosterRosterRef} className="rounded-2xl border-2 border-[#0a366b] overflow-hidden bg-white shadow-sm">
               <div className="bg-gradient-to-r from-[#082f63] via-[#0c3f7e] to-[#082f63] text-white px-4 py-2.5 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
                   <ClipboardList className="w-4 h-4 text-[#fde047] shrink-0" />
@@ -2492,6 +2940,28 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                 </div>
               )}
 
+              <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1">
+                <CalendarDays className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <select
+                  value={selectedAttendanceDay}
+                  onChange={e => setSelectedAttendanceDay(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-amber-200 focus:outline-none cursor-pointer pr-1"
+                  title="Pilih format absensi ujian per hari untuk Cetak & Unduh PDF"
+                >
+                  <option value="all_days" className="bg-slate-900 text-white">
+                    Absensi Per Hari ({examAttendanceDays.length} Hari)
+                  </option>
+                  {examAttendanceDays.map(d => (
+                    <option key={d.tanggal} value={d.tanggal} className="bg-slate-900 text-white">
+                      Hari {d.dayIndex} · {d.shortLabel} ({d.sessions.length || 1} Sesi)
+                    </option>
+                  ))}
+                  <option value="general" className="bg-slate-900 text-white">
+                    Daftar Umum (1 Lembar)
+                  </option>
+                </select>
+              </div>
+
               <button
                 type="button"
                 onClick={() => handlePrintRoomRoster(viewMode === 'roster' ? rosterScope : 'active')}
@@ -2499,6 +2969,21 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>Cetak Daftar &amp; Absensi</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isDownloadingRosterPdf}
+                onClick={() => handleDownloadRoomRosterPdf(viewMode === 'roster' ? rosterScope : 'active')}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 disabled:opacity-60 text-white flex items-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap transition-colors"
+                title="Unduh langsung absensi ujian per hari dalam format PDF siap cetak (A4)"
+              >
+                {isDownloadingRosterPdf ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <FileDown className="w-3.5 h-3.5" />
+                )}
+                <span>{isDownloadingRosterPdf ? 'Membuat PDF...' : 'Unduh PDF Absensi'}</span>
               </button>
 
               <button
@@ -2970,37 +3455,6 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                   type="text"
                   value={roomForm.judulUjian}
                   onChange={e => setRoomForm(f => ({ ...f, judulUjian: e.target.value }))}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Label Pintu</label>
-                  <input
-                    type="text"
-                    value={roomForm.labelPintu}
-                    onChange={e => setRoomForm(f => ({ ...f, labelPintu: e.target.value }))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Label Jendela</label>
-                  <input
-                    type="text"
-                    value={roomForm.labelJendela}
-                    onChange={e => setRoomForm(f => ({ ...f, labelJendela: e.target.value }))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">Ketentuan Poin 3</label>
-                <input
-                  type="text"
-                  value={roomForm.ketentuanTambahan}
-                  onChange={e => setRoomForm(f => ({ ...f, ketentuanTambahan: e.target.value }))}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
                 />
               </div>

@@ -50,6 +50,7 @@ export async function captureElementToBlob(element: HTMLElement): Promise<Blob |
       pixelRatio: 2,
       backgroundColor: '#ffffff',
       cacheBust: true,
+      skipFonts: true,
       filter: (node: Node) => {
         // Exclude elements with print:hidden or hidden during export if any
         if (node instanceof HTMLElement && node.classList.contains('print:hidden')) {
@@ -73,7 +74,8 @@ export async function downloadElementAsImage(element: HTMLElement, filename: str
     const dataUrl = await htmlToImage.toPng(element, {
       pixelRatio: 2,
       backgroundColor: '#ffffff',
-      cacheBust: true
+      cacheBust: true,
+      skipFonts: true
     });
     
     if (!dataUrl) return false;

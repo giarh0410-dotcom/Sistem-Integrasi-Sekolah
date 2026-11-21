@@ -814,10 +814,13 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
   };
 
   // Filtered lists
+  const normalizedSearch = search.trim().toLowerCase();
   const filteredSiswa = siswaList.filter(s => {
-    const matchSearch = s.nama.toLowerCase().includes(search.toLowerCase()) || 
-                        s.nis.includes(search) || 
-                        s.nisn.includes(search);
+    const matchSearch = !normalizedSearch ||
+                        (s.nama || '').toLowerCase().includes(normalizedSearch) || 
+                        (s.nis || '').toLowerCase().includes(normalizedSearch) || 
+                        (s.nisn || '').toLowerCase().includes(normalizedSearch) ||
+                        (s.kelas || '').toLowerCase().includes(normalizedSearch);
     const matchKelas = filterKelas === 'Semua' || s.kelas === filterKelas;
     const matchGender = filterGender === 'Semua' || s.jenisKelamin === filterGender;
     return matchSearch && matchKelas && matchGender;
@@ -1367,11 +1370,11 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0 max-w-full">
       
       {/* Top Header Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#121212] p-5 rounded-xl border border-slate-800 shadow-sm">
-        <div>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#121212] p-4 sm:p-5 rounded-xl border border-slate-800 shadow-sm">
+        <div className="min-w-0">
           <h2 className="text-xl font-bold text-white flex items-center gap-2.5 flex-wrap">
             <Users className="w-5 h-5 text-blue-400" /> Database Induk Sekolah
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider flex items-center gap-1.5">
@@ -1494,37 +1497,52 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
       />
 
       {/* Filter and Action Bar */}
-      <div className="flex flex-col lg:flex-row items-center justify-between gap-3 bg-[#121212] p-4 rounded-xl border border-slate-800 shadow-sm">
-        <div className="flex flex-1 items-center gap-3 w-full">
+      <div className="flex flex-col gap-3 bg-[#121212] p-4 rounded-xl border border-slate-800 shadow-sm min-w-0">
+        {/* Row 1: Search & Filters */}
+        <div className="flex flex-col md:flex-row md:flex-wrap items-stretch md:items-center gap-2.5 w-full min-w-0">
           {/* Search Input */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
             <input
               type="text"
               placeholder={
-                subTab === 'rombel' 
+                subTab === 'siswa'
+                  ? "Cari nama siswa, NISN, NIS, atau kelas..."
+                  : subTab === 'guru'
+                  ? "Cari nama guru, NUPTK/NIP, atau mata pelajaran..."
+                  : subTab === 'staf'
+                  ? "Cari nama staf, NIK, atau bagian..."
+                  : subTab === 'rombel' 
                   ? "Cari Rombel, Wali Kelas, Ruangan..." 
                   : subTab === 'mapel'
                   ? "Cari nama mapel, kode, atau guru pengampu..."
-                  : subTab === 'ekskul'
-                  ? "Cari ekskul, pembina, hari, atau tempat latihan..."
-                  : "Cari nama, NUPTK/NISN/NIK, atau mata pelajaran..."
+                  : "Cari ekskul, pembina, hari, atau tempat latihan..."
               }
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              className="w-full pl-9 pr-8 py-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-blue-500 focus:border-blue-500/60 focus:outline-none transition-colors"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                title="Hapus pencarian"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
-          {/* Class Filter for Siswa */}
+          {/* Class & Gender Filter for Siswa */}
           {subTab === 'siswa' && (
-            <>
-              <div className="flex items-center gap-2 shrink-0">
-                <Filter className="w-4 h-4 text-slate-500" />
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 flex-1 sm:flex-none min-w-0">
+                <Filter className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 <select
                   value={filterKelas}
                   onChange={e => setFilterKelas(e.target.value)}
-                  className="bg-[#181818] border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                  className="w-full sm:w-auto min-w-0 bg-[#181818] border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
                 >
                   <option value="Semua">Semua Kelas / Rombel</option>
                   {Array.from(new Set(activeRombelList.map(r => r.namaRombel))).map(k => (
@@ -1533,29 +1551,28 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                 </select>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <Filter className="w-4 h-4 text-slate-500" />
+              <div className="flex items-center gap-1.5 flex-1 sm:flex-none min-w-0">
                 <select
                   value={filterGender}
                   onChange={e => setFilterGender(e.target.value)}
-                  className="bg-[#181818] border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                  className="w-full sm:w-auto min-w-0 bg-[#181818] border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
                 >
                   <option value="Semua">Semua L/P</option>
                   <option value="L">L - Laki-laki</option>
                   <option value="P">P - Perempuan</option>
                 </select>
               </div>
-            </>
+            </div>
           )}
 
           {/* Tingkat Filter for Rombel */}
           {subTab === 'rombel' && (
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-slate-500" />
+            <div className="flex items-center gap-2 shrink-0">
+              <Filter className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               <select
                 value={filterTingkat}
                 onChange={e => setFilterTingkat(e.target.value)}
-                className="bg-[#181818] border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                className="w-full sm:w-auto bg-[#181818] border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
               >
                 <option value="Semua">Semua Tingkat</option>
                 <option value="Kelas 7">Kelas 7</option>
@@ -1567,8 +1584,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
           {/* Kategori & Hari Filter for Mapel */}
           {subTab === 'mapel' && (
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-slate-500" />
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <Filter className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               <select
                 value={filterKategoriMapel}
                 onChange={e => setFilterKategoriMapel(e.target.value)}
@@ -1602,9 +1619,9 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
           {/* Kategori, Hari, & Status Filter for Ekskul */}
           {subTab === 'ekskul' && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <div className="flex items-center gap-1.5">
-                <Filter className="w-4 h-4 text-slate-500" />
+                <Filter className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 <select
                   value={filterKategoriEkskul}
                   onChange={e => setFilterKategoriEkskul(e.target.value)}
@@ -1648,12 +1665,65 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
           )}
         </div>
 
-        {/* Template & Add Controls */}
-          <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
+        {/* Row 2: Result Summary & Action Controls */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-3 border-t border-slate-800/80">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+            <span>
+              {subTab === 'siswa' && (
+                <>Menampilkan <strong className="text-slate-200">{filteredSiswa.length}</strong> dari <strong className="text-slate-200">{siswaList.length}</strong> siswa</>
+              )}
+              {subTab === 'guru' && (
+                <>Menampilkan <strong className="text-slate-200">{filteredGuru.length}</strong> dari <strong className="text-slate-200">{guruList.length}</strong> guru</>
+              )}
+              {subTab === 'staf' && (
+                <>Menampilkan <strong className="text-slate-200">{filteredStaf.length}</strong> dari <strong className="text-slate-200">{stafList.length}</strong> staf</>
+              )}
+              {subTab === 'rombel' && (
+                <>Menampilkan <strong className="text-slate-200">{filteredRombel.length}</strong> dari <strong className="text-slate-200">{activeRombelList.length}</strong> rombel</>
+              )}
+              {subTab === 'mapel' && (
+                <>Menampilkan <strong className="text-slate-200">{filteredMapel.length}</strong> dari <strong className="text-slate-200">{activeMapelList.length}</strong> mata pelajaran</>
+              )}
+              {subTab === 'ekskul' && (
+                <>Menampilkan <strong className="text-slate-200">{filteredEkskul.length}</strong> dari <strong className="text-slate-200">{activeEkskulList.length}</strong> ekstrakurikuler</>
+              )}
+            </span>
+
+            {((search.trim() !== '') ||
+              (subTab === 'siswa' && (filterKelas !== 'Semua' || filterGender !== 'Semua')) ||
+              (subTab === 'rombel' && filterTingkat !== 'Semua') ||
+              (subTab === 'mapel' && (filterKategoriMapel !== 'Semua' || filterHariMapel !== 'Semua')) ||
+              (subTab === 'ekskul' && (filterKategoriEkskul !== 'Semua' || filterHariEkskul !== 'Semua' || filterStatusEkskul !== 'Semua'))) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  if (subTab === 'siswa') {
+                    setFilterKelas('Semua');
+                    setFilterGender('Semua');
+                  } else if (subTab === 'rombel') {
+                    setFilterTingkat('Semua');
+                  } else if (subTab === 'mapel') {
+                    setFilterKategoriMapel('Semua');
+                    setFilterHariMapel('Semua');
+                  } else if (subTab === 'ekskul') {
+                    setFilterKategoriEkskul('Semua');
+                    setFilterHariEkskul('Semua');
+                    setFilterStatusEkskul('Semua');
+                  }
+                }}
+                className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 font-semibold transition-colors flex items-center gap-1"
+              >
+                <X className="w-3 h-3" /> Reset Filter
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
             {subTab === 'mapel' && (
               <button
                 onClick={handleExportMapelCsv}
-                className="px-3 py-2 bg-[#181818] hover:bg-slate-800 text-amber-300 border border-amber-500/30 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
+                className="px-3 py-2 bg-[#181818] hover:bg-slate-800 text-amber-300 border border-amber-500/30 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
                 title="Ekspor Database Mata Pelajaran ke CSV"
               >
                 <Download className="w-3.5 h-3.5 text-amber-400" /> Ekspor Mapel CSV
@@ -1663,7 +1733,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
             {subTab === 'ekskul' && (
               <button
                 onClick={handleExportEkskulCsv}
-                className="px-3 py-2 bg-[#181818] hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
+                className="px-3 py-2 bg-[#181818] hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
                 title="Ekspor Database Ekstrakurikuler ke CSV"
               >
                 <Download className="w-3.5 h-3.5 text-emerald-400" /> Ekspor Ekskul CSV
@@ -1674,7 +1744,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
               <>
                 <button
                   onClick={() => handleDownloadTemplate(subTab as 'siswa' | 'guru' | 'staf')}
-                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
                   title={`Unduh Template CSV Data ${subTab.toUpperCase()}`}
                 >
                   <Download className="w-3.5 h-3.5 text-blue-400" /> Template CSV
@@ -1682,17 +1752,15 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
                 <button
                   onClick={() => handleTriggerImport(subTab as 'siswa' | 'guru' | 'staf')}
-                  className="px-3 py-2 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/50 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
+                  className="px-3 py-2 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/50 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
                   title={`Import File Template ke Database ${subTab.toUpperCase()}`}
                 >
                   <Upload className="w-3.5 h-3.5 text-emerald-400" /> Import File
                 </button>
 
-
-
                 <button
                   onClick={() => setShowTemplateHubModal(true)}
-                  className="px-3 py-2 bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-700/50 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
+                  className="px-3 py-2 bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-700/50 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
                 >
                   <FolderDown className="w-3.5 h-3.5 text-purple-400" /> Pusat Template
                 </button>
@@ -1749,7 +1817,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                       }
                     }
                   }}
-                  className="px-3 py-2 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm"
+                  className="px-3 py-2 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
                   title={
                     subTab === 'siswa' && selectedSiswaIds.length > 0
                       ? `Hapus ${selectedSiswaIds.length} Siswa Terpilih`
@@ -1770,7 +1838,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
             <button
               onClick={handleOpenAdd}
-              className={`px-4 py-2 font-semibold rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm ${
+              className={`px-3.5 py-2 font-semibold rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm whitespace-nowrap ${
                 subTab === 'rombel' 
                   ? 'bg-indigo-600 hover:bg-indigo-500 text-white ring-1 ring-indigo-400/50' 
                   : subTab === 'mapel'
@@ -1784,11 +1852,12 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
               Tambah {subTab === 'siswa' ? 'Siswa' : subTab === 'guru' ? 'Guru' : subTab === 'staf' ? 'Staf' : subTab === 'mapel' ? 'Mata Pelajaran' : subTab === 'ekskul' ? 'Ekskul' : 'Rombel'} Baru
             </button>
           </div>
+        </div>
       </div>
 
       {/* STATS OVERVIEW FOR ACTIVE SUBTAB */}
       {subTab === 'siswa' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <div className="bg-[#121212] p-4 rounded-xl border border-slate-800 flex items-center gap-3 shadow-md hover:border-blue-500/30 transition-all">
             <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl border border-blue-500/20 shadow-inner">
               <GraduationCap className="w-5 h-5" />

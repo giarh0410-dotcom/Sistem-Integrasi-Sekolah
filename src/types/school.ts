@@ -16,7 +16,7 @@ export interface RombelKelas {
 export type Role = 'admin' | 'guru' | 'siswa' | 'staf' | 'kepsek' | 'petugas_absensi' | 'guru_bk';
 export type SubTab = 'siswa' | 'guru' | 'staf' | 'rombel' | 'mapel' | 'ekskul';
 export type AbsensiSubTab = 'scan_barcode' | 'harian_siswa' | 'absensi_guru' | 'rekap_absensi' | 'redaksi' | 'perizinan' | 'jurnal_guru';
-export type CbtSubTab = 'bank_soal' | 'jadwal_kartu' | 'denah_ruang' | 'ai_generator' | 'simulasi_ujian' | 'hasil_ujian' | 'pengaturan_cbt';
+export type CbtSubTab = 'bank_soal' | 'kisi_kisi' | 'jadwal_kartu' | 'denah_ruang' | 'daftar_pengawas' | 'berita_acara' | 'ai_generator' | 'simulasi_ujian' | 'hasil_ujian' | 'pengaturan_cbt';
 export type KeuanganSubTab = 'pembayaran' | 'pengaturan_biaya' | 'rekap' | 'redaksi' | 'gaji';
 export type AdministrasiSubTab = 'modul_ajar' | 'cp' | 'atp' | 'kktp' | 'prota' | 'prosem' | 'jadwal' | 'kalender' | 'jurnal_guru';
 export type PengaturanSubTab = 'identitas' | 'logo' | 'fonnte' | 'jadwal' | 'sistem';
@@ -325,6 +325,90 @@ export interface CbtExamSettings {
   kotaPenetapan?: string;
   tanggalPenetapan?: string;
   ttdKepalaSekolahUrl?: string;
+  updatedAt?: string;
+}
+
+export interface PengawasUjianItem {
+  id: string;
+  kodePengawas?: string;
+  tanggal: string; // YYYY-MM-DD
+  sesi: string; // e.g. "Sesi 1", "Sesi 2"
+  jamMulai: string; // HH:mm
+  jamSelesai: string; // HH:mm
+  mataPelajaran: string;
+  ruang: string; // e.g. "Ruang 1"
+  pengawas1Id?: string;
+  pengawas1Nama: string;
+  pengawas1Nip?: string;
+  pengawas2Id?: string;
+  pengawas2Nama?: string;
+  pengawas2Nip?: string;
+  status: 'Terjadwal' | 'Hadir' | 'Digantikan' | 'Selesai';
+  penggantiNama?: string;
+  catatan?: string;
+  updatedAt?: string;
+}
+
+export interface BeritaAcaraAbsenSiswa {
+  nomorKursi?: number;
+  nomorPeserta?: string;
+  namaSiswa: string;
+  kelas?: string;
+  alasan: 'Sakit' | 'Izin' | 'Alpha';
+}
+
+export interface BeritaAcaraUjianItem {
+  id: string;
+  nomorBeritaAcara?: string;
+  tanggal: string; // YYYY-MM-DD
+  sesi: string; // e.g. "Sesi 1"
+  jamMulai: string; // HH:mm
+  jamSelesai: string; // HH:mm
+  mataPelajaran: string;
+  ruang: string; // e.g. "Ruang 1"
+  pengawasNama: string;
+  pengawasNip?: string;
+  jumlahTerdaftar: number;
+  jumlahHadir: number;
+  jumlahTidakHadir: number;
+  pesertaTidakHadir: BeritaAcaraAbsenSiswa[];
+  catatanKejadian: string;
+  kondisiPelaksanaan: 'Tertib & Lancar' | 'Ada Kendala Teknis' | 'Ada Pelanggaran / Khusus';
+  status: 'Draft' | 'Final';
+  updatedAt?: string;
+}
+
+export type LevelKognitifKisi = 'L1 (C1-C2)' | 'L2 (C3)' | 'L3 (C4-C6)';
+export type BentukSoalKisi = 'PG' | 'PG Kompleks' | 'Isian Singkat' | 'Uraian / Esai';
+
+export interface KisiKisiButirItem {
+  id: string;
+  nomorSoal: number;
+  capaianPembelajaran: string;
+  materi: string;
+  indikatorSoal: string;
+  levelKognitif: LevelKognitifKisi;
+  bentukSoal: BentukSoalKisi;
+  bobot?: number;
+  kunciJawaban?: string;
+}
+
+export interface KisiKisiSoalDoc {
+  id: string;
+  bankSoalId?: string;
+  judul: string;
+  mataPelajaran: string;
+  kelas: string;
+  fase?: string;
+  kurikulum: 'Kurikulum Merdeka' | 'Kurikulum 2013';
+  semester: 'Ganjil' | 'Genap';
+  tahunAjaran: string;
+  alokasiWaktu: string;
+  penyusunNama: string;
+  penyusunNip?: string;
+  tanggalPenyusunan?: string;
+  status: 'Draft' | 'Final';
+  butirKisi: KisiKisiButirItem[];
   updatedAt?: string;
 }
 

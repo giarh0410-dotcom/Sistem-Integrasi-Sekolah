@@ -63,6 +63,9 @@ import {
 } from '../types/school';
 import { dbFetchCollection, dbSaveCollection, dbSaveItem } from '../lib/firebaseSync';
 import { DenahRuangUjian } from './cbt/DenahRuangUjian';
+import { DaftarPengawasUjian } from './cbt/DaftarPengawasUjian';
+import { BeritaAcaraUjian } from './cbt/BeritaAcaraUjian';
+import { KisiKisiSoal } from './cbt/KisiKisiSoal';
 import { JadwalUjianSection } from './cbt/JadwalUjianSection';
 import { PengaturanCbtSection } from './cbt/PengaturanCbtSection';
 import {
@@ -118,8 +121,19 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
   useEffect(() => {
     if (currentRole === 'siswa') {
-      if (subTab === 'bank_soal' || subTab === 'ai_generator' || subTab === 'pengaturan_cbt') {
+      if (
+        subTab === 'bank_soal' ||
+        subTab === 'kisi_kisi' ||
+        subTab === 'ai_generator' ||
+        subTab === 'pengaturan_cbt' ||
+        subTab === 'daftar_pengawas' ||
+        subTab === 'berita_acara'
+      ) {
         setSubTab('simulasi_ujian');
+      }
+    } else if (currentRole === 'guru') {
+      if (subTab === 'pengaturan_cbt' || subTab === 'jadwal_kartu' || subTab === 'simulasi_ujian') {
+        setSubTab('bank_soal');
       }
     }
   }, [currentRole, subTab]);
@@ -2396,8 +2410,11 @@ export const CbtView: React.FC<CbtViewProps> = ({
         <div className="flex items-center gap-2">
           <span className="text-xs px-3 py-1.5 rounded-lg font-bold bg-slate-800/80 text-blue-400 border border-slate-700/60">
             {subTab === 'bank_soal' && `Bank Soal (${bankSoalList.length})`}
+            {subTab === 'kisi_kisi' && 'Kisi-Kisi Soal'}
             {subTab === 'jadwal_kartu' && 'Jadwal & Kartu Ujian'}
             {subTab === 'denah_ruang' && 'Denah Ruang Ujian'}
+            {subTab === 'daftar_pengawas' && 'Daftar Pengawas Ujian'}
+            {subTab === 'berita_acara' && 'Berita Acara Ujian'}
             {subTab === 'simulasi_ujian' && 'Simulasi CBT Anti-Cheat'}
             {subTab === 'hasil_ujian' && 'Hasil Ujian (Firebase)'}
             {subTab === 'pengaturan_cbt' && 'Pengaturan Ujian'}
@@ -2406,7 +2423,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
       </div>
 
       {/* SUBTAB PENGATURAN CBT UJIAN */}
-      {subTab === 'pengaturan_cbt' && (
+      {subTab === 'pengaturan_cbt' && currentRole !== 'guru' && currentRole !== 'siswa' && (
         <PengaturanCbtSection
           cbtSettings={cbtSettings}
           onSaveSettings={saveCbtSettings}
@@ -2424,8 +2441,52 @@ export const CbtView: React.FC<CbtViewProps> = ({
           rombelList={rombelList}
           schoolSettings={schoolSettings}
           cbtSettings={cbtSettings}
+          jadwalUjianList={jadwalList}
           currentRole={currentRole}
           userEmail={userEmail}
+        />
+      )}
+
+      {/* SUBTAB DAFTAR PENGAWAS UJIAN */}
+      {subTab === 'daftar_pengawas' && currentRole !== 'siswa' && (
+        <DaftarPengawasUjian
+          guruList={guruList}
+          stafList={stafList}
+          jadwalUjianList={jadwalList}
+          schoolSettings={schoolSettings}
+          cbtSettings={cbtSettings}
+          currentRole={currentRole}
+          userEmail={userEmail}
+          showToast={showToast}
+        />
+      )}
+
+      {/* SUBTAB BERITA ACARA UJIAN */}
+      {subTab === 'berita_acara' && currentRole !== 'siswa' && (
+        <BeritaAcaraUjian
+          guruList={guruList}
+          stafList={stafList}
+          jadwalUjianList={jadwalList}
+          schoolSettings={schoolSettings}
+          cbtSettings={cbtSettings}
+          currentRole={currentRole}
+          userEmail={userEmail}
+          showToast={showToast}
+        />
+      )}
+
+      {/* SUBTAB KISI-KISI SOAL */}
+      {subTab === 'kisi_kisi' && currentRole !== 'siswa' && (
+        <KisiKisiSoal
+          bankSoalList={bankSoalList}
+          guruList={guruList}
+          mapelList={mapelList}
+          rombelList={rombelList}
+          schoolSettings={schoolSettings}
+          cbtSettings={cbtSettings}
+          currentRole={currentRole}
+          userEmail={userEmail}
+          showToast={showToast}
         />
       )}
 

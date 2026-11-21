@@ -36,7 +36,8 @@ import {
   ShieldAlert,
   Award,
   Printer,
-  LayoutGrid
+  LayoutGrid,
+  ClipboardList
 } from 'lucide-react';
 import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab, AdministrasiSubTab, PengaturanSubTab, RaporSubTab } from '../types/school';
 
@@ -246,6 +247,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             const isActive = activeTab === item.id || (item.id === 'keuangan' && currentRole === 'staf' && activeTab === 'database');
             
             if (item.id === 'database') {
+              if (currentRole === 'guru' || currentRole === 'guru_bk' || currentRole === 'siswa') {
+                return null;
+              }
               return (
                 <div key={item.id} className="space-y-1">
                   <button
@@ -599,6 +603,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </button>
                       )}
 
+                      {/* 1b. Kisi-Kisi Soal */}
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('kisi_kisi');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'kisi_kisi'
+                              ? 'bg-teal-600/15 text-teal-300 border border-teal-500/30 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <ClipboardList className="w-3.5 h-3.5 text-teal-400" />
+                            <span>Kisi-Kisi Soal</span>
+                          </div>
+                        </button>
+                      )}
+
                       {/* 2. Jadwal & Kartu Ujian */}
                       {currentRole !== 'guru' && currentRole !== 'siswa' && (
                         <button
@@ -636,6 +660,46 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <span>Denah Ruang Ujian</span>
                         </div>
                       </button>
+
+                      {/* 2c. Daftar Pengawas Ujian */}
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('daftar_pengawas');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'daftar_pengawas'
+                              ? 'bg-cyan-600/15 text-cyan-300 border border-cyan-500/30 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <UserCheck className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>Daftar Pengawas Ujian</span>
+                          </div>
+                        </button>
+                      )}
+
+                      {/* 2d. Berita Acara Ujian */}
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('berita_acara');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'berita_acara'
+                              ? 'bg-amber-600/15 text-amber-300 border border-amber-500/30 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <FileSignature className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Berita Acara Ujian</span>
+                          </div>
+                        </button>
+                      )}
 
                       {/* 3. Simulasi CBT Anti-Cheat */}
                       {currentRole !== 'guru' && (
@@ -678,7 +742,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       )}
 
                       {/* 5. Pengaturan Ujian CBT */}
-                      {currentRole !== 'siswa' && (
+                      {currentRole !== 'siswa' && currentRole !== 'guru' && (
                         <button
                           onClick={() => {
                             setActiveTab('cbt');

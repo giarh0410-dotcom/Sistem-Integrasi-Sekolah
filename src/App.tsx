@@ -898,6 +898,9 @@ export default function App() {
       if (absensiSubTab === 'scan_barcode') {
         setAbsensiSubTab('perizinan');
       }
+      if (cbtSubTab === 'pengaturan_cbt' || cbtSubTab === 'jadwal_kartu' || cbtSubTab === 'simulasi_ujian') {
+        setCbtSubTab('bank_soal');
+      }
     } else if (currentRole === 'petugas_absensi') {
       if (activeTab !== 'absensi') {
         setActiveTab('absensi');
@@ -910,7 +913,13 @@ export default function App() {
       if (activeTab !== 'cbt' && activeTab !== 'rapor') {
         setActiveTab('cbt');
       }
-      if (cbtSubTab === 'bank_soal' || cbtSubTab === 'ai_generator') {
+      if (
+        cbtSubTab === 'bank_soal' ||
+        cbtSubTab === 'kisi_kisi' ||
+        cbtSubTab === 'ai_generator' ||
+        cbtSubTab === 'daftar_pengawas' ||
+        cbtSubTab === 'berita_acara'
+      ) {
         setCbtSubTab('simulasi_ujian');
       }
     }
@@ -1044,7 +1053,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'database' && (
+          {activeTab === 'database' && currentRole !== 'guru' && currentRole !== 'guru_bk' && currentRole !== 'siswa' && (
             <DatabaseView
               rombelList={rombelList}
               setRombelList={setRombelList}

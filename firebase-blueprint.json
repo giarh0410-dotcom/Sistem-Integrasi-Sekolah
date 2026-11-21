@@ -433,6 +433,85 @@
       },
       "description": "Global CBT exam configuration and principal signature"
     },
+    "edu_pengawasUjianList": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "kodePengawas": { "type": "string" },
+          "tanggal": { "type": "string" },
+          "sesi": { "type": "string" },
+          "jamMulai": { "type": "string" },
+          "jamSelesai": { "type": "string" },
+          "mataPelajaran": { "type": "string" },
+          "ruang": { "type": "string" },
+          "pengawas1Id": { "type": "string" },
+          "pengawas1Nama": { "type": "string" },
+          "pengawas1Nip": { "type": "string" },
+          "pengawas2Id": { "type": "string" },
+          "pengawas2Nama": { "type": "string" },
+          "pengawas2Nip": { "type": "string" },
+          "status": { "type": "string", "enum": ["Terjadwal", "Hadir", "Digantikan", "Selesai"] },
+          "penggantiNama": { "type": "string" },
+          "catatan": { "type": "string" },
+          "updatedAt": { "type": "string" }
+        },
+        "required": ["id", "tanggal", "sesi", "jamMulai", "jamSelesai", "mataPelajaran", "ruang", "pengawas1Nama", "status"]
+      },
+      "description": "List of CBT exam invigilators and room supervision schedules"
+    },
+    "edu_beritaAcaraUjianList": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "nomorBeritaAcara": { "type": "string" },
+          "tanggal": { "type": "string" },
+          "sesi": { "type": "string" },
+          "jamMulai": { "type": "string" },
+          "jamSelesai": { "type": "string" },
+          "mataPelajaran": { "type": "string" },
+          "ruang": { "type": "string" },
+          "pengawasNama": { "type": "string" },
+          "pengawasNip": { "type": "string" },
+          "jumlahTerdaftar": { "type": "number" },
+          "jumlahHadir": { "type": "number" },
+          "jumlahTidakHadir": { "type": "number" },
+          "pesertaTidakHadir": { "type": "array" },
+          "catatanKejadian": { "type": "string" },
+          "kondisiPelaksanaan": { "type": "string", "enum": ["Tertib & Lancar", "Ada Kendala Teknis", "Ada Pelanggaran / Khusus"] },
+          "status": { "type": "string", "enum": ["Draft", "Final"] },
+          "updatedAt": { "type": "string" }
+        },
+        "required": ["id", "tanggal", "sesi", "jamMulai", "jamSelesai", "mataPelajaran", "ruang", "pengawasNama", "jumlahTerdaftar", "jumlahHadir", "jumlahTidakHadir", "status"]
+      },
+      "description": "Official exam execution reports (Berita Acara Ujian) per room and session"
+    },
+    "edu_kisiKisiSoalList": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "bankSoalId": { "type": "string" },
+          "judul": { "type": "string" },
+          "mataPelajaran": { "type": "string" },
+          "kelas": { "type": "string" },
+          "fase": { "type": "string" },
+          "kurikulum": { "type": "string", "enum": ["Kurikulum Merdeka", "Kurikulum 2013"] },
+          "semester": { "type": "string", "enum": ["Ganjil", "Genap"] },
+          "tahunAjaran": { "type": "string" },
+          "alokasiWaktu": { "type": "string" },
+          "penyusunNama": { "type": "string" },
+          "penyusunNip": { "type": "string" },
+          "tanggalPenyusunan": { "type": "string" },
+          "status": { "type": "string", "enum": ["Draft", "Final"] },
+          "butirKisi": { "type": "array" },
+          "updatedAt": { "type": "string" }
+        },
+        "required": ["id", "judul", "mataPelajaran", "kelas", "kurikulum", "semester", "tahunAjaran", "penyusunNama", "status", "butirKisi"]
+      },
+      "description": "Exam blueprints (Kisi-Kisi Penulisan Soal) linked to CBT question banks"
+    },
     "edu_schoolSettings": {
       "schema": { "$ref": "#/entities/SchoolSettings" },
       "description": "General school profile settings document"

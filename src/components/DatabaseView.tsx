@@ -390,6 +390,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [modalFormError, setModalFormError] = useState<string>('');
 
   // Student Detail Modal State
   const [selectedSiswaDetail, setSelectedSiswaDetail] = useState<Siswa | null>(null);
@@ -1259,6 +1260,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
   const handleOpenAdd = () => {
     setModalMode('add');
     setEditingId(null);
+    setModalFormError('');
     if (subTab === 'siswa') {
       const defaultRombel = activeRombelList[0];
       setFormSiswa({
@@ -1399,34 +1401,99 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
   // Submit Handler
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setModalFormError('');
     if (subTab === 'siswa') {
+      const trimmedNama = (formSiswa.nama || '').trim();
+      if (!trimmedNama) {
+        const msg = 'Nama Lengkap Siswa wajib diisi.';
+        setModalFormError(msg);
+        showToast(msg, 'warning');
+        return;
+      }
+
+      const trimmedEmail = (formSiswa.email || '').trim();
+      if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        const msg = 'Format Email Siswa tidak valid. Kosongkan atau periksa kembali alamat email.';
+        setModalFormError(msg);
+        showToast(msg, 'warning');
+        return;
+      }
+
+      const normalizeCodeForCheck = (val?: string) => {
+        const clean = (val || '').trim();
+        if (!clean || clean === '-' || clean === '--' || /^0+$/.test(clean)) return '';
+        return clean;
+      };
+
+      const trimmedNisn = (formSiswa.nisn || '').trim();
+      const trimmedNis = (formSiswa.nis || '').trim();
+      const cleanedNik = cleanNik(formSiswa.nik);
+
+      const nisnKey = normalizeCodeForCheck(trimmedNisn);
+      const nisKey = normalizeCodeForCheck(trimmedNis);
+      const nikKey = normalizeCodeForCheck(cleanedNik);
+
       const duplicate = siswaList.find(s => {
         if (editingId && s.id === editingId) return false;
-        const matchNisn = formSiswa.nisn && s.nisn && s.nisn.trim() === formSiswa.nisn.trim();
-        const matchNis = formSiswa.nis && s.nis && s.nis.trim() === formSiswa.nis.trim();
-        const matchNik = formSiswa.nik && s.nik && s.nik.trim() === formSiswa.nik.trim();
+        const matchNisn = nisnKey !== '' && normalizeCodeForCheck(s.nisn) === nisnKey;
+        const matchNis = nisKey !== '' && normalizeCodeForCheck(s.nis) === nisKey;
+        const matchNik = nikKey !== '' && normalizeCodeForCheck(cleanNik(s.nik)) === nikKey;
         return matchNisn || matchNis || matchNik;
       });
 
       if (duplicate) {
-        alert(`⚠️ Peringatan Data Ganda!\nSiswa dengan NISN "${formSiswa.nisn}", NIS "${formSiswa.nis}", atau NIK "${formSiswa.nik}" sudah terdaftar atas nama "${duplicate.nama}" (Kelas: ${duplicate.kelas}). Mohon periksa kembali data peserta didik.`);
+        const conflictFields: string[] = [];
+        if (nisnKey && normalizeCodeForCheck(duplicate.nisn) === nisnKey) conflictFields.push(`NISN "${trimmedNisn}"`);
+        if (nisKey && normalizeCodeForCheck(duplicate.nis) === nisKey) conflictFields.push(`NIS "${trimmedNis}"`);
+        if (nikKey && normalizeCodeForCheck(cleanNik(duplicate.nik)) === nikKey) conflictFields.push(`NIK "${cleanedNik}"`);
+        const msg = `Data ganda: ${conflictFields.join(', ')} sudah terdaftar atas nama "${duplicate.nama}" (Kelas: ${duplicate.kelas || '-'}).`;
+        setModalFormError(msg);
+        showToast(msg, 'warning');
         return;
       }
 
+      const resolvedAlamat = (formSiswa.alamat || formSiswa.alamatLengkap || '').trim();
+      const resolvedKelas = (formSiswa.kelas || '').trim() || 'Belum Ada Kelas';
+      const resolvedWali =
+        (formSiswa.namaWali || '').trim() ||
+        (formSiswa.namaAyah || '').trim() ||
+        (formSiswa.namaIbu || '').trim();
+      const resolvedTeleponWali =
+        (formSiswa.teleponWali || '').trim() ||
+        (formSiswa.teleponAyah || '').trim() ||
+        (formSiswa.teleponIbu || '').trim();
+
       const cleanedForm = {
         ...formSiswa,
-        nik: cleanNik(formSiswa.nik),
+        nama: trimmedNama,
+        nisn: trimmedNisn,
+        nis: trimmedNis,
+        nik: cleanedNik,
         nikAyah: cleanNik(formSiswa.nikAyah),
-        nikIbu: cleanNik(formSiswa.nikIbu)
+        nikIbu: cleanNik(formSiswa.nikIbu),
+        email: trimmedEmail,
+        username: (formSiswa.username || '').trim(),
+        password: (formSiswa.password || '').trim(),
+        kelas: resolvedKelas,
+        rombel: resolvedKelas === 'Belum Ada Kelas' ? '' : resolvedKelas,
+        alamat: resolvedAlamat,
+        alamatLengkap: resolvedAlamat,
+        namaWali: resolvedWali,
+        teleponWali: resolvedTeleponWali,
+        status: formSiswa.status || 'Aktif'
       };
 
       if (modalMode === 'add') {
         const newSiswa: Siswa = { ...cleanedForm, id: `sis-${Date.now()}` };
         setSiswaList(prev => [newSiswa, ...prev]);
+        showToast(`Data siswa "${cleanedForm.nama}" berhasil ditambahkan.`, 'success');
       } else if (editingId) {
         setSiswaList(prev => prev.map(s => s.id === editingId ? { ...cleanedForm, id: editingId } : s));
+        showToast(`Perubahan data siswa "${cleanedForm.nama}" berhasil disimpan.`, 'success');
       }
+      setModalFormError('');
       setIsModalOpen(false);
+      return;
     } else if (subTab === 'guru') {
       if (modalMode === 'add') {
         const newGuru: Guru = { ...formGuru, id: `gur-${Date.now()}` };
@@ -4062,12 +4129,12 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   ? 'Ekstrakurikuler'
                   : 'Data Kelas / Rombel'}
               </h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors">
+              <button type="button" onClick={() => { setModalFormError(''); setIsModalOpen(false); }} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 text-slate-200">
+            <form onSubmit={handleSubmit} noValidate={subTab === 'siswa'} className="flex-1 flex flex-col min-h-0 text-slate-200">
               <div className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
               
               {/* Photo Upload Section (Siswa, Guru, Staf only) */}
@@ -4156,9 +4223,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         <label className="text-[11px] font-bold text-slate-400">NISN</label>
                         <input 
                           type="text" 
-                          required 
                           value={formSiswa.nisn} 
-                          onChange={e => setFormSiswa({ ...formSiswa, nisn: e.target.value as any })}
+                          onChange={e => { setModalFormError(''); setFormSiswa({ ...formSiswa, nisn: e.target.value as any }); }}
                           className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
                         />
                       </div>
@@ -4166,9 +4232,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         <label className="text-[11px] font-bold text-slate-400">NIS</label>
                         <input 
                           type="text" 
-                          required 
                           value={formSiswa.nis} 
-                          onChange={e => setFormSiswa({ ...formSiswa, nis: e.target.value as any })}
+                          onChange={e => { setModalFormError(''); setFormSiswa({ ...formSiswa, nis: e.target.value as any }); }}
                           className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
                         />
                       </div>
@@ -4221,12 +4286,12 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                     </div>
 
                     <div>
-                      <label className="text-[11px] font-bold text-slate-400">Nama Lengkap Siswa</label>
+                      <label className="text-[11px] font-bold text-slate-400">Nama Lengkap Siswa <span className="text-rose-400">*</span></label>
                       <input 
                         type="text" 
                         required 
                         value={formSiswa.nama} 
-                        onChange={e => setFormSiswa({ ...formSiswa, nama: e.target.value as any })}
+                        onChange={e => { setModalFormError(''); setFormSiswa({ ...formSiswa, nama: e.target.value as any }); }}
                         className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
                       />
                     </div>
@@ -4239,10 +4304,12 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                           onChange={e => {
                             const newTingkat = e.target.value;
                             const matchingRombel = activeRombelList.find(r => r.tingkatKelas === newTingkat);
+                            const nextKelas = matchingRombel ? matchingRombel.namaRombel : formSiswa.kelas;
                             setFormSiswa({ 
                               ...formSiswa, 
                               tingkatKelas: newTingkat,
-                              kelas: matchingRombel ? matchingRombel.namaRombel : formSiswa.kelas
+                              kelas: nextKelas,
+                              rombel: nextKelas === 'Belum Ada Kelas' ? '' : nextKelas
                             });
                           }}
                           className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold focus:outline-none focus:border-amber-500"
@@ -4256,7 +4323,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         <label className="text-[11px] font-bold text-slate-400">Rombel / Sub-Kelas</label>
                         <select 
                           value={formSiswa.kelas} 
-                          onChange={e => setFormSiswa({ ...formSiswa, kelas: e.target.value as any })}
+                          onChange={e => setFormSiswa({ ...formSiswa, kelas: e.target.value as any, rombel: e.target.value === 'Belum Ada Kelas' ? '' : e.target.value })}
                           className="w-full p-2 bg-[#181818] border border-slate-800 text-white rounded-lg text-xs font-semibold focus:outline-none focus:border-amber-500"
                         >
                           {activeRombelList
@@ -4279,7 +4346,6 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         <label className="text-[11px] font-bold text-slate-400">Tempat Lahir</label>
                         <input 
                           type="text" 
-                          required 
                           value={formSiswa.tempatLahir} 
                           onChange={e => setFormSiswa({ ...formSiswa, tempatLahir: e.target.value as any })}
                           className="w-full p-2 bg-[#181818] border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500" 
@@ -4290,7 +4356,6 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         <div className="relative w-full">
                           <input 
                             type="date" 
-                            required 
                             value={normalizeDateForInput(formSiswa.tanggalLahir)} 
                             onChange={e => setFormSiswa({ ...formSiswa, tanggalLahir: e.target.value })}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
@@ -4341,7 +4406,6 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                       <label className="text-[11px] font-bold text-slate-400">Alamat Tempat Tinggal</label>
                       <input 
                         type="text" 
-                        required 
                         placeholder="contoh: Jl. Merdeka No. 12"
                         value={formSiswa.alamat} 
                         onChange={e => setFormSiswa({ ...formSiswa, alamat: e.target.value, alamatLengkap: e.target.value as any })}
@@ -5970,10 +6034,17 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
               </div>
 
+              {modalFormError && (
+                <div className="mx-5 mt-3 p-2.5 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-start gap-2 shrink-0">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <span>{modalFormError}</span>
+                </div>
+              )}
+
               <div className="p-5 pt-3 flex justify-end gap-2 border-t border-slate-800 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => { setModalFormError(''); setIsModalOpen(false); }}
                   className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-400 bg-slate-800 hover:bg-slate-700 transition-colors"
                 >
                   Batal

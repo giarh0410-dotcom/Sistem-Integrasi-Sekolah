@@ -212,8 +212,6 @@ export function buildKartuA4PrintHtml(params: {
       const cardsHtml = pageSiswa
         .map(siswa => {
           const noPeserta = `C2026-${(siswa.nisn || siswa.nis || '0000').slice(-4)}`;
-          const username = siswa.username?.trim() || '-';
-          const password = siswa.password?.trim() || '-';
           const barcodeText = siswa.kodeBarcode || `SIS-${siswa.nisn || siswa.nis || ''}`;
           const photoHtml = siswa.fotoUrl
             ? `<img src="${escapeHtml(siswa.fotoUrl)}" alt="${escapeHtml(siswa.nama)}" class="photo-img" referrerpolicy="no-referrer" />`
@@ -259,16 +257,6 @@ export function buildKartuA4PrintHtml(params: {
                     <div class="field-block">
                       <div class="field-label">KELAS:</div>
                       <div class="field-val">${escapeHtml(siswa.kelas || '-')}</div>
-                    </div>
-                    <div class="cred-grid">
-                      <div class="field-block">
-                        <div class="field-label">USERNAME LOGIN:</div>
-                        <div class="cred-pill cred-user">${escapeHtml(username)}</div>
-                      </div>
-                      <div class="field-block">
-                        <div class="field-label">PASSWORD LOGIN:</div>
-                        <div class="cred-pill cred-pass">${escapeHtml(password)}</div>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -1149,34 +1137,6 @@ export const KartuPesertaCard: React.FC<KartuPesertaCardProps> = ({
               >
                 {siswa.kelas}
               </span>
-            </div>
-
-            {/* Username & Password Login dari Database Siswa */}
-            <div className={`grid grid-cols-2 gap-1.5 border-t border-slate-400 ${isCompactMode ? 'pt-0.5' : 'pt-1'}`}>
-              <div className="min-w-0">
-                <span className="text-[7.2px] font-extrabold text-black uppercase block leading-none mb-0.5">
-                  Username Login:
-                </span>
-                <span
-                  className={`font-sans font-black tabular-nums text-black bg-slate-100 px-1.5 rounded border border-black inline-block max-w-full truncate ${
-                    isCompactMode ? 'text-[9px] py-[0.5px]' : 'text-[10px] py-[1px]'
-                  }`}
-                >
-                  {siswa.username?.trim() || '-'}
-                </span>
-              </div>
-              <div className="min-w-0">
-                <span className="text-[7.2px] font-extrabold text-black uppercase block leading-none mb-0.5">
-                  Password Login:
-                </span>
-                <span
-                  className={`font-sans font-black tabular-nums text-black bg-slate-100 px-1.5 rounded border border-black inline-block max-w-full truncate ${
-                    isCompactMode ? 'text-[9px] py-[0.5px]' : 'text-[10px] py-[1px]'
-                  }`}
-                >
-                  {siswa.password?.trim() || '-'}
-                </span>
-              </div>
             </div>
           </div>
         </div>

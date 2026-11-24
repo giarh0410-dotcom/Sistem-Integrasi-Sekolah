@@ -431,23 +431,6 @@ function buildDefaultRooms(siswaList: Siswa[], guruList: Guru[]): DenahRuangItem
 }
 
 // Inline SVG illustrations faithful to the attached Al Fakhir Exam Seating Blueprint
-const PottedPlantSvg: React.FC<{ className?: string }> = ({ className = 'w-10 h-10' }) => (
-  <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
-    <ellipse cx="32" cy="48" rx="13" ry="9" fill="#9a4b1f" stroke="#1e293b" strokeWidth="2.5" />
-    <ellipse cx="32" cy="44" rx="11" ry="4" fill="#c26227" stroke="#1e293b" strokeWidth="2" />
-    <g fill="#4ade80" stroke="#14532d" strokeWidth="2" strokeLinejoin="round">
-      <path d="M32 32 C26 18, 22 10, 32 6 C42 10, 38 18, 32 32 Z" />
-      <path d="M32 32 C18 26, 10 22, 6 32 C10 42, 18 38, 32 32 Z" />
-      <path d="M32 32 C46 26, 54 22, 58 32 C54 42, 46 38, 32 32 Z" />
-      <path d="M32 32 C22 22, 14 14, 14 14 C14 14, 24 14, 32 32 Z" fill="#22c55e" />
-      <path d="M32 32 C42 22, 50 14, 50 14 C50 14, 40 14, 32 32 Z" fill="#22c55e" />
-      <path d="M32 32 C24 40, 14 44, 16 48 C22 48, 28 42, 32 32 Z" fill="#16a34a" />
-      <path d="M32 32 C40 40, 50 44, 48 48 C42 48, 36 42, 32 32 Z" fill="#16a34a" />
-    </g>
-    <circle cx="32" cy="31" r="4" fill="#facc15" stroke="#713f12" strokeWidth="1.5" />
-  </svg>
-);
-
 const DoorSvg: React.FC<{ className?: string }> = ({ className = 'w-11 h-24' }) => (
   <svg viewBox="0 0 48 110" className={className} aria-hidden="true">
     <polygon points="4,4 42,24 42,88 4,106" fill="#c77d33" stroke="#1e293b" strokeWidth="3" strokeLinejoin="round" />
@@ -2621,10 +2604,8 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                 <DoorSvg className="w-10 h-24 drop-shadow" />
               </div>
 
-              {/* TOP ZONE: Corner Plants + Meja Pengawas */}
-              <div className="relative flex items-start justify-between pl-14 pr-4 pt-1 pb-4">
-                <PottedPlantSvg className="w-11 h-11" />
-
+              {/* TOP ZONE: Meja Pengawas */}
+              <div className="relative flex items-start justify-center px-14 pt-1 pb-4">
                 {/* Meja Pengawas (Draggable) */}
                 {(() => {
                   const pengawasOffset = getElementOffset(activeRoom, 'pengawas', 'pengawas');
@@ -2666,7 +2647,6 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                             <Move className="w-3.5 h-3.5" />
                           </span>
                         )}
-                        <PottedPlantSvg className="w-7 h-7 -ml-3 shrink-0" />
                         <div className="text-center">
                           <div className="bg-white/95 px-4 py-0.5 rounded-md border border-amber-700/20 text-xs font-black tracking-wider text-slate-900 uppercase">
                             MEJA PENGAWAS
@@ -2679,8 +2659,6 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                     </div>
                   );
                 })()}
-
-                <PottedPlantSvg className="w-11 h-11" />
               </div>
 
               {/* MIDDLE ZONE: SEATING CLUSTERS OR OVERVIEW ROOMS */}

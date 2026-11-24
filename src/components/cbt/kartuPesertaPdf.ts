@@ -419,56 +419,7 @@ function drawSingleKartuOnPdf(params: {
   doc.setTextColor(0, 0, 0);
   doc.text(fitTextSingleLine(doc, siswa.kelas || '-', dw), dx, dy);
 
-  // Subtle divider above credentials
-  dy += isCompactMode ? 1.2 : 1.6;
-  doc.setDrawColor(100, 116, 139);
-  doc.setLineWidth(0.25);
-  doc.line(dx, dy, dx + dw, dy);
-  dy += isCompactMode ? 2.0 : 2.4;
-
-  // Username & Password Login (from Database Siswa)
-  const credGap = 1.8;
-  const credColW = (dw - credGap) / 2;
-  const username = siswa.username?.trim() || '-';
-  const password = siswa.password?.trim() || '-';
-  const pillH = isCompactMode ? 3.9 : 4.6;
-
-  // Username column
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(isCompactMode ? 5.4 : 5.8);
-  doc.setTextColor(0, 0, 0);
-  doc.text('USERNAME LOGIN:', dx, dy);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(isCompactMode ? 7.2 : 8.0);
-  const userText = fitTextSingleLine(doc, username, credColW - 2.8);
-  const userPillW = Math.min(credColW, Math.max(10.5, doc.getTextWidth(userText) + 3.2));
-  doc.setFillColor(241, 245, 249);
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.28);
-  doc.roundedRect(dx, dy + 0.7, userPillW, pillH, 0.8, 0.8, 'FD');
-  doc.setTextColor(0, 0, 0);
-  doc.text(userText, dx + 1.5, dy + (isCompactMode ? 3.4 : 4.0));
-
-  // Password column
-  const passX = dx + credColW + credGap;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(isCompactMode ? 5.4 : 5.8);
-  doc.setTextColor(0, 0, 0);
-  doc.text('PASSWORD LOGIN:', passX, dy);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(isCompactMode ? 7.2 : 8.0);
-  const passText = fitTextSingleLine(doc, password, credColW - 2.8);
-  const passPillW = Math.min(credColW, Math.max(10.5, doc.getTextWidth(passText) + 3.2));
-  doc.setFillColor(241, 245, 249);
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.28);
-  doc.roundedRect(passX, dy + 0.7, passPillW, pillH, 0.8, 0.8, 'FD');
-  doc.setTextColor(0, 0, 0);
-  doc.text(passText, passX + 1.5, dy + (isCompactMode ? 3.4 : 4.0));
-
-  const identityEndY = Math.max(idY + photoH, dy + pillH + 1);
+  const identityEndY = Math.max(idY + photoH, dy + 1.5);
 
   // =========================================================
   // 3. FOOTER (PENGESAHAN KEPALA SEKOLAH + BARCODE)

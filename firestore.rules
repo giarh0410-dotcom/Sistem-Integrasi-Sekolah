@@ -114,6 +114,12 @@ service cloud.firestore {
     match /edu_kisiKisiSoalList/{kisiId} {
       allow read, write: if isSignedIn();
     }
+    match /edu_bkKonselingList/{bkId} {
+      allow read, write: if isSignedIn();
+    }
+    match /edu_bkJanjiTemuList/{janjiId} {
+      allow read, write: if isSignedIn();
+    }
     
     // Test collection for connectivity check
     match /test/connection {

@@ -2,9 +2,15 @@ import React, { useState } from 'react';
 import { 
   X, Save, Plus, Trash2, Check, ChevronRight, ChevronDown, 
   BookOpen, Users, Layout, Wrench, Target, MessageSquare, 
-  Activity, ClipboardCheck, Sparkles, FileText, Info
+  Activity, ClipboardCheck, Sparkles, FileText, Info, BookMarked, Wand2, Layers
 } from 'lucide-react';
 import { ModulAjarContent, SchoolSettings, Guru, MataPelajaranItem } from '../../types/school';
+import { 
+  DIMENSI_PROFIL_LULUSAN, 
+  PRINSIP_PEMBELAJARAN_MENDALAM, 
+  QURAN_AYAT_PRESETS, 
+  suggestAyatForMateri 
+} from '../../lib/quranAyatPresets';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ModulAjarEditorProps {
@@ -28,44 +34,69 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
 }) => {
   const [activeSection, setActiveSection] = useState<string>('A');
   
+  const initialMapel = initialData?.informasiUmum?.mataPelajaran || defaultMapel || '';
+  const initialMateri = initialData?.informasiUmum?.materi || '';
+  const defaultAyat = initialData?.ayatAlQuran?.surahAyat
+    ? initialData.ayatAlQuran
+    : suggestAyatForMateri(initialMapel, initialMateri);
+  const initialDimensi = (initialData?.dimensiProfilLulusan && initialData.dimensiProfilLulusan.length > 0)
+    ? initialData.dimensiProfilLulusan
+    : ['Keimanan dan Ketakwaan terhadap Tuhan YME', 'Penalaran Kritis', 'Kreativitas', 'Kolaborasi', 'Komunikasi'];
+
   const [formData, setFormData] = useState<ModulAjarContent>({
     informasiUmum: {
       namaPenyusun: initialData?.informasiUmum?.namaPenyusun || '',
       namaSekolah: initialData?.informasiUmum?.namaSekolah || schoolSettings?.namaSekolah || 'SMP Islam Modern Al Fakhir',
-      mataPelajaran: initialData?.informasiUmum?.mataPelajaran || defaultMapel || '',
+      mataPelajaran: initialMapel,
       fase: initialData?.informasiUmum?.fase || 'D',
       kelas: initialData?.informasiUmum?.kelas || '',
       semester: initialData?.informasiUmum?.semester || 'Ganjil',
       tahunAjaran: initialData?.informasiUmum?.tahunAjaran || schoolSettings?.tahunAjaran || '2026/2027',
-      alokasiWaktu: initialData?.informasiUmum?.alokasiWaktu || '',
-      materi: initialData?.informasiUmum?.materi || '',
+      alokasiWaktu: initialData?.informasiUmum?.alokasiWaktu || '2 JP (2 x 40 Menit)',
+      materi: initialMateri,
+    },
+    ayatAlQuran: {
+      surahAyat: defaultAyat.surahAyat || '',
+      teksArab: defaultAyat.teksArab || '',
+      terjemahan: defaultAyat.terjemahan || '',
+      kaitanMateri: defaultAyat.kaitanMateri || '',
     },
     kompetensiAwal: initialData?.kompetensiAwal || '',
-    profilPelajarPancasila: initialData?.profilPelajarPancasila || [
-      'Beriman, Bertakwa kepada Tuhan YME, dan Berakhlak Mulia',
-      'Mandiri',
-      'Bernalar Kritis',
-      'Kreatif',
-      'Gotong Royong',
-      'Berkebinekaan Global'
-    ],
-    saranaPrasarana: initialData?.saranaPrasarana || ['Laptop', 'Internet', 'Proyektor', 'Buku'],
+    dimensiProfilLulusan: initialDimensi,
+    profilPelajarPancasila: initialData?.profilPelajarPancasila?.length ? initialData.profilPelajarPancasila : initialDimensi,
+    capaianPembelajaran: initialData?.capaianPembelajaran || '',
+    lintasDisiplinIlmu: initialData?.lintasDisiplinIlmu || '',
+    kerangkaPembelajaran: {
+      praktikPedagogis: initialData?.kerangkaPembelajaran?.praktikPedagogis || 'Problem-Based Learning / Inquiry Learning berbasis Pembelajaran Mendalam',
+      kemitraanPembelajaran: initialData?.kerangkaPembelajaran?.kemitraanPembelajaran || 'Kolaborasi guru mapel serumpun, tutor sebaya, dan dukungan orang tua',
+      lingkunganPembelajaran: initialData?.kerangkaPembelajaran?.lingkunganPembelajaran || 'Ruang kelas/lab inklusif, aman berpendapat, dan budaya tadabbur Al-Qur\'an',
+      pemanfaatanDigital: initialData?.kerangkaPembelajaran?.pemanfaatanDigital || 'Slide interaktif, simulasi digital, Al-Qur\'an digital, dan LKPD kolaboratif',
+    },
+    saranaPrasarana: initialData?.saranaPrasarana || ['Laptop', 'Internet', 'Proyektor', 'Mushaf / Qur\'an Digital', 'Buku'],
     targetPesertaDidik: initialData?.targetPesertaDidik || 'Reguler',
-    modelPembelajaran: initialData?.modelPembelajaran || 'Problem Based Learning',
+    modelPembelajaran: initialData?.modelPembelajaran || 'Problem Based Learning (Pembelajaran Mendalam)',
     tujuanPembelajaran: initialData?.tujuanPembelajaran || [],
     pemahamanBermakna: initialData?.pemahamanBermakna || '',
     pertanyaanPemantik: initialData?.pertanyaanPemantik || [''],
+    pengalamanBelajarMendalam: {
+      prinsipPembelajaran: initialData?.pengalamanBelajarMendalam?.prinsipPembelajaran?.length
+        ? initialData.pengalamanBelajarMendalam.prinsipPembelajaran
+        : [...PRINSIP_PEMBELAJARAN_MENDALAM],
+      memahami: initialData?.pengalamanBelajarMendalam?.memahami || '',
+      mengaplikasi: initialData?.pengalamanBelajarMendalam?.mengaplikasi || '',
+      merefleksi: initialData?.pengalamanBelajarMendalam?.merefleksi || '',
+    },
     kegiatanPembelajaran: {
-      pendahuluan: { deskripsi: initialData?.kegiatanPembelajaran?.pendahuluan?.deskripsi || '', durasi: '10 Menit' },
-      inti: { deskripsi: initialData?.kegiatanPembelajaran?.inti?.deskripsi || '', durasi: '60 Menit' },
-      penutup: { deskripsi: initialData?.kegiatanPembelajaran?.penutup?.deskripsi || '', durasi: '10 Menit' },
+      pendahuluan: { deskripsi: initialData?.kegiatanPembelajaran?.pendahuluan?.deskripsi || '', durasi: initialData?.kegiatanPembelajaran?.pendahuluan?.durasi || '15 Menit' },
+      inti: { deskripsi: initialData?.kegiatanPembelajaran?.inti?.deskripsi || '', durasi: initialData?.kegiatanPembelajaran?.inti?.durasi || '50 Menit' },
+      penutup: { deskripsi: initialData?.kegiatanPembelajaran?.penutup?.deskripsi || '', durasi: initialData?.kegiatanPembelajaran?.penutup?.durasi || '15 Menit' },
     },
     asesmen: {
       diagnostik: initialData?.asesmen?.diagnostik || '',
       formatif: initialData?.asesmen?.formatif || '',
       sumatif: initialData?.asesmen?.sumatif || '',
-      teknik: initialData?.asesmen?.teknik || 'Tertulis & Performa',
-      instrumen: initialData?.asesmen?.instrumen || 'Lembar Kerja & Rubrik',
+      teknik: initialData?.asesmen?.teknik || 'Observasi, Proyek & Tes Kontekstual',
+      instrumen: initialData?.asesmen?.instrumen || 'LKPD Pembelajaran Mendalam & Rubrik Analitik',
       rubrik: initialData?.asesmen?.rubrik || '',
       kriteriaPenilaian: initialData?.asesmen?.kriteriaPenilaian || '',
     },
@@ -89,19 +120,20 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
 
   const sections = [
     { id: 'A', title: 'Informasi Umum', icon: <Info className="w-4 h-4" /> },
-    { id: 'B', title: 'Kompetensi Awal', icon: <BookOpen className="w-4 h-4" /> },
-    { id: 'C', title: 'Profil Pelajar Pancasila', icon: <Target className="w-4 h-4" /> },
+    { id: 'QURAN', title: 'Integrasi Ayat Al-Qur\'an', icon: <BookMarked className="w-4 h-4" /> },
+    { id: 'B', title: 'Identifikasi & Kesiapan', icon: <BookOpen className="w-4 h-4" /> },
+    { id: 'C', title: '8 Dimensi Profil Lulusan', icon: <Target className="w-4 h-4" /> },
     { id: 'D', title: 'Sarana & Prasarana', icon: <Wrench className="w-4 h-4" /> },
     { id: 'E', title: 'Target Peserta Didik', icon: <Users className="w-4 h-4" /> },
-    { id: 'F', title: 'Model Pembelajaran', icon: <Layout className="w-4 h-4" /> },
+    { id: 'F', title: 'Desain & Kerangka Mendalam', icon: <Layers className="w-4 h-4" /> },
     { id: 'G', title: 'Tujuan Pembelajaran', icon: <Target className="w-4 h-4" /> },
     { id: 'H', title: 'Pemahaman Bermakna', icon: <MessageSquare className="w-4 h-4" /> },
     { id: 'I', title: 'Pertanyaan Pemantik', icon: <Sparkles className="w-4 h-4" /> },
-    { id: 'J', title: 'Kegiatan Pembelajaran', icon: <Activity className="w-4 h-4" /> },
-    { id: 'K', title: 'Asesmen', icon: <ClipboardCheck className="w-4 h-4" /> },
-    { id: 'L', title: 'Diferensiasi', icon: <Users className="w-4 h-4" /> },
+    { id: 'J', title: 'Pengalaman Belajar Mendalam', icon: <Activity className="w-4 h-4" /> },
+    { id: 'K', title: 'Asesmen Pembelajaran', icon: <ClipboardCheck className="w-4 h-4" /> },
+    { id: 'L', title: 'Diferensiasi & Inklusi', icon: <Users className="w-4 h-4" /> },
     { id: 'M-N', title: 'Remedial & Pengayaan', icon: <Plus className="w-4 h-4" /> },
-    { id: 'O-P', title: 'Refleksi', icon: <MessageSquare className="w-4 h-4" /> },
+    { id: 'O-P', title: 'Refleksi Mendalam', icon: <MessageSquare className="w-4 h-4" /> },
     { id: 'Q', title: 'Lampiran', icon: <FileText className="w-4 h-4" /> },
   ];
 
@@ -110,6 +142,48 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
       ...prev,
       informasiUmum: { ...prev.informasiUmum, [field]: value }
     }));
+  };
+
+  const updateAyat = (field: 'surahAyat' | 'teksArab' | 'terjemahan' | 'kaitanMateri', value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      ayatAlQuran: {
+        surahAyat: prev.ayatAlQuran?.surahAyat || '',
+        teksArab: prev.ayatAlQuran?.teksArab || '',
+        terjemahan: prev.ayatAlQuran?.terjemahan || '',
+        kaitanMateri: prev.ayatAlQuran?.kaitanMateri || '',
+        [field]: value,
+      }
+    }));
+  };
+
+  const handleAutoSuggestAyat = () => {
+    const matched = suggestAyatForMateri(formData.informasiUmum.mataPelajaran, formData.informasiUmum.materi);
+    setFormData(prev => ({ ...prev, ayatAlQuran: matched }));
+  };
+
+  const toggleDimensiProfil = (item: string) => {
+    setFormData(prev => {
+      const current = prev.dimensiProfilLulusan || [];
+      const next = current.includes(item) ? current.filter(i => i !== item) : [...current, item];
+      return { ...prev, dimensiProfilLulusan: next, profilPelajarPancasila: next };
+    });
+  };
+
+  const togglePrinsipMendalam = (item: string) => {
+    setFormData(prev => {
+      const current = prev.pengalamanBelajarMendalam?.prinsipPembelajaran || [];
+      const next = current.includes(item) ? current.filter(i => i !== item) : [...current, item];
+      return {
+        ...prev,
+        pengalamanBelajarMendalam: {
+          prinsipPembelajaran: next,
+          memahami: prev.pengalamanBelajarMendalam?.memahami || '',
+          mengaplikasi: prev.pengalamanBelajarMendalam?.mengaplikasi || '',
+          merefleksi: prev.pengalamanBelajarMendalam?.merefleksi || '',
+        }
+      };
+    });
   };
 
   const toggleArrayItem = (field: 'profilPelajarPancasila' | 'saranaPrasarana', item: string) => {
@@ -159,8 +233,8 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
               <BookOpen className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-100">Editor Modul Ajar Lengkap (Buat Manual)</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Standar Kurikulum Merdeka - Sesuai Format Workspace (Komponen A-Q)</p>
+              <h2 className="text-lg font-bold text-slate-100">Editor Modul Ajar Pembelajaran Mendalam (Deep Learning)</h2>
+              <p className="text-xs text-slate-400 mt-0.5">8 Dimensi Profil Lulusan • Memahami, Mengaplikasi, Merefleksi • Terintegrasi Ayat Al-Qur'an</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -305,14 +379,113 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
                   </motion.div>
                 )}
 
+                {activeSection === 'QURAN' && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <SectionTitle
+                        title="INTEGRASI AYAT AL-QUR'AN SESUAI MATERI"
+                        desc="Sisipkan ayat Al-Qur'an, terjemahan, dan tadabbur yang kontekstual dengan materi yang diajarkan"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAutoSuggestAyat}
+                        className="px-4 py-2.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shrink-0"
+                      >
+                        <Wand2 className="w-4 h-4" /> Sesuaikan Otomatis dengan Materi
+                      </button>
+                    </div>
+
+                    {/* Preset Pilihan Cepat */}
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                        Pilihan Cepat Ayat Al-Qur&apos;an Berdasarkan Mapel / Topik
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                        {QURAN_AYAT_PRESETS.map(preset => {
+                          const isSelected = formData.ayatAlQuran?.surahAyat === preset.surahAyat;
+                          return (
+                            <button
+                              type="button"
+                              key={preset.id}
+                              onClick={() => setFormData(prev => ({
+                                ...prev,
+                                ayatAlQuran: {
+                                  surahAyat: preset.surahAyat,
+                                  teksArab: preset.teksArab,
+                                  terjemahan: preset.terjemahan,
+                                  kaitanMateri: formData.informasiUmum.materi
+                                    ? `${preset.kaitanMateri} Dalam materi "${formData.informasiUmum.materi}", nilai ayat ini diterapkan sebagai penguatan karakter dan pemaknaan belajar.`
+                                    : preset.kaitanMateri,
+                                }
+                              }))}
+                              className={`text-left p-3 rounded-xl border transition-all ${
+                                isSelected
+                                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                                  : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                              }`}
+                            >
+                              <div className="text-[10px] font-bold text-emerald-400">{preset.kategori}</div>
+                              <div className="text-xs font-bold mt-0.5">{preset.surahAyat}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Form Edit Ayat Al-Qur'an */}
+                    <div className="bg-emerald-950/20 border border-emerald-500/25 rounded-3xl p-6 space-y-4">
+                      <InputGroup label="Nama Surah & Nomor Ayat">
+                        <input
+                          type="text"
+                          value={formData.ayatAlQuran?.surahAyat || ''}
+                          onChange={(e) => updateAyat('surahAyat', e.target.value)}
+                          placeholder="Contoh: QS. Al-Hujurat (49): 13"
+                          className="w-full px-4 py-3 bg-slate-900 border border-slate-800 rounded-xl focus:border-emerald-500 text-slate-100 text-xs font-bold outline-none"
+                        />
+                      </InputGroup>
+
+                      <InputGroup label="Teks Arab Ayat Al-Qur'an (RTL)">
+                        <textarea
+                          dir="rtl"
+                          rows={3}
+                          value={formData.ayatAlQuran?.teksArab || ''}
+                          onChange={(e) => updateAyat('teksArab', e.target.value)}
+                          placeholder="Masukkan teks Arab ayat Al-Qur'an..."
+                          className="w-full px-5 py-4 bg-slate-900 border border-emerald-500/30 rounded-2xl focus:border-emerald-400 text-emerald-100 text-xl leading-loose font-serif outline-none"
+                        />
+                      </InputGroup>
+
+                      <InputGroup label="Terjemahan Bahasa Indonesia">
+                        <textarea
+                          rows={3}
+                          value={formData.ayatAlQuran?.terjemahan || ''}
+                          onChange={(e) => updateAyat('terjemahan', e.target.value)}
+                          placeholder="Terjemahan ayat sesuai Kemenag RI..."
+                          className="w-full px-4 py-3 bg-slate-900 border border-slate-800 rounded-xl focus:border-emerald-500 text-slate-200 text-xs leading-relaxed italic outline-none"
+                        />
+                      </InputGroup>
+
+                      <InputGroup label="Tadabbur & Relevansi Ayat dengan Materi yang Diajarkan">
+                        <textarea
+                          rows={4}
+                          value={formData.ayatAlQuran?.kaitanMateri || ''}
+                          onChange={(e) => updateAyat('kaitanMateri', e.target.value)}
+                          placeholder="Jelaskan keterkaitan nilai ayat Al-Qur'an dengan materi pokok dan implementasinya di kelas..."
+                          className="w-full px-4 py-3 bg-slate-900 border border-slate-800 rounded-xl focus:border-emerald-500 text-slate-100 text-xs font-semibold leading-relaxed outline-none"
+                        />
+                      </InputGroup>
+                    </div>
+                  </motion.div>
+                )}
+
                 {activeSection === 'B' && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-                    <SectionTitle title="B. KOMPETENSI AWAL" desc="Pengetahuan atau keterampilan prasyarat yang harus dimiliki peserta didik" />
+                    <SectionTitle title="B. IDENTIFIKASI KESIAPAN & KOMPETENSI AWAL" desc="Pemetaan kesiapan belajar, pengetahuan prasyarat, minat, dan kebutuhan inklusi peserta didik" />
                     <textarea 
                       value={formData.kompetensiAwal}
                       onChange={(e) => setFormData(prev => ({ ...prev, kompetensiAwal: e.target.value }))}
                       rows={6}
-                      placeholder="Tuliskan kompetensi dasar atau materi prasyarat yang harus dikuasai murid sebelumnya..."
+                      placeholder="Tuliskan identifikasi kesiapan peserta didik, pengetahuan awal, dan kebutuhan dukungan inklusi sebelum mempelajari materi..."
                       className="w-full px-5 py-4 bg-slate-900 border border-slate-800 rounded-2xl focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-slate-100 text-xs font-semibold outline-none transition-all placeholder-slate-600 resize-none leading-relaxed"
                     />
                   </motion.div>
@@ -320,35 +493,32 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
 
                 {activeSection === 'C' && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-                    <SectionTitle title="C. PROFIL PELAJAR PANCASILA" desc="Dimensi karakter bangsa yang dikembangkan secara terintegrasi" />
-                    <div className="grid grid-cols-1 gap-3">
-                      {[
-                        'Beriman, Bertakwa kepada Tuhan YME, dan Berakhlak Mulia',
-                        'Mandiri',
-                        'Bernalar Kritis',
-                        'Kreatif',
-                        'Gotong Royong',
-                        'Berkebinekaan Global'
-                      ].map(item => (
-                        <button
-                          key={item}
-                          onClick={() => toggleArrayItem('profilPelajarPancasila', item)}
-                          className={`flex items-center gap-3 px-6 py-4 rounded-2xl border transition-all text-left ${
-                            formData.profilPelajarPancasila.includes(item)
-                              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-100'
-                          }`}
-                        >
-                          <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
-                            formData.profilPelajarPancasila.includes(item) 
-                              ? 'bg-emerald-500 border-emerald-600 text-slate-950' 
-                              : 'bg-slate-950 border-slate-800'
-                          }`}>
-                            {formData.profilPelajarPancasila.includes(item) && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                          </div>
-                          <span className="font-bold text-xs">{item}</span>
-                        </button>
-                      ))}
+                    <SectionTitle title="C. 8 DIMENSI PROFIL LULUSAN (PEMBELAJARAN MENDALAM)" desc="Pilih dimensi profil lulusan Kemendikdasmen yang ditumbuhkan secara terintegrasi" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {DIMENSI_PROFIL_LULUSAN.map(item => {
+                        const checked = (formData.dimensiProfilLulusan || formData.profilPelajarPancasila || []).includes(item);
+                        return (
+                          <button
+                            type="button"
+                            key={item}
+                            onClick={() => toggleDimensiProfil(item)}
+                            className={`flex items-center gap-3 px-5 py-4 rounded-2xl border transition-all text-left ${
+                              checked
+                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                                : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-100'
+                            }`}
+                          >
+                            <div className={`w-5 h-5 rounded-md flex items-center justify-center border shrink-0 transition-all ${
+                              checked
+                                ? 'bg-emerald-500 border-emerald-600 text-slate-950'
+                                : 'bg-slate-950 border-slate-800'
+                            }`}>
+                              {checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                            </div>
+                            <span className="font-bold text-xs">{item}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </motion.div>
                 )}
@@ -399,18 +569,18 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
 
                 {activeSection === 'F' && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-                    <SectionTitle title="F. MODEL PEMBELAJARAN" desc="Metode atau kerangka belajar mengajar yang digunakan" />
+                    <SectionTitle title="F. DESAIN & KERANGKA PEMBELAJARAN MENDALAM" desc="Model pedagogis, capaian pembelajaran, lintas disiplin ilmu, serta 4 pilar kerangka Deep Learning" />
                     <div className="grid grid-cols-2 gap-3">
                       {[
-                        'Project Based Learning',
-                        'Problem Based Learning',
+                        'Problem Based Learning (Pembelajaran Mendalam)',
+                        'Project Based Learning (Pembelajaran Mendalam)',
                         'Discovery Learning',
                         'Inquiry Learning',
                         'Cooperative Learning',
-                        'Pembelajaran langsung',
-                        'Lainnya'
+                        'Case-Based & Contextual Learning'
                       ].map(model => (
                         <button
+                          type="button"
                           key={model}
                           onClick={() => setFormData(prev => ({ ...prev, modelPembelajaran: model }))}
                           className={`flex items-center gap-3 px-5 py-4 rounded-2xl border transition-all text-left ${
@@ -419,7 +589,7 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
                               : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-100'
                           }`}
                         >
-                          <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-all ${
+                          <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-all ${
                             formData.modelPembelajaran === model 
                               ? 'border-purple-500 bg-purple-500' 
                               : 'border-slate-700 bg-slate-950'
@@ -429,6 +599,97 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
                           <span className="font-bold text-xs">{model}</span>
                         </button>
                       ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 pt-2">
+                      <InputGroup label="Capaian Pembelajaran (CP)">
+                        <textarea
+                          rows={3}
+                          value={formData.capaianPembelajaran || ''}
+                          onChange={(e) => setFormData(prev => ({ ...prev, capaianPembelajaran: e.target.value }))}
+                          placeholder="Tuliskan Capaian Pembelajaran Fase terkait materi ini..."
+                          className="w-full p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-100 text-xs font-semibold outline-none focus:border-emerald-500"
+                        />
+                      </InputGroup>
+                      <InputGroup label="Lintas Disiplin Ilmu">
+                        <textarea
+                          rows={2}
+                          value={formData.lintasDisiplinIlmu || ''}
+                          onChange={(e) => setFormData(prev => ({ ...prev, lintasDisiplinIlmu: e.target.value }))}
+                          placeholder="Contoh: PAI & Budi Pekerti (Tadabbur Al-Qur'an), Bahasa Indonesia, Literasi Digital..."
+                          className="w-full p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-100 text-xs font-semibold outline-none focus:border-emerald-500"
+                        />
+                      </InputGroup>
+                    </div>
+
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 space-y-4">
+                      <p className="text-[11px] font-black uppercase tracking-wider text-cyan-400">4 Pilar Kerangka Pembelajaran Mendalam</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <InputGroup label="1. Praktik Pedagogis">
+                          <textarea
+                            rows={2}
+                            value={formData.kerangkaPembelajaran?.praktikPedagogis || ''}
+                            onChange={(e) => setFormData(prev => ({
+                              ...prev,
+                              kerangkaPembelajaran: {
+                                praktikPedagogis: e.target.value,
+                                kemitraanPembelajaran: prev.kerangkaPembelajaran?.kemitraanPembelajaran || '',
+                                lingkunganPembelajaran: prev.kerangkaPembelajaran?.lingkunganPembelajaran || '',
+                                pemanfaatanDigital: prev.kerangkaPembelajaran?.pemanfaatanDigital || '',
+                              }
+                            }))}
+                            className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 text-xs font-semibold outline-none focus:border-emerald-500"
+                          />
+                        </InputGroup>
+                        <InputGroup label="2. Kemitraan Pembelajaran">
+                          <textarea
+                            rows={2}
+                            value={formData.kerangkaPembelajaran?.kemitraanPembelajaran || ''}
+                            onChange={(e) => setFormData(prev => ({
+                              ...prev,
+                              kerangkaPembelajaran: {
+                                praktikPedagogis: prev.kerangkaPembelajaran?.praktikPedagogis || '',
+                                kemitraanPembelajaran: e.target.value,
+                                lingkunganPembelajaran: prev.kerangkaPembelajaran?.lingkunganPembelajaran || '',
+                                pemanfaatanDigital: prev.kerangkaPembelajaran?.pemanfaatanDigital || '',
+                              }
+                            }))}
+                            className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 text-xs font-semibold outline-none focus:border-emerald-500"
+                          />
+                        </InputGroup>
+                        <InputGroup label="3. Lingkungan Pembelajaran">
+                          <textarea
+                            rows={2}
+                            value={formData.kerangkaPembelajaran?.lingkunganPembelajaran || ''}
+                            onChange={(e) => setFormData(prev => ({
+                              ...prev,
+                              kerangkaPembelajaran: {
+                                praktikPedagogis: prev.kerangkaPembelajaran?.praktikPedagogis || '',
+                                kemitraanPembelajaran: prev.kerangkaPembelajaran?.kemitraanPembelajaran || '',
+                                lingkunganPembelajaran: e.target.value,
+                                pemanfaatanDigital: prev.kerangkaPembelajaran?.pemanfaatanDigital || '',
+                              }
+                            }))}
+                            className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 text-xs font-semibold outline-none focus:border-emerald-500"
+                          />
+                        </InputGroup>
+                        <InputGroup label="4. Pemanfaatan Digital">
+                          <textarea
+                            rows={2}
+                            value={formData.kerangkaPembelajaran?.pemanfaatanDigital || ''}
+                            onChange={(e) => setFormData(prev => ({
+                              ...prev,
+                              kerangkaPembelajaran: {
+                                praktikPedagogis: prev.kerangkaPembelajaran?.praktikPedagogis || '',
+                                kemitraanPembelajaran: prev.kerangkaPembelajaran?.kemitraanPembelajaran || '',
+                                lingkunganPembelajaran: prev.kerangkaPembelajaran?.lingkunganPembelajaran || '',
+                                pemanfaatanDigital: e.target.value,
+                              }
+                            }))}
+                            className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 text-xs font-semibold outline-none focus:border-emerald-500"
+                          />
+                        </InputGroup>
+                      </div>
                     </div>
                   </motion.div>
                 )}
@@ -510,14 +771,93 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
 
                 {activeSection === 'J' && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-                    <SectionTitle title="J. KEGIATAN PEMBELAJARAN" desc="Skenario tatap muka guru dan murid per tahap kegiatan" />
+                    <SectionTitle title="J. PENGALAMAN BELAJAR MENDALAM & KEGIATAN PEMBELAJARAN" desc="3 Prinsip Deep Learning (Berkesadaran, Bermakna, Menggembirakan) dan 3 Tahap: Memahami, Mengaplikasi, Merefleksi" />
                     
+                    {/* Prinsip Pembelajaran Mendalam */}
+                    <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4">
+                      <p className="text-[11px] font-black uppercase tracking-wider text-emerald-400">Prinsip Pembelajaran Mendalam yang Diterapkan</p>
+                      <div className="flex flex-wrap gap-2.5">
+                        {PRINSIP_PEMBELAJARAN_MENDALAM.map(prinsip => {
+                          const active = (formData.pengalamanBelajarMendalam?.prinsipPembelajaran || []).includes(prinsip);
+                          return (
+                            <button
+                              type="button"
+                              key={prinsip}
+                              onClick={() => togglePrinsipMendalam(prinsip)}
+                              className={`px-4 py-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-2 ${
+                                active
+                                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-100'
+                              }`}
+                            >
+                              {active && <Check className="w-3.5 h-3.5" />}
+                              {prinsip}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 pt-2">
+                        <InputGroup label="Tahap 1: Memahami (Konstruksi Konsep & Tadabbur Ayat)">
+                          <textarea
+                            rows={3}
+                            value={formData.pengalamanBelajarMendalam?.memahami || ''}
+                            onChange={(e) => setFormData(prev => ({
+                              ...prev,
+                              pengalamanBelajarMendalam: {
+                                prinsipPembelajaran: prev.pengalamanBelajarMendalam?.prinsipPembelajaran || [...PRINSIP_PEMBELAJARAN_MENDALAM],
+                                memahami: e.target.value,
+                                mengaplikasi: prev.pengalamanBelajarMendalam?.mengaplikasi || '',
+                                merefleksi: prev.pengalamanBelajarMendalam?.merefleksi || '',
+                              }
+                            }))}
+                            placeholder="Aktivitas membangun pemahaman esensial secara berkesadaran dan bermakna..."
+                            className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-2xl text-slate-100 text-xs font-semibold outline-none focus:border-emerald-500"
+                          />
+                        </InputGroup>
+                        <InputGroup label="Tahap 2: Mengaplikasi (Penerapan Nyata / Proyek Kolaboratif)">
+                          <textarea
+                            rows={3}
+                            value={formData.pengalamanBelajarMendalam?.mengaplikasi || ''}
+                            onChange={(e) => setFormData(prev => ({
+                              ...prev,
+                              pengalamanBelajarMendalam: {
+                                prinsipPembelajaran: prev.pengalamanBelajarMendalam?.prinsipPembelajaran || [...PRINSIP_PEMBELAJARAN_MENDALAM],
+                                memahami: prev.pengalamanBelajarMendalam?.memahami || '',
+                                mengaplikasi: e.target.value,
+                                merefleksi: prev.pengalamanBelajarMendalam?.merefleksi || '',
+                              }
+                            }))}
+                            placeholder="Aktivitas menerapkan konsep ke konteks nyata secara bermakna dan menggembirakan..."
+                            className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-2xl text-slate-100 text-xs font-semibold outline-none focus:border-emerald-500"
+                          />
+                        </InputGroup>
+                        <InputGroup label="Tahap 3: Merefleksi (Evaluasi Diri & Pemaknaan Hikmah)">
+                          <textarea
+                            rows={3}
+                            value={formData.pengalamanBelajarMendalam?.merefleksi || ''}
+                            onChange={(e) => setFormData(prev => ({
+                              ...prev,
+                              pengalamanBelajarMendalam: {
+                                prinsipPembelajaran: prev.pengalamanBelajarMendalam?.prinsipPembelajaran || [...PRINSIP_PEMBELAJARAN_MENDALAM],
+                                memahami: prev.pengalamanBelajarMendalam?.memahami || '',
+                                mengaplikasi: prev.pengalamanBelajarMendalam?.mengaplikasi || '',
+                                merefleksi: e.target.value,
+                              }
+                            }))}
+                            placeholder="Aktivitas refleksi metakognitif, hikmah ayat Al-Qur'an, dan rencana aksi nyata..."
+                            className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-2xl text-slate-100 text-xs font-semibold outline-none focus:border-emerald-500"
+                          />
+                        </InputGroup>
+                      </div>
+                    </div>
+
                     <div className="space-y-6">
                       <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 space-y-4">
                         <div className="flex items-center justify-between">
                           <h4 className="font-bold text-slate-200 flex items-center gap-2.5 text-xs">
                             <div className="w-6 h-6 bg-blue-500/15 border border-blue-500/20 text-blue-400 rounded-lg flex items-center justify-center text-[10px] font-bold">1</div>
-                            Pendahuluan
+                            Pendahuluan (Berkesadaran &amp; Tadabbur Ayat)
                           </h4>
                           <input 
                             type="text" 
@@ -532,7 +872,7 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
                           onChange={(e) => setFormData(prev => ({ ...prev, kegiatanPembelajaran: { ...prev.kegiatanPembelajaran, pendahuluan: { ...prev.kegiatanPembelajaran.pendahuluan, deskripsi: e.target.value } } }))}
                           rows={4}
                           className="w-full p-4 bg-slate-950 border border-slate-850 rounded-2xl outline-none text-xs font-semibold text-slate-300 placeholder-slate-600 focus:border-emerald-500/60 leading-relaxed transition-all"
-                          placeholder="Apersepsi, salam pembuka, do'a, absensi, penyampaian tujuan & motivasi, draf asesmen awal..."
+                          placeholder="Salam, doa, tadabbur ayat Al-Qur'an sesuai materi, apersepsi kontekstual, asesmen awal..."
                         />
                       </div>
 
@@ -540,13 +880,13 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
                         <div className="flex items-center justify-between">
                           <h4 className="font-bold text-slate-200 flex items-center gap-2.5 text-xs">
                             <div className="w-6 h-6 bg-emerald-500/15 border border-emerald-500/20 text-emerald-400 rounded-lg flex items-center justify-center text-[10px] font-bold">2</div>
-                            Kegiatan Inti
+                            Kegiatan Inti (Memahami → Mengaplikasi → Merefleksi)
                           </h4>
                           <input 
                             type="text" 
                             value={formData.kegiatanPembelajaran.inti.durasi}
                             onChange={(e) => setFormData(prev => ({ ...prev, kegiatanPembelajaran: { ...prev.kegiatanPembelajaran, inti: { ...prev.kegiatanPembelajaran.inti, durasi: e.target.value } } }))}
-                            className="px-3 py-1.5 bg-slate-950 border border-slate-880 rounded-lg text-xs font-bold text-slate-200 outline-none w-28 text-center focus:border-emerald-500 transition-all"
+                            className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-bold text-slate-200 outline-none w-28 text-center focus:border-emerald-500 transition-all"
                             placeholder="Durasi"
                           />
                         </div>
@@ -555,7 +895,7 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
                           onChange={(e) => setFormData(prev => ({ ...prev, kegiatanPembelajaran: { ...prev.kegiatanPembelajaran, inti: { ...prev.kegiatanPembelajaran.inti, deskripsi: e.target.value } } }))}
                           rows={8}
                           className="w-full p-4 bg-slate-950 border border-slate-850 rounded-2xl outline-none text-xs font-semibold text-slate-300 placeholder-slate-600 focus:border-emerald-500/60 leading-relaxed transition-all"
-                          placeholder="Sintaks model pembelajaran (PBL/PJBL), eksplorasi materi mandiri, kerja kelompok, diskusi terarah, presentasi proyek/performa..."
+                          placeholder="Rincian skenario tahap Memahami, Mengaplikasi, dan Merefleksi secara kolaboratif dan terdiferensiasi..."
                         />
                       </div>
 
@@ -563,13 +903,13 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
                         <div className="flex items-center justify-between">
                           <h4 className="font-bold text-slate-200 flex items-center gap-2.5 text-xs">
                             <div className="w-6 h-6 bg-rose-500/15 border border-rose-500/20 text-rose-400 rounded-lg flex items-center justify-center text-[10px] font-bold">3</div>
-                            Penutup
+                            Penutup (Refleksi &amp; Penguatan Nilai)
                           </h4>
                           <input 
                             type="text" 
                             value={formData.kegiatanPembelajaran.penutup.durasi}
                             onChange={(e) => setFormData(prev => ({ ...prev, kegiatanPembelajaran: { ...prev.kegiatanPembelajaran, penutup: { ...prev.kegiatanPembelajaran.penutup, durasi: e.target.value } } }))}
-                            className="px-3 py-1.5 bg-slate-950 border border-slate-880 rounded-lg text-xs font-bold text-slate-200 outline-none w-28 text-center focus:border-emerald-500 transition-all"
+                            className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-bold text-slate-200 outline-none w-28 text-center focus:border-emerald-500 transition-all"
                             placeholder="Durasi"
                           />
                         </div>
@@ -578,7 +918,7 @@ export const ModulAjarEditor: React.FC<ModulAjarEditorProps> = ({
                           onChange={(e) => setFormData(prev => ({ ...prev, kegiatanPembelajaran: { ...prev.kegiatanPembelajaran, penutup: { ...prev.kegiatanPembelajaran.penutup, deskripsi: e.target.value } } }))}
                           rows={4}
                           className="w-full p-4 bg-slate-950 border border-slate-850 rounded-2xl outline-none text-xs font-semibold text-slate-300 placeholder-slate-600 focus:border-emerald-500/60 leading-relaxed transition-all"
-                          placeholder="Kesimpulan bersama, refleksi diri murid, penugasan mandiri tindak lanjut, do'a penutup majelis..."
+                          placeholder="Kesimpulan bersama, refleksi diri murid, penguatan hikmah ayat Al-Qur'an, tindak lanjut, do'a penutup..."
                         />
                       </div>
                     </div>

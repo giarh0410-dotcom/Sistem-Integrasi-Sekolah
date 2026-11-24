@@ -387,10 +387,24 @@
                 "subject": { "type": "string" }
               }
             } 
+          },
+          "scheduleClasses": { "type": "array" },
+          "headerConfig": { "type": "object" },
+          "dockItems": { "type": "array" },
+          "bebanJpConfig": {
+            "type": "object",
+            "properties": {
+              "menitPerJp": { "type": "number" },
+              "hitungMode": { "type": "string", "enum": ["durasi", "slot"] },
+              "defaultMinJp": { "type": "number" },
+              "defaultMaxJp": { "type": "number" },
+              "targetJpPerKelas": { "type": "number" },
+              "overrides": { "type": "object" }
+            }
           }
         }
       },
-      "description": "Global settings for teaching schedules"
+      "description": "Global settings for teaching schedules and Beban JP configuration"
     },
     "edu_jadwalUjianList": {
       "schema": {
@@ -511,6 +525,53 @@
         "required": ["id", "judul", "mataPelajaran", "kelas", "kurikulum", "semester", "tahunAjaran", "penyusunNama", "status", "butirKisi"]
       },
       "description": "Exam blueprints (Kisi-Kisi Penulisan Soal) linked to CBT question banks"
+    },
+    "edu_bkKonselingList": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "nomorBeritaAcara": { "type": "string" },
+          "siswaId": { "type": "string" },
+          "nisn": { "type": "string" },
+          "namaSiswa": { "type": "string" },
+          "kelas": { "type": "string" },
+          "jenisBimbingan": { "type": "string", "enum": ["Akademik", "Pribadi", "Sosial", "Karir", "Pelanggaran Kedisiplinan"] },
+          "metodeLayanan": { "type": "string" },
+          "tanggal": { "type": "string" },
+          "jamSesi": { "type": "string" },
+          "guruBk": { "type": "string" },
+          "permasalahan": { "type": "string" },
+          "hasilKonseling": { "type": "string" },
+          "tindakLanjut": { "type": "string" },
+          "jadwalEvaluasi": { "type": "string" },
+          "melibatkanOrangTua": { "type": "boolean" },
+          "catatanOrangTua": { "type": "string" },
+          "prioritas": { "type": "string", "enum": ["Normal", "Perlu Pantauan", "Prioritas Tinggi"] },
+          "status": { "type": "string", "enum": ["Selesai", "Dalam Penanganan", "Rujukan"] },
+          "poinPelanggaran": { "type": "number" },
+          "updatedAt": { "type": "string" }
+        },
+        "required": ["id", "namaSiswa", "kelas", "jenisBimbingan", "tanggal", "guruBk", "permasalahan", "status"]
+      },
+      "description": "Student counseling session records (Catatan Sesi Konseling BK)"
+    },
+    "edu_bkJanjiTemuList": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "siswaId": { "type": "string" },
+          "namaSiswa": { "type": "string" },
+          "kelas": { "type": "string" },
+          "tanggal": { "type": "string" },
+          "jam": { "type": "string" },
+          "keperluan": { "type": "string" },
+          "status": { "type": "string", "enum": ["Dijadwalkan", "Selesai", "Dibatalkan"] }
+        },
+        "required": ["id", "namaSiswa", "kelas", "tanggal", "jam", "keperluan", "status"]
+      },
+      "description": "Scheduled counseling appointments between students and BK counselors"
     },
     "edu_schoolSettings": {
       "schema": { "$ref": "#/entities/SchoolSettings" },

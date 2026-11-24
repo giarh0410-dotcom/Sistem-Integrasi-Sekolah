@@ -1,20 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { Clock, Plus, AlertCircle, Save, Trash2, Grid, List, Settings, Pencil } from 'lucide-react';
-import { Guru, MataPelajaranItem, RombelKelas, Role } from '../../types/school';
-import { JadwalReview } from './JadwalReview';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Clock, Plus, AlertCircle, Save, Trash2, Grid, List, Settings, Pencil, CheckCircle2, Gauge } from 'lucide-react';
+import { Guru, MataPelajaranItem, RombelKelas, Role, SchoolSettings } from '../../types/school';
+import { INITIAL_SCHOOL_SETTINGS } from '../../data/mockData';
+import { JadwalReview, CellCoord, CellPayload } from './JadwalReview';
 import { JadwalSettings } from './JadwalSettings';
-import { TIME_SLOTS, TEACHER_MAPPINGS, MASTER_SCHEDULE, SCHEDULE_CLASSES } from '../../types/scheduleData';
+import { JadwalBebanJP } from './JadwalBebanJP';
+import {
+  TIME_SLOTS,
+  TEACHER_MAPPINGS,
+  MASTER_SCHEDULE,
+  SCHEDULE_CLASSES,
+  ScheduleClassItem,
+  ScheduleHeaderConfig,
+  DockScheduleCard,
+  ScheduleEntry,
+  BebanJpConfig,
+  DEFAULT_BEBAN_JP_CONFIG,
+} from '../../types/scheduleData';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
-import { 
-  collection, 
-  onSnapshot, 
-  addDoc, 
-  deleteDoc, 
-  doc, 
-  query, 
-  orderBy,
+import {
+  collection,
+  onSnapshot,
+  addDoc,
+  deleteDoc,
+  doc,
+  query,
   setDoc,
-  getDoc
+  writeBatch,
 } from 'firebase/firestore';
 
 interface JadwalMengajarProps {
@@ -22,6 +34,7 @@ interface JadwalMengajarProps {
   mapelList: MataPelajaranItem[];
   rombelList: RombelKelas[];
   currentRole?: Role;
+  schoolSettings?: SchoolSettings;
 }
 
 export interface JadwalMengajarItem {
@@ -37,17 +50,71 @@ export interface JadwalMengajarItem {
   isKegiatan?: boolean;
 }
 
-export const JadwalMengajar: React.FC<JadwalMengajarProps> = ({ guruList, mapelList, rombelList, currentRole = 'admin' }) => {
-  const [activeTab, setActiveTab] = useState<'manage' | 'review' | 'settings'>('review');
+const DEFAULT_SCHEDULE_HEADER: ScheduleHeaderConfig = {
+  judul: 'JADWAL PELAJARAN',
+  namaSekolah: 'SMP ISLAM MODERN AL FAKHIR',
+  semester: 'SEMESTER GANJIL',
+  tahunAjaran: '2026/2027',
+};
+
+function toTitleCaseDay(dayUpper: string): string {
+  const map: Record<string, string> = {
+    SENIN: 'Senin',
+    SELASA: 'Selasa',
+    RABU: 'Rabu',
+    KAMIS: 'Kamis',
+    JUMAT: 'Jumat',
+    SABTU: 'Sabtu',
+  };
+  return map[dayUpper.trim().toUpperCase()] || dayUpper;
+}
+
+function inferTingkatFromClassName(className: string): string {
+  const up = className.toUpperCase();
+  if (up.includes('VIII')) return 'VIII (SMP)';
+  if (up.includes('VII')) return 'VII (SMP)';
+  if (up.includes('IX')) return 'IX (SMP)';
+  if (up.includes('XII')) return 'XII (SMA)';
+  if (up.includes('XI')) return 'XI (SMA)';
+  if (up.includes('X')) return 'X (SMA)';
+  return className;
+}
+
+function splitTimeSlot(timeRange: string): { jamMulai: string; jamSelesai: string } {
+  const parts = (timeRange || '').split('-').map((p) => p.trim());
+  return {
+    jamMulai: parts[0] || '07.35',
+    jamSelesai: parts[1] || '08.55',
+  };
+}
+
+export const JadwalMengajar: React.FC<JadwalMengajarProps> = ({ guruList, mapelList, rombelList, currentRole = 'admin', schoolSettings }) => {
+  const [activeTab, setActiveTab] = useState<'manage' | 'review' | 'beban_jp' | 'settings'>('review');
   const [jadwalList, setJadwalList] = useState<JadwalMengajarItem[]>([]);
   const [timeSlots, setTimeSlots] = useState<string[]>(TIME_SLOTS);
   const [teacherMappings, setTeacherMappings] = useState(TEACHER_MAPPINGS);
+  const [scheduleClasses, setScheduleClasses] = useState<ScheduleClassItem[]>(SCHEDULE_CLASSES);
+  const [headerConfig, setHeaderConfig] = useState<ScheduleHeaderConfig>({
+    ...DEFAULT_SCHEDULE_HEADER,
+    namaSekolah: schoolSettings?.namaSekolah || DEFAULT_SCHEDULE_HEADER.namaSekolah,
+  });
+  const [bebanJpConfig, setBebanJpConfig] = useState<BebanJpConfig>(DEFAULT_BEBAN_JP_CONFIG);
+  const [focusedTeacherCode, setFocusedTeacherCode] = useState<string>('');
+  const [dockItems, setDockItems] = useState<DockScheduleCard[]>(() => {
+    try {
+      const saved = localStorage.getItem('edu_jadwalDockItems');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [manageToast, setManageToast] = useState<string | null>(null);
 
-  // Auto redirect to review if non-admin tries to access manage or settings
+  // Auto redirect to review if non-admin tries to access manage or settings (beban_jp stays readable for all roles)
   useEffect(() => {
-    if (currentRole !== 'admin' && activeTab !== 'review') {
+    if (currentRole !== 'admin' && activeTab !== 'review' && activeTab !== 'beban_jp') {
       setActiveTab('review');
     }
   }, [currentRole, activeTab]);
@@ -59,9 +126,9 @@ export const JadwalMengajar: React.FC<JadwalMengajarProps> = ({ guruList, mapelL
     // 1. Sync Jadwal List
     const qJadwal = query(collection(db, 'edu_jadwalList'));
     const unsubJadwal = onSnapshot(qJadwal, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
+      const data = snapshot.docs.map(d => ({
+        ...d.data(),
+        id: d.id
       })) as JadwalMengajarItem[];
       setJadwalList(data);
       setLoading(false);
@@ -69,12 +136,31 @@ export const JadwalMengajar: React.FC<JadwalMengajarProps> = ({ guruList, mapelL
       handleFirestoreError(error, OperationType.LIST, 'edu_jadwalList');
     });
 
-    // 2. Sync Settings
+    // 2. Sync Settings (including bongkar-pasang classes, slots, header & dock)
     const unsubSettings = onSnapshot(doc(db, 'edu_jadwalSettings', 'global'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if (data.timeSlots) setTimeSlots(data.timeSlots);
-        if (data.teacherMappings) setTeacherMappings(data.teacherMappings);
+        if (Array.isArray(data.timeSlots) && data.timeSlots.length > 0) setTimeSlots(data.timeSlots);
+        if (Array.isArray(data.teacherMappings) && data.teacherMappings.length > 0) setTeacherMappings(data.teacherMappings);
+        if (Array.isArray(data.scheduleClasses) && data.scheduleClasses.length > 0) setScheduleClasses(data.scheduleClasses);
+        if (data.headerConfig && typeof data.headerConfig === 'object') {
+          setHeaderConfig({ ...DEFAULT_SCHEDULE_HEADER, ...data.headerConfig });
+        }
+        if (data.bebanJpConfig && typeof data.bebanJpConfig === 'object') {
+          setBebanJpConfig({
+            ...DEFAULT_BEBAN_JP_CONFIG,
+            ...data.bebanJpConfig,
+            overrides: data.bebanJpConfig.overrides || {},
+          });
+        }
+        if (Array.isArray(data.dockItems)) {
+          setDockItems(data.dockItems);
+          try {
+            localStorage.setItem('edu_jadwalDockItems', JSON.stringify(data.dockItems));
+          } catch {
+            // ignore quota errors
+          }
+        }
       }
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'edu_jadwalSettings/global');
@@ -87,7 +173,196 @@ export const JadwalMengajar: React.FC<JadwalMengajarProps> = ({ guruList, mapelL
   }, []);
 
   const refreshSettings = () => {
-    // This is now handled by onSnapshot
+    // Handled reactively via onSnapshot
+  };
+
+  // --- Interactive Bongkar Pasang Firestore Handlers ---
+  const saveGlobalSettingsPatch = async (patch: Record<string, any>) => {
+    try {
+      await setDoc(
+        doc(db, 'edu_jadwalSettings', 'global'),
+        { ...patch, updatedAt: new Date().toISOString() },
+        { merge: true }
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'edu_jadwalSettings/global');
+    }
+  };
+
+  const handleUpsertCell = async (
+    coord: CellCoord,
+    payload: CellPayload,
+    existingId?: string
+  ): Promise<string | void> => {
+    const { jamMulai, jamSelesai } = splitTimeSlot(coord.time);
+    const dataToSave = {
+      hari: toTitleCaseDay(coord.day),
+      jamMulai,
+      jamSelesai,
+      kelas: inferTingkatFromClassName(coord.className),
+      ruang: coord.className,
+      mataPelajaran: payload.subject,
+      teacherCode: payload.teacherCode || '',
+      guruName: payload.guruName || '',
+      isKegiatan: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      if (existingId) {
+        await setDoc(doc(db, 'edu_jadwalList', existingId), dataToSave, { merge: true });
+        return existingId;
+      } else {
+        const ref = await addDoc(collection(db, 'edu_jadwalList'), {
+          ...dataToSave,
+          createdAt: new Date().toISOString(),
+        });
+        return ref.id;
+      }
+    } catch (err) {
+      handleFirestoreError(err, existingId ? OperationType.UPDATE : OperationType.CREATE, 'edu_jadwalList');
+    }
+  };
+
+  const handleDeleteCell = async (entryId: string) => {
+    try {
+      await deleteDoc(doc(db, 'edu_jadwalList', entryId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `edu_jadwalList/${entryId}`);
+    }
+  };
+
+  const handleMoveOrSwapCells = async ({
+    sourceCoord,
+    sourceEntry,
+    targetCoord,
+    targetEntry,
+  }: {
+    sourceCoord: CellCoord;
+    sourceEntry: ScheduleEntry;
+    targetCoord: CellCoord;
+    targetEntry?: ScheduleEntry;
+  }) => {
+    const targetTime = splitTimeSlot(targetCoord.time);
+    const sourceTime = splitTimeSlot(sourceCoord.time);
+    const now = new Date().toISOString();
+
+    try {
+      const batch = writeBatch(db);
+
+      if (sourceEntry.id) {
+        batch.set(
+          doc(db, 'edu_jadwalList', sourceEntry.id),
+          {
+            hari: toTitleCaseDay(targetCoord.day),
+            jamMulai: targetTime.jamMulai,
+            jamSelesai: targetTime.jamSelesai,
+            kelas: inferTingkatFromClassName(targetCoord.className),
+            ruang: targetCoord.className,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+      }
+
+      if (targetEntry?.id) {
+        batch.set(
+          doc(db, 'edu_jadwalList', targetEntry.id),
+          {
+            hari: toTitleCaseDay(sourceCoord.day),
+            jamMulai: sourceTime.jamMulai,
+            jamSelesai: sourceTime.jamSelesai,
+            kelas: inferTingkatFromClassName(sourceCoord.className),
+            ruang: sourceCoord.className,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+      }
+
+      await batch.commit();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'edu_jadwalList');
+    }
+  };
+
+  const handleSetRowActivity = async ({
+    day,
+    time,
+    activityName,
+    existingActivityIds,
+  }: {
+    day: string;
+    time: string;
+    activityName: string | null;
+    existingActivityIds: string[];
+  }) => {
+    const { jamMulai, jamSelesai } = splitTimeSlot(time);
+    const now = new Date().toISOString();
+
+    try {
+      // Remove existing activity docs for this row first
+      for (const id of existingActivityIds) {
+        await deleteDoc(doc(db, 'edu_jadwalList', id));
+      }
+
+      if (activityName) {
+        await addDoc(collection(db, 'edu_jadwalList'), {
+          hari: toTitleCaseDay(day),
+          jamMulai,
+          jamSelesai,
+          kelas: 'SEMUA KELAS',
+          ruang: 'SEMUA KELAS',
+          mataPelajaran: activityName,
+          guruName: '-',
+          teacherCode: '-',
+          isKegiatan: true,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'edu_jadwalList');
+    }
+  };
+
+  const handleUpdateClasses = async (nextClasses: ScheduleClassItem[]) => {
+    setScheduleClasses(nextClasses);
+    await saveGlobalSettingsPatch({ scheduleClasses: nextClasses });
+  };
+
+  const handleUpdateTimeSlots = async (nextSlots: string[]) => {
+    setTimeSlots(nextSlots);
+    await saveGlobalSettingsPatch({ timeSlots: nextSlots });
+  };
+
+  const handleUpdateHeader = async (nextHeader: ScheduleHeaderConfig) => {
+    setHeaderConfig(nextHeader);
+    await saveGlobalSettingsPatch({ headerConfig: nextHeader });
+  };
+
+  const handleUpdateBebanJpConfig = async (nextConfig: BebanJpConfig) => {
+    setBebanJpConfig(nextConfig);
+    await saveGlobalSettingsPatch({ bebanJpConfig: nextConfig });
+  };
+
+  const handleUpdateDockItems = async (nextDock: DockScheduleCard[]) => {
+    setDockItems(nextDock);
+    try {
+      localStorage.setItem('edu_jadwalDockItems', JSON.stringify(nextDock));
+    } catch {
+      // ignore
+    }
+    await saveGlobalSettingsPatch({ dockItems: nextDock });
+  };
+
+  const handleResetLayoutDefaults = async () => {
+    setScheduleClasses(SCHEDULE_CLASSES);
+    setTimeSlots(TIME_SLOTS);
+    await saveGlobalSettingsPatch({
+      scheduleClasses: SCHEDULE_CLASSES,
+      timeSlots: TIME_SLOTS,
+    });
   };
 
   const [form, setForm] = useState<Omit<JadwalMengajarItem, 'id'>>({
@@ -165,14 +440,15 @@ export const JadwalMengajar: React.FC<JadwalMengajarProps> = ({ guruList, mapelL
 
       if (editingId) {
         await setDoc(doc(db, 'edu_jadwalList', editingId), submissionData, { merge: true });
-        alert('Jadwal berhasil diperbarui!');
+        setManageToast('Jadwal berhasil diperbarui!');
       } else {
         await addDoc(collection(db, 'edu_jadwalList'), {
           ...submissionData,
           createdAt: new Date().toISOString()
         });
-        alert('Jadwal berhasil disimpan!');
+        setManageToast('Jadwal berhasil disimpan!');
       }
+      setTimeout(() => setManageToast(null), 3500);
       
       // success message
       setError('');
@@ -249,64 +525,118 @@ export const JadwalMengajar: React.FC<JadwalMengajarProps> = ({ guruList, mapelL
     ? mapelList.map(m => m.namaMapel) 
     : defaultMapel;
 
+  const normalizedMasterSchedule: ScheduleEntry[] = useMemo(
+    () => [
+      ...MASTER_SCHEDULE,
+      ...jadwalList.map((j) => {
+        const normalizeTime = (t: string) => (t || '').replace(':', '.');
+        const timeRange = `${normalizeTime(j.jamMulai)} - ${normalizeTime(j.jamSelesai)}`;
+        return {
+          id: j.id,
+          day: (j.hari || '').toUpperCase(),
+          time: timeRange,
+          classId: j.ruang || j.kelas,
+          subject: j.mataPelajaran,
+          teacherCode: j.teacherCode || '',
+          guruName: j.guruName,
+          isKegiatan: j.isKegiatan,
+          kelas: j.kelas,
+          ruang: j.ruang,
+        };
+      }),
+    ],
+    [jadwalList]
+  );
+
   return (
     <div className="space-y-6">
-      {/* Tab Switcher - Only visible for admin role */}
-      {currentRole === 'admin' && (
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-          <button
-            onClick={() => setActiveTab('review')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-              activeTab === 'review' 
-                ? 'bg-white text-blue-600 shadow-sm' 
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <Grid className="w-4 h-4" /> Review Jadwal
-          </button>
-          <button
-            onClick={() => setActiveTab('manage')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-              activeTab === 'manage' 
-                ? 'bg-white text-blue-600 shadow-sm' 
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <List className="w-4 h-4" /> Kelola Data
-          </button>
-          <button
-            onClick={() => setActiveTab('settings')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-              activeTab === 'settings' 
-                ? 'bg-white text-blue-600 shadow-sm' 
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <Settings className="w-4 h-4" /> Pengaturan
-          </button>
-        </div>
-      )}
+      {/* Tab Switcher */}
+      <div className="flex flex-wrap items-center gap-1.5 bg-slate-950 border border-slate-800 p-1.5 rounded-2xl w-fit shadow-md">
+        <button
+          onClick={() => setActiveTab('review')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer border ${
+            activeTab === 'review'
+              ? 'bg-sky-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
+              : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-900'
+          }`}
+        >
+          <Grid className="w-4 h-4" /> Review Jadwal
+        </button>
+        <button
+          onClick={() => setActiveTab('beban_jp')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer border ${
+            activeTab === 'beban_jp'
+              ? 'bg-sky-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
+              : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-900'
+          }`}
+        >
+          <Gauge className="w-4 h-4" /> Beban JP
+        </button>
+        {currentRole === 'admin' && (
+          <>
+            <button
+              onClick={() => setActiveTab('manage')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer border ${
+                activeTab === 'manage'
+                  ? 'bg-sky-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
+                  : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-900'
+              }`}
+            >
+              <List className="w-4 h-4" /> Kelola Data
+            </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer border ${
+                activeTab === 'settings'
+                  ? 'bg-sky-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
+                  : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-900'
+              }`}
+            >
+              <Settings className="w-4 h-4" /> Pengaturan
+            </button>
+          </>
+        )}
+      </div>
 
-      {activeTab === 'review' || currentRole !== 'admin' ? (
-        <JadwalReview 
+      {activeTab === 'beban_jp' ? (
+        <JadwalBebanJP
           timeSlots={timeSlots}
           teacherMappings={teacherMappings}
-          masterSchedule={[
-            ...MASTER_SCHEDULE,
-            ...jadwalList.map(j => {
-              // Ensure time format is normalized to "HH.mm - HH.mm"
-              const normalizeTime = (t: string) => t.replace(':', '.');
-              const timeRange = `${normalizeTime(j.jamMulai)} - ${normalizeTime(j.jamSelesai)}`;
-              
-              return {
-                day: j.hari.toUpperCase(),
-                time: timeRange,
-                classId: j.ruang || j.kelas,
-                subject: j.mataPelajaran,
-                teacherCode: j.teacherCode || ''
-              };
-            })
-          ]}
+          masterSchedule={normalizedMasterSchedule}
+          scheduleClasses={scheduleClasses}
+          headerConfig={headerConfig}
+          bebanJpConfig={bebanJpConfig}
+          schoolSettings={schoolSettings}
+          canEdit={currentRole === 'admin'}
+          onUpdateBebanJpConfig={handleUpdateBebanJpConfig}
+          onJumpToTeacherOnBoard={(code) => {
+            setFocusedTeacherCode(code);
+            setActiveTab('review');
+          }}
+        />
+      ) : activeTab === 'review' || currentRole !== 'admin' ? (
+        <JadwalReview
+          timeSlots={timeSlots}
+          teacherMappings={teacherMappings}
+          scheduleClasses={scheduleClasses}
+          headerConfig={headerConfig}
+          logoUrl={schoolSettings?.logoUrl || INITIAL_SCHOOL_SETTINGS.logoUrl}
+          dockItems={dockItems}
+          mapelOptions={displayMapel}
+          bebanJpConfig={bebanJpConfig}
+          initialTeacherCode={focusedTeacherCode}
+          onOpenBebanJp={() => setActiveTab('beban_jp')}
+          canEdit={currentRole === 'admin'}
+          onUpsertCell={handleUpsertCell}
+          onDeleteCell={handleDeleteCell}
+          onMoveOrSwapCells={handleMoveOrSwapCells}
+          onSetRowActivity={handleSetRowActivity}
+          onUpdateClasses={handleUpdateClasses}
+          onUpdateTimeSlots={handleUpdateTimeSlots}
+          onUpdateHeader={handleUpdateHeader}
+          onUpdateDockItems={handleUpdateDockItems}
+          onResetLayoutDefaults={handleResetLayoutDefaults}
+          masterSchedule={normalizedMasterSchedule}
         />
       ) : activeTab === 'settings' ? (
         <JadwalSettings onSettingsChange={refreshSettings} />
@@ -339,6 +669,13 @@ export const JadwalMengajar: React.FC<JadwalMengajarProps> = ({ guruList, mapelL
                   </div>
                 )}
                 
+                {manageToast && (
+                  <div className="p-3 bg-emerald-50 text-emerald-700 rounded-lg text-xs flex items-center gap-2 border border-emerald-200 font-bold">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <p>{manageToast}</p>
+                  </div>
+                )}
+
                 {error && (
                   <div className="p-3 bg-red-50 text-red-600 rounded-lg text-xs flex items-start gap-2 border border-red-200">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />

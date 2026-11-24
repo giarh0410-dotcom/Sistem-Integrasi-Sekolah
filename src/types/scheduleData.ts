@@ -1,12 +1,36 @@
 import { Guru } from './school';
 
 export interface ScheduleEntry {
+  id?: string;
   day: string;
   time: string;
   classId: string;
   subject: string;
   teacherCode: string;
   guruName?: string;
+  isKegiatan?: boolean;
+  kelas?: string;
+  ruang?: string;
+}
+
+export interface ScheduleClassItem {
+  id: string;
+  name: string;
+}
+
+export interface ScheduleHeaderConfig {
+  judul: string;
+  namaSekolah: string;
+  semester: string;
+  tahunAjaran: string;
+}
+
+export interface DockScheduleCard {
+  id: string;
+  subject: string;
+  teacherCode: string;
+  guruName: string;
+  fromLabel?: string;
 }
 
 export interface TeacherMapping {
@@ -20,6 +44,67 @@ export interface PiketSchedule {
   jamKe: string;
   gedungSmp: string;
   gedungSd: string;
+}
+
+export interface TeacherBebanJpOverride {
+  targetJp: number;
+  maxJp?: number;
+  tugasTambahan?: string;
+  ekuivalensiJp?: number;
+  catatan?: string;
+}
+
+export interface BebanJpConfig {
+  menitPerJp: number;
+  hitungMode: 'durasi' | 'slot';
+  defaultMinJp: number;
+  defaultMaxJp: number;
+  targetJpPerKelas: number;
+  overrides: Record<string, TeacherBebanJpOverride>;
+}
+
+export const DEFAULT_BEBAN_JP_CONFIG: BebanJpConfig = {
+  menitPerJp: 40,
+  hitungMode: 'durasi',
+  defaultMinJp: 24,
+  defaultMaxJp: 36,
+  targetJpPerKelas: 40,
+  overrides: {},
+};
+
+export const TUGAS_TAMBAHAN_PRESETS: Array<{ label: string; jp: number }> = [
+  { label: 'Tidak Ada', jp: 0 },
+  { label: 'Wali Kelas', jp: 2 },
+  { label: 'Pembina Ekstrakurikuler', jp: 2 },
+  { label: 'Koordinator P5 / Proyek', jp: 2 },
+  { label: 'Guru Piket', jp: 1 },
+  { label: 'Waka Kurikulum', jp: 12 },
+  { label: 'Waka Kesiswaan', jp: 12 },
+  { label: 'Waka Sarpras / Humas', jp: 12 },
+  { label: 'Kepala Laboratorium', jp: 12 },
+  { label: 'Kepala Perpustakaan', jp: 12 },
+];
+
+export function parseTimeRangeMinutes(timeRange: string): number {
+  if (!timeRange) return 0;
+  const parts = timeRange.split('-').map((p) => p.trim());
+  if (parts.length < 2) return 0;
+  const toMin = (str: string) => {
+    const clean = str.replace(/[:.]/g, '.').trim();
+    const [h, m] = clean.split('.').map(Number);
+    if (isNaN(h) || isNaN(m)) return 0;
+    return h * 60 + m;
+  };
+  const diff = toMin(parts[1]) - toMin(parts[0]);
+  return diff > 0 ? diff : 0;
+}
+
+export function calculateSlotJp(timeRange: string, config: BebanJpConfig = DEFAULT_BEBAN_JP_CONFIG): number {
+  if (config.hitungMode === 'slot') return 1;
+  const minutes = parseTimeRangeMinutes(timeRange);
+  const unit = config.menitPerJp > 0 ? config.menitPerJp : 40;
+  if (minutes <= 0) return 1;
+  return Math.max(1, Math.round(minutes / unit));
 }
 
 export const TEACHER_MAPPINGS: TeacherMapping[] = [

@@ -36,7 +36,7 @@ import {
   ExamAttendanceDay,
   abbreviateMapel
 } from './daftarSiswaRuangPdf';
-import { downloadDenahRuangPdf } from './denahRuangPdf';
+import { downloadDenahRuangPdf, DenahPdfOrientation } from './denahRuangPdf';
 
 export interface DenahPosOffset {
   x: number;
@@ -49,6 +49,8 @@ export interface DenahKursi {
   namaSiswa: string;
   kelasSiswa?: string;
   nomorPeserta?: string;
+  tableIndex?: number;
+  slotIndex?: number;
 }
 
 export interface DenahRuangItem {
@@ -254,6 +256,145 @@ function createEmptySeats(count: number, existing: DenahKursi[] = []): DenahKurs
   return result;
 }
 
+function materializeSeatLayout(kursiList: DenahKursi[], perTable: 1 | 2 | 4): Array<DenahKursi & { tableIndex: number; slotIndex: number }> {
+  return kursiList.map((seat, idx) => ({
+    ...seat,
+    tableIndex: typeof seat.tableIndex === 'number' && seat.tableIndex >= 1
+      ? seat.tableIndex
+      : Math.floor(idx / perTable) + 1,
+    slotIndex: typeof seat.slotIndex === 'number' && seat.slotIndex >= 0 && seat.slotIndex < perTable
+      ? seat.slotIndex
+      : idx % perTable
+  }));
+}
+
+function getRoomTableCount(room: DenahRuangItem): number {
+  const perTable = room.kursiPerMeja || 4;
+  if (!room.kursiList.length) return 0;
+  const tables = new Set<number>();
+  room.kursiList.forEach((seat, idx) => {
+    const t = typeof seat.tableIndex === 'number' && seat.tableIndex >= 1
+      ? seat.tableIndex
+      : Math.floor(idx / perTable) + 1;
+    tables.add(t);
+  });
+  return tables.size;
+}
+
+function normalizeRoomSeatsAndOffsets(
+  room: DenahRuangItem,
+  rawSeats: Array<DenahKursi & { tableIndex: number; slotIndex: number }>
+): DenahRuangItem {
+  const uniqueTableIds = Array.from(new Set(rawSeats.map(s => s.tableIndex))).sort((a, b) => a - b);
+  const tableMap = new Map<number, number>();
+  uniqueTableIds.forEach((oldIdx, i) => {
+    tableMap.set(oldIdx, i + 1);
+  });
+
+  const sorted = [...rawSeats].sort((a, b) => {
+    const ta = tableMap.get(a.tableIndex) || 1;
+    const tb = tableMap.get(b.tableIndex) || 1;
+    if (ta !== tb) return ta - tb;
+    if (a.slotIndex !== b.slotIndex) return a.slotIndex - b.slotIndex;
+    return a.nomorKursi - b.nomorKursi;
+  });
+
+  const nextSeatOffsets: Record<string, DenahPosOffset> = {};
+  const normalizedSeats: DenahKursi[] = sorted.map((seat, idx) => {
+    const newSeatNo = idx + 1;
+    const oldSeatKey = String(seat.nomorKursi);
+    if (room.seatOffsets && room.seatOffsets[oldSeatKey]) {
+      nextSeatOffsets[String(newSeatNo)] = room.seatOffsets[oldSeatKey];
+    }
+    return {
+      ...seat,
+      nomorKursi: newSeatNo,
+      tableIndex: tableMap.get(seat.tableIndex) || 1,
+      slotIndex: seat.slotIndex
+    };
+  });
+
+  const nextTableOffsets: Record<string, DenahPosOffset> = {};
+  if (room.tableOffsets) {
+    tableMap.forEach((newTableIdx, oldTableIdx) => {
+      const off = room.tableOffsets?.[String(oldTableIdx)];
+      if (off) {
+        nextTableOffsets[String(newTableIdx)] = off;
+      }
+    });
+  }
+
+  return {
+    ...room,
+    jumlahKursi: normalizedSeats.length,
+    kursiList: normalizedSeats,
+    tableOffsets: nextTableOffsets,
+    seatOffsets: nextSeatOffsets,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function resizeRoomSeatsPreservingLayout(room: DenahRuangItem, targetCount: number): DenahRuangItem {
+  const perTable = room.kursiPerMeja || 4;
+  const clamped = Math.min(Math.max(Math.round(targetCount) || 1, 1), 80);
+  const materialized = materializeSeatLayout(room.kursiList, perTable);
+
+  if (clamped === materialized.length) {
+    return normalizeRoomSeatsAndOffsets(room, materialized);
+  }
+
+  if (clamped < materialized.length) {
+    return normalizeRoomSeatsAndOffsets(room, materialized.slice(0, clamped));
+  }
+
+  const nextSeats = [...materialized];
+  const toAdd = clamped - materialized.length;
+  let nextTempNo = nextSeats.reduce((m, s) => Math.max(m, s.nomorKursi), 0) + 1;
+
+  for (let i = 0; i < toAdd; i++) {
+    const usedByTable = new Map<number, Set<number>>();
+    nextSeats.forEach(s => {
+      const set = usedByTable.get(s.tableIndex) || new Set<number>();
+      set.add(s.slotIndex);
+      usedByTable.set(s.tableIndex, set);
+    });
+
+    const tableIds = Array.from(usedByTable.keys()).sort((a, b) => a - b);
+    let placedTable: number | null = null;
+    let placedSlot: number | null = null;
+
+    for (const tId of tableIds) {
+      const used = usedByTable.get(tId)!;
+      if (used.size < perTable) {
+        for (let slot = 0; slot < perTable; slot++) {
+          if (!used.has(slot)) {
+            placedTable = tId;
+            placedSlot = slot;
+            break;
+          }
+        }
+        if (placedTable !== null) break;
+      }
+    }
+
+    if (placedTable === null || placedSlot === null) {
+      placedTable = (tableIds.length > 0 ? Math.max(...tableIds) : 0) + 1;
+      placedSlot = 0;
+    }
+
+    nextSeats.push({
+      nomorKursi: nextTempNo++,
+      namaSiswa: '',
+      kelasSiswa: '',
+      nomorPeserta: '',
+      tableIndex: placedTable,
+      slotIndex: placedSlot
+    });
+  }
+
+  return normalizeRoomSeatsAndOffsets(room, nextSeats);
+}
+
 function buildDefaultRooms(siswaList: Siswa[], guruList: Guru[]): DenahRuangItem[] {
   const activeSiswa = siswaList.filter(s => s.status === 'Aktif');
   const rooms: DenahRuangItem[] = [];
@@ -368,6 +509,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isDownloadingRosterPdf, setIsDownloadingRosterPdf] = useState(false);
   const [isDownloadingDenahPdf, setIsDownloadingDenahPdf] = useState(false);
+  const [pdfOrientation, setPdfOrientation] = useState<DenahPdfOrientation>('auto');
 
   const examAttendanceDays = useMemo(
     () => buildExamAttendanceDays(jadwalUjianList),
@@ -536,66 +678,159 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
   const handleChangeChairCount = (newCount: number) => {
     if (!canEdit || !activeRoom) return;
     const clamped = Math.min(Math.max(Math.round(newCount) || 1, 1), 80);
-    const updated = rooms.map(r => {
-      if (r.id !== activeRoom.id) return r;
-      return {
-        ...r,
-        jumlahKursi: clamped,
-        kursiList: createEmptySeats(clamped, r.kursiList),
-        updatedAt: new Date().toISOString()
-      };
-    });
+    const updated = rooms.map(r =>
+      r.id === activeRoom.id ? resizeRoomSeatsPreservingLayout(r, clamped) : r
+    );
     persistRooms(updated);
+    setSwapSourceSeat(null);
   };
 
   // Add 1 new table (+kursiPerMeja chairs) to active room
   const handleAddTable = () => {
     if (!canEdit || !activeRoom) return;
     const perTable = activeRoom.kursiPerMeja || 4;
-    if (activeRoom.jumlahKursi >= 80) {
+    if (activeRoom.kursiList.length >= 80) {
       showToast('Kapasitas maksimum 80 kursi per ruang telah tercapai.');
       return;
     }
-    const nextCount = Math.min(activeRoom.jumlahKursi + perTable, 80);
-    const nextTableNo = Math.ceil(nextCount / perTable);
-    const updated = rooms.map(r => {
-      if (r.id !== activeRoom.id) return r;
-      return {
-        ...r,
-        jumlahKursi: nextCount,
-        kursiList: createEmptySeats(nextCount, r.kursiList),
-        updatedAt: new Date().toISOString()
-      };
-    });
+    const materialized = materializeSeatLayout(activeRoom.kursiList, perTable);
+    const maxTableIndex = materialized.reduce((m, s) => Math.max(m, s.tableIndex), 0);
+    const nextTableIdx = maxTableIndex + 1;
+    const seatsToAdd = Math.min(perTable, 80 - materialized.length);
+    let nextTempNo = materialized.reduce((m, s) => Math.max(m, s.nomorKursi), 0) + 1;
+
+    const addedSeats = Array.from({ length: seatsToAdd }, (_, slotIdx) => ({
+      nomorKursi: nextTempNo++,
+      namaSiswa: '',
+      kelasSiswa: '',
+      nomorPeserta: '',
+      tableIndex: nextTableIdx,
+      slotIndex: slotIdx
+    }));
+
+    const updatedRoom = normalizeRoomSeatsAndOffsets(activeRoom, [...materialized, ...addedSeats]);
+    const nextTableNo = getRoomTableCount(updatedRoom);
+    const updated = rooms.map(r => (r.id === activeRoom.id ? updatedRoom : r));
     persistRooms(updated);
-    showToast(`Meja ${nextTableNo} (+${nextCount - activeRoom.jumlahKursi} kursi) berhasil ditambahkan ke ${activeRoom.namaRuang}.`);
+    showToast(`Meja ${nextTableNo} (+${seatsToAdd} kursi) berhasil ditambahkan ke ${activeRoom.namaRuang}.`);
+  };
+
+  // Add 1 blue chair to a specific table slot (e.g. restoring a deleted chair on a table)
+  const handleAddSeatToTable = (tableIndex: number, preferredSlot?: number) => {
+    if (!canEdit || !activeRoom) return;
+    const perTable = activeRoom.kursiPerMeja || 4;
+    if (activeRoom.kursiList.length >= 80) {
+      showToast('Kapasitas maksimum 80 kursi per ruang telah tercapai.');
+      return;
+    }
+    const materialized = materializeSeatLayout(activeRoom.kursiList, perTable);
+    const usedSlots = new Set(
+      materialized.filter(s => s.tableIndex === tableIndex).map(s => s.slotIndex)
+    );
+    if (usedSlots.size >= perTable) return;
+
+    let targetSlot: number | undefined =
+      typeof preferredSlot === 'number' && !usedSlots.has(preferredSlot) ? preferredSlot : undefined;
+    if (targetSlot === undefined) {
+      for (let s = 0; s < perTable; s++) {
+        if (!usedSlots.has(s)) {
+          targetSlot = s;
+          break;
+        }
+      }
+    }
+    if (targetSlot === undefined) return;
+
+    const nextTempNo = materialized.reduce((m, s) => Math.max(m, s.nomorKursi), 0) + 1;
+    const nextSeats = [
+      ...materialized,
+      {
+        nomorKursi: nextTempNo,
+        namaSiswa: '',
+        kelasSiswa: '',
+        nomorPeserta: '',
+        tableIndex,
+        slotIndex: targetSlot
+      }
+    ];
+    const updated = rooms.map(r =>
+      r.id === activeRoom.id ? normalizeRoomSeatsAndOffsets(r, nextSeats) : r
+    );
+    persistRooms(updated);
+    setSwapSourceSeat(null);
+    showToast(`1 kursi biru ditambahkan ke Meja ${tableIndex} (${activeRoom.namaRuang}).`);
+  };
+
+  // Delete a specific blue chair while keeping every other chair on its exact table & side
+  const handleDeleteSeat = (nomorKursi: number, targetRoomId?: string) => {
+    if (!canEdit) return;
+    const room = targetRoomId ? rooms.find(r => r.id === targetRoomId) : activeRoom;
+    if (!room) return;
+    if (room.kursiList.length <= 1) {
+      showToast('Minimal harus ada 1 kursi di dalam ruang ujian.');
+      return;
+    }
+    const targetSeat = room.kursiList.find(k => k.nomorKursi === nomorKursi);
+    if (!targetSeat) return;
+
+    const perTable = room.kursiPerMeja || 4;
+    const materialized = materializeSeatLayout(room.kursiList, perTable);
+    const remainingSeats = materialized.filter(s => s.nomorKursi !== nomorKursi);
+    const updatedRoom = normalizeRoomSeatsAndOffsets(room, remainingSeats);
+
+    const updated = rooms.map(r => (r.id === room.id ? updatedRoom : r));
+    persistRooms(updated);
+    if (editingSeatNo === nomorKursi && room.id === activeRoom?.id) {
+      setEditingSeatNo(null);
+    }
+    setSwapSourceSeat(null);
+    const seatDesc = targetSeat.namaSiswa.trim() ? targetSeat.namaSiswa.trim() : 'Kosong';
+    showToast(`Kursi #${String(nomorKursi).padStart(2, '0')} (${seatDesc}) berhasil dihapus dari ${room.namaRuang}.`);
+  };
+
+  // Delete all empty blue chairs in active room in one click
+  const handleDeleteEmptySeats = () => {
+    if (!canEdit || !activeRoom) return;
+    const perTable = activeRoom.kursiPerMeja || 4;
+    const materialized = materializeSeatLayout(activeRoom.kursiList, perTable);
+    const filledSeats = materialized.filter(s => s.namaSiswa && s.namaSiswa.trim() !== '');
+    const emptyCount = materialized.length - filledSeats.length;
+
+    if (emptyCount === 0) {
+      showToast(`Tidak ada kursi kosong di ${activeRoom.namaRuang}.`);
+      return;
+    }
+    if (filledSeats.length === 0) {
+      showToast('Minimal harus tersisa 1 kursi di dalam ruang ujian.');
+      return;
+    }
+
+    const updatedRoom = normalizeRoomSeatsAndOffsets(activeRoom, filledSeats);
+    const updated = rooms.map(r => (r.id === activeRoom.id ? updatedRoom : r));
+    persistRooms(updated);
+    setEditingSeatNo(null);
+    setSwapSourceSeat(null);
+    showToast(`${emptyCount} kursi biru kosong berhasil dihapus dari ${activeRoom.namaRuang}.`);
   };
 
   // Remove a specific table (1-based tableIndex) and re-number remaining seats cleanly
   const handleRemoveTable = (tableIndex: number) => {
     if (!canEdit || !activeRoom) return;
     const perTable = activeRoom.kursiPerMeja || 4;
-    const totalTables = Math.ceil(activeRoom.kursiList.length / perTable);
+    const materialized = materializeSeatLayout(activeRoom.kursiList, perTable);
+    const totalTables = new Set(materialized.map(s => s.tableIndex)).size;
     if (totalTables <= 1) {
       showToast('Minimal harus ada 1 meja di dalam ruang ujian.');
       return;
     }
-    const startIdx = (tableIndex - 1) * perTable;
-    const endIdx = startIdx + perTable;
-    const remainingSeats = activeRoom.kursiList
-      .filter((_, idx) => idx < startIdx || idx >= endIdx)
-      .map((seat, idx) => ({ ...seat, nomorKursi: idx + 1 }));
+    const remainingSeats = materialized.filter(s => s.tableIndex !== tableIndex);
+    if (remainingSeats.length === 0) {
+      showToast('Minimal harus ada 1 kursi di dalam ruang ujian.');
+      return;
+    }
 
-    const updated = rooms.map(r =>
-      r.id === activeRoom.id
-        ? {
-            ...r,
-            jumlahKursi: remainingSeats.length,
-            kursiList: remainingSeats,
-            updatedAt: new Date().toISOString()
-          }
-        : r
-    );
+    const updatedRoom = normalizeRoomSeatsAndOffsets(activeRoom, remainingSeats);
+    const updated = rooms.map(r => (r.id === activeRoom.id ? updatedRoom : r));
     persistRooms(updated);
     setSwapSourceSeat(null);
     showToast(`Meja ${tableIndex} berhasil dihapus dari ${activeRoom.namaRuang}.`);
@@ -608,6 +843,13 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
         ? {
             ...r,
             kursiPerMeja: perTable,
+            kursiList: r.kursiList.map((k, idx) => ({
+              nomorKursi: idx + 1,
+              siswaId: k.siswaId,
+              namaSiswa: k.namaSiswa,
+              kelasSiswa: k.kelasSiswa,
+              nomorPeserta: k.nomorPeserta
+            })),
             tableOffsets: {},
             seatOffsets: {},
             updatedAt: new Date().toISOString()
@@ -615,6 +857,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
         : r
     );
     persistRooms(updated);
+    setSwapSourceSeat(null);
   };
 
   const getElementOffset = (
@@ -787,6 +1030,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
           kursiList: r.kursiList.map(k => {
             if (k.nomorKursi === swapSourceSeat) {
               return {
+                ...k,
                 nomorKursi: swapSourceSeat,
                 siswaId: dst.siswaId,
                 namaSiswa: dst.namaSiswa,
@@ -796,6 +1040,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
             }
             if (k.nomorKursi === seat.nomorKursi) {
               return {
+                ...k,
                 nomorKursi: seat.nomorKursi,
                 siswaId: src.siswaId,
                 namaSiswa: src.namaSiswa,
@@ -834,6 +1079,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
         kursiList: r.kursiList.map(k =>
           k.nomorKursi === editingSeatNo
             ? {
+                ...k,
                 nomorKursi: editingSeatNo,
                 siswaId: seatSelectedSiswaId,
                 namaSiswa: seatManualNama.trim(),
@@ -858,7 +1104,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
         ...r,
         kursiList: r.kursiList.map(k =>
           k.nomorKursi === editingSeatNo
-            ? { nomorKursi: editingSeatNo, namaSiswa: '', kelasSiswa: '', nomorPeserta: '' }
+            ? { ...k, nomorKursi: editingSeatNo, siswaId: undefined, namaSiswa: '', kelasSiswa: '', nomorPeserta: '' }
             : k
         ),
         updatedAt: new Date().toISOString()
@@ -937,19 +1183,39 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
           // Keep exam title synced across rooms for consistent header banner
           return { ...r, judulUjian: roomForm.judulUjian.trim() || r.judulUjian };
         }
-        return {
+        const perTableChanged = r.kursiPerMeja !== roomForm.kursiPerMeja;
+        const baseUpdated: DenahRuangItem = {
           ...r,
           namaRuang: roomForm.namaRuang.trim() || r.namaRuang,
           pengawas: roomForm.pengawas.trim() || r.pengawas,
-          jumlahKursi: safeKursi,
           kursiPerMeja: roomForm.kursiPerMeja,
           judulUjian: roomForm.judulUjian.trim() || DEFAULT_JUDUL_UJIAN,
           labelPintu: roomForm.labelPintu.trim() || 'Pintu (di sebelah kiri)',
           labelJendela: roomForm.labelJendela.trim() || 'Jendela (samping kiri)',
           ketentuanTambahan: roomForm.ketentuanTambahan.trim() || 'Jaga ketertiban dan ikuti arahan pengawas.',
-          kursiList: createEmptySeats(safeKursi, r.kursiList),
           updatedAt: new Date().toISOString()
         };
+        if (perTableChanged) {
+          return {
+            ...baseUpdated,
+            jumlahKursi: safeKursi,
+            kursiList: createEmptySeats(
+              safeKursi,
+              r.kursiList.map(k => ({
+                nomorKursi: k.nomorKursi,
+                siswaId: k.siswaId,
+                namaSiswa: k.namaSiswa,
+                kelasSiswa: k.kelasSiswa,
+                nomorPeserta: k.nomorPeserta
+              }))
+            ),
+            tableOffsets: {},
+            seatOffsets: {}
+          };
+        }
+        return safeKursi === r.kursiList.length
+          ? { ...baseUpdated, jumlahKursi: r.kursiList.length }
+          : resizeRoomSeatsPreservingLayout(baseUpdated, safeKursi);
       });
       persistRooms(next);
       setShowRoomModal(false);
@@ -1013,6 +1279,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
         const nextSeats: DenahKursi[] = r.kursiList.map((k, idx) => {
           const s = pool[idx];
           return {
+            ...k,
             nomorKursi: k.nomorKursi,
             siswaId: s?.id,
             namaSiswa: s?.nama || '',
@@ -1030,6 +1297,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
         const nextSeats: DenahKursi[] = r.kursiList.map(k => {
           const s = pool[cursor++];
           return {
+            ...k,
             nomorKursi: k.nomorKursi,
             siswaId: s?.id,
             namaSiswa: s?.nama || '',
@@ -1049,31 +1317,63 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
     if (!canEdit || !activeRoom) return;
     const updated = rooms.map(r =>
       r.id === activeRoom.id
-        ? { ...r, kursiList: createEmptySeats(r.jumlahKursi), updatedAt: new Date().toISOString() }
+        ? {
+            ...r,
+            kursiList: r.kursiList.map(k => ({
+              ...k,
+              siswaId: undefined,
+              namaSiswa: '',
+              kelasSiswa: '',
+              nomorPeserta: ''
+            })),
+            updatedAt: new Date().toISOString()
+          }
         : r
     );
     persistRooms(updated);
     showToast(`Seluruh kursi di ${activeRoom.namaRuang} telah dikosongkan.`);
   };
 
-  // Group seats of activeRoom into tables based on kursiPerMeja
+  // Group seats of activeRoom into tables based on explicit tableIndex/slotIndex (or kursiPerMeja fallback)
   const activeRoomTables = useMemo(() => {
     if (!activeRoom) return [];
     const perTable = activeRoom.kursiPerMeja || 4;
-    const tables: { tableIndex: number; seats: DenahKursi[] }[] = [];
-    for (let i = 0; i < activeRoom.kursiList.length; i += perTable) {
-      tables.push({
-        tableIndex: Math.floor(i / perTable) + 1,
-        seats: activeRoom.kursiList.slice(i, i + perTable)
+    const materialized = materializeSeatLayout(activeRoom.kursiList, perTable);
+    const byTable = new Map<number, Array<DenahKursi & { tableIndex: number; slotIndex: number }>>();
+    materialized.forEach(seat => {
+      const arr = byTable.get(seat.tableIndex) || [];
+      arr.push(seat);
+      byTable.set(seat.tableIndex, arr);
+    });
+    const sortedIds = Array.from(byTable.keys()).sort((a, b) => a - b);
+    return sortedIds.map(tIdx => {
+      const tableSeats = byTable.get(tIdx) || [];
+      const slots: Array<DenahKursi | undefined> = Array.from({ length: perTable }, () => undefined);
+      tableSeats.forEach(seat => {
+        if (seat.slotIndex >= 0 && seat.slotIndex < perTable && !slots[seat.slotIndex]) {
+          slots[seat.slotIndex] = seat;
+        } else {
+          const freeIdx = slots.findIndex(s => !s);
+          if (freeIdx !== -1) slots[freeIdx] = seat;
+        }
       });
-    }
-    return tables;
+      return {
+        tableIndex: tIdx,
+        seats: tableSeats,
+        slots
+      };
+    });
   }, [activeRoom]);
 
   const filledCountActive = useMemo(() => {
     if (!activeRoom) return 0;
     return activeRoom.kursiList.filter(k => k.namaSiswa && k.namaSiswa.trim() !== '').length;
   }, [activeRoom]);
+
+  const emptyCountActive = useMemo(() => {
+    if (!activeRoom) return 0;
+    return activeRoom.kursiList.length - filledCountActive;
+  }, [activeRoom, filledCountActive]);
 
   const totalCapacityAll = useMemo(() => rooms.reduce((sum, r) => sum + r.jumlahKursi, 0), [rooms]);
   const totalFilledAll = useMemo(
@@ -1094,7 +1394,10 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
 
   const enrichSeatRow = (room: DenahRuangItem, seat: DenahKursi) => {
     const perTable = room.kursiPerMeja || 4;
-    const tableNo = Math.floor((seat.nomorKursi - 1) / perTable) + 1;
+    const tableNo =
+      typeof seat.tableIndex === 'number' && seat.tableIndex >= 1
+        ? seat.tableIndex
+        : Math.floor((seat.nomorKursi - 1) / perTable) + 1;
     const isFilled = Boolean(seat.namaSiswa && seat.namaSiswa.trim());
     const matchedSiswa = isFilled
       ? (seat.siswaId ? siswaLookup.byId.get(seat.siswaId) : undefined) ||
@@ -1205,7 +1508,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
       .flatMap(room => {
         const rows = room.kursiList.map(seat => enrichSeatRow(room, seat));
         const filled = rows.filter(r => r.isFilled).length;
-        const totalMeja = Math.ceil(room.jumlahKursi / (room.kursiPerMeja || 4));
+        const totalMeja = getRoomTableCount(room);
         const classCounts = new Map<string, number>();
         rows.forEach(r => {
           if (r.isFilled) {
@@ -1662,16 +1965,18 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
       const rosterEl =
         effectiveMode === 'detail' && showRosterInPoster ? denahPosterRosterRef.current : null;
 
-      await downloadDenahRuangPdf({
+      const { usedOrientation } = await downloadDenahRuangPdf({
         posterEl,
         rosterEl,
-        fileName
+        fileName,
+        orientation: pdfOrientation
       });
 
+      const orientLabel = usedOrientation === 'portrait' ? 'A4 Portrait' : 'A4 Landscape';
       showToast(
         rosterEl
-          ? `Berhasil mengunduh ${fileName} (Denah + Daftar Nama Siswa).`
-          : `Berhasil mengunduh ${fileName}.`
+          ? `Berhasil mengunduh ${fileName} (${orientLabel} · Denah + Daftar Nama Siswa).`
+          : `Berhasil mengunduh ${fileName} (${orientLabel} · Ukuran Penuh HVS A4).`
       );
     } catch (err) {
       console.error('Gagal mengunduh PDF denah ruang ujian:', err);
@@ -1719,13 +2024,21 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
     const seatOffset = getElementOffset(activeRoom, 'seat', seatKey);
     const isDraggingThisSeat = activeDrag?.kind === 'seat' && activeDrag.key === seatKey;
     const canDragSeat = canEdit && dragMoveEnabled && viewMode === 'detail' && swapSourceSeat === null;
+    const canDeleteSeat = canEdit && viewMode === 'detail' && Boolean(activeRoom && activeRoom.kursiList.length > 1);
 
     return (
-      <button
+      <div
         key={seat.nomorKursi}
-        type="button"
+        role={canEdit ? 'button' : undefined}
+        tabIndex={canEdit ? 0 : undefined}
         onPointerDown={e => startDragMove(e, 'seat', seatKey)}
         onClick={() => handleSeatClick(seat)}
+        onKeyDown={e => {
+          if (canEdit && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            handleSeatClick(seat);
+          }
+        }}
         style={{
           transform:
             seatOffset.x !== 0 || seatOffset.y !== 0
@@ -1736,23 +2049,23 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
           isFilled
             ? `Kursi #${seat.nomorKursi}: ${seat.namaSiswa} (${seat.kelasSiswa || '-'})${
                 canDragSeat
-                  ? ' — Klik untuk edit, tahan & geser untuk memindah posisi kursi'
+                  ? ' — Klik untuk edit, tahan & geser untuk pindah, klik × untuk hapus kursi'
                   : canEdit
-                  ? ' — Klik untuk edit'
+                  ? ' — Klik untuk edit, klik × untuk hapus kursi'
                   : ''
               }`
             : `Kursi #${seat.nomorKursi}: Kosong${
                 canDragSeat
-                  ? ' — Klik untuk pilih siswa, tahan & geser untuk memindah posisi kursi'
+                  ? ' — Klik untuk pilih siswa, tahan & geser untuk pindah, klik × untuk hapus kursi'
                   : canEdit
-                  ? ' — Klik untuk pilih siswa'
+                  ? ' — Klik untuk pilih siswa, klik × untuk hapus kursi'
                   : ''
               }`
         }
-        className={`group relative border-[1.5px] text-left flex flex-col justify-center select-none ${
+        className={`group/seat relative border-[1.5px] text-left flex flex-col justify-center select-none ${
           isDraggingThisSeat
             ? 'transition-none z-50 ring-3 ring-sky-300 shadow-2xl scale-[1.03]'
-            : 'transition-[background,box-shadow,border-color] duration-150'
+            : 'transition-[background,box-shadow,border-color] duration-150 hover:z-30'
         } ${shapeClasses} ${
           isSwapSource
             ? 'bg-amber-500 border-amber-900 text-white ring-3 ring-amber-300 scale-105 z-20'
@@ -1771,36 +2084,52 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
             : 'cursor-default'
         } ${
           orientation === 'left' || orientation === 'right'
-            ? 'w-[78px] min-h-[40px] px-1.5 py-1'
+            ? 'w-[94px] min-h-[46px] px-2 py-1'
             : orientation === 'single'
-            ? 'w-full min-h-[42px] px-1.5 py-1'
-            : 'w-[104px] min-h-[38px] px-1.5 py-1'
+            ? 'w-full min-h-[46px] px-2 py-1'
+            : 'w-[122px] min-h-[44px] px-2 py-1'
         }`}
       >
+        {canDeleteSeat && (
+          <button
+            type="button"
+            data-no-drag="true"
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => {
+              e.stopPropagation();
+              handleDeleteSeat(seat.nomorKursi);
+            }}
+            title={`Hapus Kursi Biru #${String(seat.nomorKursi).padStart(2, '0')}`}
+            aria-label={`Hapus Kursi #${seat.nomorKursi}`}
+            className="print:hidden opacity-0 group-hover/seat:opacity-100 focus:opacity-100 transition-opacity absolute -top-2 -right-2 w-4 h-4 rounded-full bg-red-600 hover:bg-red-500 text-white border border-white shadow-md flex items-center justify-center cursor-pointer z-30"
+          >
+            <X className="w-2.5 h-2.5 stroke-[3]" />
+          </button>
+        )}
         <div className="flex items-center justify-between gap-0.5">
-          <span className="text-[8.5px] font-black tracking-tight bg-slate-950/35 px-1 py-0 rounded tabular-nums leading-tight">
+          <span className="text-[9.5px] font-black tracking-tight bg-slate-950/35 px-1 py-0 rounded tabular-nums leading-tight">
             #{String(seat.nomorKursi).padStart(2, '0')}
           </span>
           <div className="flex items-center gap-0.5 min-w-0">
             {seat.kelasSiswa && (
-              <span className="text-[7.5px] font-bold text-sky-100 truncate max-w-[46px] leading-tight">
+              <span className="text-[8.5px] font-bold text-sky-100 truncate max-w-[56px] leading-tight">
                 {seat.kelasSiswa.split(' - ')[0]}
               </span>
             )}
             {canDragSeat && (
-              <Move className="w-2 h-2 text-sky-100/80 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+              <Move className="w-2 h-2 text-sky-100/80 opacity-0 group-hover/seat:opacity-100 transition-opacity shrink-0 print:hidden" />
             )}
           </div>
         </div>
-        <div className={`text-[9.5px] leading-tight mt-0.5 truncate ${isFilled ? 'font-extrabold text-white' : 'font-semibold text-blue-50 italic'}`}>
+        <div className={`text-[11px] leading-tight mt-0.5 truncate ${isFilled ? 'font-extrabold text-white' : 'font-semibold text-blue-50 italic'}`}>
           {shortName}
         </div>
         {seat.nomorPeserta && isFilled && (
-          <div className="text-[7.5px] leading-tight text-blue-100/90 font-mono truncate tabular-nums">
+          <div className="text-[8.5px] leading-tight text-blue-100/90 font-mono truncate tabular-nums">
             {seat.nomorPeserta}
           </div>
         )}
-      </button>
+      </div>
     );
   };
 
@@ -1920,20 +2249,32 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
               <span>Cetak Daftar Siswa</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleDownloadDenahPdf}
-              disabled={isDownloadingDenahPdf}
-              className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-md whitespace-nowrap"
-              title="Unduh denah ruang ujian langsung dalam format file PDF siap cetak"
-            >
-              {isDownloadingDenahPdf ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <FileDown className="w-3.5 h-3.5" />
-              )}
-              <span>{isDownloadingDenahPdf ? 'Menyiapkan PDF...' : 'Unduh Denah PDF'}</span>
-            </button>
+            <div className="flex items-center rounded-xl overflow-hidden shadow-md border border-rose-500/40 bg-slate-900">
+              <select
+                value={pdfOrientation}
+                onChange={e => setPdfOrientation(e.target.value as DenahPdfOrientation)}
+                title="Pilih ukuran & orientasi kertas HVS A4 untuk PDF Denah"
+                className="bg-slate-900 text-rose-200 text-xs font-bold pl-2.5 pr-1.5 py-2 focus:outline-none cursor-pointer border-r border-slate-700"
+              >
+                <option value="auto" className="bg-slate-900 text-white">A4 Auto</option>
+                <option value="portrait" className="bg-slate-900 text-white">A4 Portrait</option>
+                <option value="landscape" className="bg-slate-900 text-white">A4 Landscape</option>
+              </select>
+              <button
+                type="button"
+                onClick={handleDownloadDenahPdf}
+                disabled={isDownloadingDenahPdf}
+                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                title="Unduh denah ruang ujian langsung dalam format PDF penuh kertas HVS A4"
+              >
+                {isDownloadingDenahPdf ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <FileDown className="w-3.5 h-3.5" />
+                )}
+                <span>{isDownloadingDenahPdf ? 'Menyiapkan PDF...' : 'Unduh Denah PDF'}</span>
+              </button>
+            </div>
 
             <button
               type="button"
@@ -2191,6 +2532,18 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                 <span>Edit Ruang & Header</span>
               </button>
 
+              {emptyCountActive > 0 && filledCountActive > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDeleteEmptySeats}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-950/60 text-rose-200 border border-rose-700/60 hover:bg-rose-900/70 flex items-center gap-1.5 cursor-pointer transition-colors"
+                  title="Hapus semua kursi biru yang masih kosong di ruang ini"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus {emptyCountActive} Kursi Kosong</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={handleClearActiveRoomSeats}
@@ -2224,10 +2577,13 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
         id="printable-denah-ruang"
         className="bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-300 p-4 sm:p-6 overflow-x-auto"
       >
-        <div className="min-w-[960px] space-y-4">
-          <div ref={denahPosterRef} className="space-y-4 bg-white">
+        <div className="min-w-[960px] max-w-[1060px] mx-auto space-y-4">
+          <div ref={denahPosterRef} className="space-y-3 bg-white">
           {/* 1. NAVY HEADER BANNER (Matching Reference Image) */}
-          <div className="bg-gradient-to-r from-[#082f63] via-[#0c3f7e] to-[#082f63] rounded-2xl px-6 py-4 flex items-center gap-5 shadow-md border-2 border-[#06234a]">
+          <div
+            data-denah-banner="true"
+            className="bg-gradient-to-r from-[#082f63] via-[#0c3f7e] to-[#082f63] rounded-2xl px-6 py-4 flex items-center gap-5 shadow-md border-2 border-[#06234a]"
+          >
             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white p-1.5 flex items-center justify-center shrink-0 shadow-md">
               <img
                 src={schoolSettings?.logoUrl || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%230c3f7e"/><text x="50" y="60" font-size="40" fill="white" text-anchor="middle" font-weight="bold">AF</text></svg>'}
@@ -2236,7 +2592,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                 className="w-full h-full object-contain"
               />
             </div>
-            <div className="flex-1 text-center pr-0 sm:pr-16">
+            <div data-denah-banner-text="true" className="flex-1 text-center pr-0 sm:pr-12">
               <h1 className="text-lg sm:text-2xl font-black text-white tracking-wide uppercase leading-tight">
                 DENAH PENEMPATAN DUDUK PESERTA UJIAN
                 {viewMode === 'detail' ? ` — ${activeRoom.namaRuang.toUpperCase()}` : ''}
@@ -2253,11 +2609,12 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
           </div>
 
           {/* 2. MAIN BODY: WIDE FLOORPLAN ROOM + RIGHT LEGEND/RULES */}
-          <div className="grid grid-cols-[1fr_210px] gap-3 items-stretch">
+          <div data-denah-body="true" className="grid grid-cols-[1fr_194px] gap-3 items-stretch">
             {/* CENTER FLOORPLAN ROOM FRAME */}
             <div
               ref={floorplanFrameRef}
-              className="relative rounded-lg border-[8px] border-[#64748b] shadow-[inset_0_0_0_2px_#1e293b,0_10px_25px_rgba(15,23,42,0.12)] bg-[#f8fafc] bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] [background-size:36px_36px] min-h-[540px] flex flex-col justify-between p-5"
+              data-denah-floorplan="true"
+              className="relative rounded-lg border-[8px] border-[#64748b] shadow-[inset_0_0_0_2px_#1e293b,0_10px_25px_rgba(15,23,42,0.12)] bg-[#f8fafc] bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] [background-size:36px_36px] min-h-[540px] flex flex-col justify-between p-4"
             >
               {/* Left-wall architectural Door */}
               <div className="absolute -left-[6px] top-3 z-10 pointer-events-none flex flex-col items-start">
@@ -2328,16 +2685,31 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
 
               {/* MIDDLE ZONE: SEATING CLUSTERS OR OVERVIEW ROOMS */}
               {viewMode === 'detail' ? (
-                <div className="flex-1 flex flex-col items-center justify-center px-4 py-3 gap-5">
+                <div className="flex-1 flex flex-col items-center justify-center px-2 py-2 gap-4">
                   {activeRoom.kursiPerMeja === 4 ? (
                     /* 4-SEAT CLUSTER TABLES (Exact Match to Reference Image, Draggable Tables & Chairs!) */
-                    <div className="grid grid-cols-2 gap-x-8 gap-y-7 w-full place-items-center">
+                    <div className="grid grid-cols-2 gap-x-5 gap-y-6 w-full place-items-center">
                       {activeRoomTables.map(table => {
-                        const [topSeat, leftSeat, rightSeat, bottomSeat] = table.seats;
+                        const [topSeat, leftSeat, rightSeat, bottomSeat] = table.slots;
                         const tableKey = String(table.tableIndex);
                         const tableOffset = getElementOffset(activeRoom, 'table', tableKey);
                         const isDraggingTable = activeDrag?.kind === 'table' && activeDrag.key === tableKey;
                         const canDragTable = canEdit && dragMoveEnabled;
+                        const canRestoreChair = canEdit && activeRoom.kursiList.length < 80;
+
+                        const renderAddSlotBtn = (slotIdx: number, slotClass: string, label: string) =>
+                          canRestoreChair ? (
+                            <button
+                              type="button"
+                              data-no-drag="true"
+                              onClick={() => handleAddSeatToTable(table.tableIndex, slotIdx)}
+                              title={`Tambah kursi biru di posisi ${label} Meja ${table.tableIndex}`}
+                              className={`print:hidden opacity-0 group-hover/table:opacity-100 focus:opacity-100 transition-opacity border border-dashed border-sky-400/80 bg-sky-50/70 hover:bg-sky-100 text-sky-700 flex items-center justify-center gap-1 text-[9px] font-bold cursor-pointer ${slotClass}`}
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>Kursi</span>
+                            </button>
+                          ) : null;
 
                         return (
                           <div
@@ -2353,14 +2725,18 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                             }`}
                           >
                             {/* Top Chair */}
-                            <div className="min-h-[38px] flex items-end justify-center">
-                              {topSeat && renderChairButton(topSeat, 'top')}
+                            <div className="min-h-[44px] flex items-end justify-center">
+                              {topSeat
+                                ? renderChairButton(topSeat, 'top')
+                                : renderAddSlotBtn(0, 'w-[122px] h-[38px] rounded-t-xl rounded-b-md', 'atas')}
                             </div>
 
                             {/* Middle Row: Left Chair + Wooden Table + Right Chair */}
                             <div className="flex items-center gap-1">
-                              <div className="w-[78px] flex justify-end shrink-0">
-                                {leftSeat && renderChairButton(leftSeat, 'left')}
+                              <div className="w-[94px] flex justify-end shrink-0">
+                                {leftSeat
+                                  ? renderChairButton(leftSeat, 'left')
+                                  : renderAddSlotBtn(1, 'w-[94px] h-[42px] rounded-l-xl rounded-r-md', 'kiri')}
                               </div>
 
                               {/* Wooden Cluster Table (Drag here to move table + chairs together) */}
@@ -2371,7 +2747,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                                     ? `Tahan & geser Meja ${table.tableIndex} untuk memindah meja beserta kursinya`
                                     : undefined
                                 }
-                                className={`relative w-[112px] h-[82px] shrink-0 rounded-xl bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_5px_0_#92591b] flex flex-col items-center justify-center p-2 select-none ${
+                                className={`relative w-[120px] h-[88px] shrink-0 rounded-xl bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_5px_0_#92591b] flex flex-col items-center justify-center p-2 select-none ${
                                   isDraggingTable ? 'ring-4 ring-amber-400 shadow-2xl scale-[1.03]' : ''
                                 } ${
                                   canDragTable
@@ -2397,22 +2773,26 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                                     <X className="w-3 h-3" />
                                   </button>
                                 )}
-                                <div className="bg-white/95 px-2.5 py-0.5 rounded-lg border border-amber-700/20 text-xs font-black text-slate-900 shadow-sm whitespace-nowrap">
+                                <div className="bg-white/95 px-2.5 py-0.5 rounded-lg border border-amber-700/20 text-[13px] font-black text-slate-900 shadow-sm whitespace-nowrap">
                                   Meja {table.tableIndex}
                                 </div>
-                                <div className="text-[10px] font-bold text-amber-950 mt-1 tabular-nums whitespace-nowrap">
+                                <div className="text-[11px] font-bold text-amber-950 mt-1 tabular-nums whitespace-nowrap">
                                   {table.seats.filter(s => s.namaSiswa.trim()).length}/{table.seats.length} Peserta
                                 </div>
                               </div>
 
-                              <div className="w-[78px] flex justify-start shrink-0">
-                                {rightSeat && renderChairButton(rightSeat, 'right')}
+                              <div className="w-[94px] flex justify-start shrink-0">
+                                {rightSeat
+                                  ? renderChairButton(rightSeat, 'right')
+                                  : renderAddSlotBtn(2, 'w-[94px] h-[42px] rounded-r-xl rounded-l-md', 'kanan')}
                               </div>
                             </div>
 
                             {/* Bottom Chair */}
-                            <div className="min-h-[38px] flex items-start justify-center">
-                              {bottomSeat && renderChairButton(bottomSeat, 'bottom')}
+                            <div className="min-h-[44px] flex items-start justify-center">
+                              {bottomSeat
+                                ? renderChairButton(bottomSeat, 'bottom')
+                                : renderAddSlotBtn(3, 'w-[122px] h-[38px] rounded-b-xl rounded-t-md', 'bawah')}
                             </div>
                           </div>
                         );
@@ -2445,6 +2825,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                         const tableOffset = getElementOffset(activeRoom, 'table', tableKey);
                         const isDraggingTable = activeDrag?.kind === 'table' && activeDrag.key === tableKey;
                         const canDragTable = canEdit && dragMoveEnabled;
+                        const canRestoreChair = canEdit && activeRoom.kursiList.length < 80;
 
                         return (
                           <div
@@ -2496,7 +2877,25 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                               </span>
                             </div>
                             <div className="grid grid-cols-2 gap-1.5 w-full">
-                              {table.seats.map(seat => renderChairButton(seat, 'single'))}
+                              {table.slots.map((slotSeat, slotIdx) =>
+                                slotSeat ? (
+                                  renderChairButton(slotSeat, 'single')
+                                ) : canRestoreChair ? (
+                                  <button
+                                    key={`empty-slot-${table.tableIndex}-${slotIdx}`}
+                                    type="button"
+                                    data-no-drag="true"
+                                    onClick={() => handleAddSeatToTable(table.tableIndex, slotIdx)}
+                                    title={`Tambah kursi biru di Meja ${table.tableIndex}`}
+                                    className="print:hidden opacity-0 group-hover/table:opacity-100 focus:opacity-100 transition-opacity min-h-[42px] rounded-b-xl rounded-t-md border border-dashed border-sky-400/80 bg-sky-50/70 hover:bg-sky-100 text-sky-700 flex items-center justify-center gap-1 text-[10px] font-bold cursor-pointer"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    <span>Kursi</span>
+                                  </button>
+                                ) : (
+                                  <div key={`spacer-slot-${table.tableIndex}-${slotIdx}`} className="min-h-[42px]" />
+                                )
+                              )}
                             </div>
                           </div>
                         );
@@ -2517,8 +2916,10 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                   ) : (
                     /* 1-SEAT INDIVIDUAL DESKS (Draggable Tables & Chairs) */
                     <div className="grid grid-cols-4 gap-3.5 w-full">
-                      {activeRoom.kursiList.map(seat => {
-                        const tableKey = String(seat.nomorKursi);
+                      {activeRoomTables.map(table => {
+                        const seat = table.seats[0];
+                        if (!seat) return null;
+                        const tableKey = String(table.tableIndex);
                         const tableOffset = getElementOffset(activeRoom, 'table', tableKey);
                         const isDraggingTable = activeDrag?.kind === 'table' && activeDrag.key === tableKey;
                         const canDragTable = canEdit && dragMoveEnabled;
@@ -2540,7 +2941,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                               onPointerDown={e => startDragMove(e, 'table', tableKey)}
                               title={
                                 canDragTable
-                                  ? `Tahan & geser Meja ${seat.nomorKursi} untuk memindah meja beserta kursinya`
+                                  ? `Tahan & geser Meja ${table.tableIndex} untuk memindah meja beserta kursinya`
                                   : undefined
                               }
                               className={`relative w-full h-7 rounded-lg bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shadow-[0_3px_0_#92591b] flex items-center justify-center select-none ${
@@ -2553,12 +2954,12 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                                   : ''
                               }`}
                             >
-                              {canEdit && activeRoom.kursiList.length > 1 && (
+                              {canEdit && activeRoomTables.length > 1 && (
                                 <button
                                   type="button"
                                   data-no-drag="true"
-                                  onClick={() => handleRemoveTable(seat.nomorKursi)}
-                                  title={`Hapus Meja ${seat.nomorKursi}`}
+                                  onClick={() => handleRemoveTable(table.tableIndex)}
+                                  title={`Hapus Meja ${table.tableIndex}`}
                                   className="print:hidden opacity-0 group-hover/table:opacity-100 focus:opacity-100 transition-opacity absolute -top-2 -right-2 w-4 h-4 rounded-full bg-red-600 hover:bg-red-500 text-white border border-white shadow flex items-center justify-center cursor-pointer z-20"
                                 >
                                   <X className="w-2.5 h-2.5" />
@@ -2566,7 +2967,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                               )}
                               <span className="bg-white/95 px-2 py-0.2 rounded text-[10px] font-black text-slate-900 flex items-center gap-1">
                                 {canDragTable && <Move className="w-2.5 h-2.5 text-amber-700 print:hidden" />}
-                                Meja {seat.nomorKursi}
+                                Meja {table.tableIndex}
                               </span>
                             </div>
                             {renderChairButton(seat, 'single')}
@@ -2649,8 +3050,8 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                   {canEdit
                     ? viewMode === 'detail'
                       ? dragMoveEnabled
-                        ? 'Tip: Tahan & geser Meja atau Kursi untuk mengatur posisi · Klik kursi biru untuk ubah nama siswa'
-                        : 'Tip: Klik kursi biru untuk mengubah nama siswa'
+                        ? 'Tip: Geser Meja/Kursi untuk atur posisi · Klik kursi biru untuk edit siswa · Arahkan ke kursi biru & klik × untuk hapus kursi'
+                        : 'Tip: Klik kursi biru untuk edit siswa · Arahkan ke kursi biru & klik × untuk hapus kursi'
                       : 'Tip: Klik salah satu ruang untuk mengatur kursi & siswa'
                     : 'Mode Lihat Denah Peserta'}
                 </span>
@@ -2658,41 +3059,44 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
             </div>
 
             {/* RIGHT SIDEBAR: KETERANGAN & KETENTUAN (Exact Match to Reference Image!) */}
-            <div className="flex flex-col gap-4">
+            <div data-denah-legend="true" className="flex flex-col gap-3">
               {/* Box 1: Keterangan */}
               <div className="rounded-2xl border-2 border-[#0a366b] overflow-hidden bg-white shadow-sm">
                 <div className="bg-[#0a366b] text-white px-4 py-2 text-sm font-black tracking-wide">
                   Keterangan :
                 </div>
-                <div className="p-3.5 space-y-3 text-xs font-bold text-slate-800">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-8 rounded-md bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shrink-0" />
+                <div data-denah-legend-items="true" className="p-3 flex flex-col gap-2.5 text-xs font-bold text-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-7 rounded-md bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shrink-0" />
                     <div className="leading-tight">
                       : Meja Peserta<br />
                       <span className="text-slate-600">({activeRoom.kursiPerMeja} Peserta)</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5">
                     <LegendChairIcon />
                     <div>: Kursi Peserta</div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-6 rounded bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shrink-0" />
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-6 rounded bg-gradient-to-b from-[#f3b562] to-[#e49b3e] border-2 border-slate-900 shrink-0" />
                     <div>: Meja Pengawas</div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <DoorSvg className="w-8 h-10 shrink-0" />
+                  <div className="flex items-center gap-2.5">
+                    <DoorSvg className="w-7 h-9 shrink-0" />
                     <div>: Pintu Masuk</div>
                   </div>
                 </div>
               </div>
 
               {/* Box 2: Ketentuan */}
-              <div className="rounded-2xl border-2 border-[#a16207] overflow-hidden bg-[#fef9c3] shadow-sm flex-1 flex flex-col">
+              <div
+                data-denah-ketentuan="true"
+                className="rounded-2xl border-2 border-[#a16207] overflow-hidden bg-[#fef9c3] shadow-sm flex-1 flex flex-col"
+              >
                 <div className="bg-[#facc15] text-slate-950 px-4 py-2 text-sm font-black tracking-wide border-b border-[#ca8a04] text-center">
                   Ketentuan :
                 </div>
-                <ol className="p-3.5 space-y-2.5 text-xs font-bold text-slate-900 list-decimal list-inside leading-snug">
+                <ol className="p-3 space-y-2 text-xs font-bold text-slate-900 list-decimal list-inside leading-snug">
                   <li>
                     Setiap meja peserta diisi oleh{' '}
                     <span className="text-red-600 font-black">{activeRoom.kursiPerMeja} peserta</span> ujian.
@@ -3092,7 +3496,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                   <th className="px-3 py-2.5">Nama Lengkap Siswa</th>
                   <th className="px-3 py-2.5">Kelas</th>
                   <th className="px-3 py-2.5">NIS / NISN</th>
-                  {canEdit && <th className="px-3 py-2.5 w-24 text-right">Aksi</th>}
+                  {canEdit && <th className="px-3 py-2.5 w-32 text-right">Aksi</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80">
@@ -3156,25 +3560,35 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                       </td>
                       {canEdit && (
                         <td className="px-3 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (row.roomId !== activeRoom.id) {
-                                setSelectedRoomId(row.roomId);
-                              }
-                              setEditingSeatNo(row.seat.nomorKursi);
-                              setSeatManualNama(row.seat.namaSiswa || '');
-                              setSeatManualKelas(row.seat.kelasSiswa || '');
-                              setSeatManualNoPeserta(row.seat.nomorPeserta || '');
-                              setSeatSelectedSiswaId(row.seat.siswaId);
-                              setSeatSearchStudent('');
-                              setSeatFilterKelas('Semua');
-                            }}
-                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-sky-600 text-slate-200 hover:text-white inline-flex items-center gap-1 cursor-pointer transition-colors"
-                          >
-                            <Edit2 className="w-3 h-3" />
-                            <span>{row.isFilled ? 'Edit' : 'Isi'}</span>
-                          </button>
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (row.roomId !== activeRoom.id) {
+                                  setSelectedRoomId(row.roomId);
+                                }
+                                setEditingSeatNo(row.seat.nomorKursi);
+                                setSeatManualNama(row.seat.namaSiswa || '');
+                                setSeatManualKelas(row.seat.kelasSiswa || '');
+                                setSeatManualNoPeserta(row.seat.nomorPeserta || '');
+                                setSeatSelectedSiswaId(row.seat.siswaId);
+                                setSeatSearchStudent('');
+                                setSeatFilterKelas('Semua');
+                              }}
+                              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-sky-600 text-slate-200 hover:text-white inline-flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              <span>{row.isFilled ? 'Edit' : 'Isi'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSeat(row.seat.nomorKursi, row.roomId)}
+                              title={`Hapus Kursi #${String(row.nomorKursi).padStart(2, '0')}`}
+                              className="p-1.5 rounded-lg bg-red-950/60 hover:bg-red-600 text-red-300 hover:text-white border border-red-800/50 inline-flex items-center justify-center cursor-pointer transition-colors"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -3326,14 +3740,25 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
 
               {/* Action Footer */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-800">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
                     onClick={handleClearSingleSeat}
-                    className="px-3 py-2 rounded-xl text-xs font-bold bg-red-950/60 hover:bg-red-900/70 text-red-200 border border-red-800/60 flex items-center gap-1.5 cursor-pointer"
+                    className="px-2.5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 cursor-pointer"
+                    title="Kosongkan nama siswa namun kursi tetap ada"
                   >
-                    <UserMinus className="w-3.5 h-3.5" />
+                    <UserMinus className="w-3.5 h-3.5 text-amber-400" />
                     <span>Kosongkan</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={activeRoom.kursiList.length <= 1}
+                    onClick={() => editingSeatNo !== null && handleDeleteSeat(editingSeatNo)}
+                    className="px-2.5 py-2 rounded-xl text-xs font-bold bg-red-950/70 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-red-200 hover:text-white border border-red-800/70 flex items-center gap-1.5 cursor-pointer transition-colors"
+                    title="Hapus kursi biru ini dari denah ruang"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus Kursi</span>
                   </button>
                   <button
                     type="button"
@@ -3343,10 +3768,10 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                       setSwapSourceSeat(seatNo);
                       showToast(`Klik kursi tujuan di denah untuk menukar posisi dengan Kursi #${seatNo}.`);
                     }}
-                    className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 flex items-center gap-1.5 cursor-pointer"
+                    className="px-2.5 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 flex items-center gap-1.5 cursor-pointer"
                   >
                     <ArrowLeftRight className="w-3.5 h-3.5" />
-                    <span>Tukar Kursi</span>
+                    <span>Tukar</span>
                   </button>
                 </div>
 

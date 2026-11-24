@@ -459,6 +459,27 @@ export interface HasilUjian {
   logKecurangan?: string[];
 }
 
+export interface AyatAlQuranIntegrasi {
+  surahAyat: string;
+  teksArab: string;
+  terjemahan: string;
+  kaitanMateri: string;
+}
+
+export interface KerangkaPembelajaranMendalam {
+  praktikPedagogis: string;
+  kemitraanPembelajaran: string;
+  lingkunganPembelajaran: string;
+  pemanfaatanDigital: string;
+}
+
+export interface PengalamanBelajarMendalam {
+  prinsipPembelajaran: string[]; // Berkesadaran (Mindful), Bermakna (Meaningful), Menggembirakan (Joyful)
+  memahami: string;
+  mengaplikasi: string;
+  merefleksi: string;
+}
+
 export interface ModulAjarContent {
   // A. INFORMASI UMUM
   informasiUmum: {
@@ -472,10 +493,17 @@ export interface ModulAjarContent {
     alokasiWaktu: string;
     materi: string;
   };
-  // B. KOMPETENSI AWAL
+  // INTEGRASI AYAT AL-QUR'AN SESUAI MATERI
+  ayatAlQuran?: AyatAlQuranIntegrasi;
+  // B. IDENTIFIKASI / KOMPETENSI AWAL
   kompetensiAwal: string;
-  // C. PROFIL / KOMPETENSI YANG DITUJU
+  // C. 8 DIMENSI PROFIL LULUSAN (PEMBELAJARAN MENDALAM) & PROFIL PELAJAR
+  dimensiProfilLulusan?: string[];
   profilPelajarPancasila: string[];
+  // DESAIN PEMBELAJARAN MENDALAM
+  capaianPembelajaran?: string;
+  lintasDisiplinIlmu?: string;
+  kerangkaPembelajaran?: KerangkaPembelajaranMendalam;
   // D. SARANA DAN PRASARANA
   saranaPrasarana: string[]; // Laptop, Internet, etc.
   // E. TARGET PESERTA DIDIK
@@ -488,6 +516,8 @@ export interface ModulAjarContent {
   pemahamanBermakna: string;
   // I. PERTANYAAN PEMANTIK
   pertanyaanPemantik: string[];
+  // PENGALAMAN BELAJAR MENDALAM (MEMAHAMI, MENGAPLIKASI, MEREFLEKSI)
+  pengalamanBelajarMendalam?: PengalamanBelajarMendalam;
   // J. KEGIATAN PEMBELAJARAN
   kegiatanPembelajaran: {
     pendahuluan: { deskripsi: string; durasi: string };

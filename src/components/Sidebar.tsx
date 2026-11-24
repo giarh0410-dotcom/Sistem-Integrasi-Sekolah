@@ -117,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'database',
       label: 'Database Sekolah',
       icon: <Users className="w-5 h-5" />,
-      desc: 'Siswa, Guru, Staf, Mapel & Ekskul'
+      desc: 'Siswa, Guru, Staf, Kelas, Mapel & Ekskul'
     },
     {
       id: 'absensi',
@@ -328,6 +328,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                         <span className="text-[9px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded font-mono">
                           {stafCount}
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setActiveTab('database');
+                          setDatabaseSubTab('rombel');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                          databaseSubTab === 'rombel'
+                            ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>Data Kelas</span>
+                        </div>
+                        <span className="text-[9px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                          {rombelCount}
                         </span>
                       </button>
 

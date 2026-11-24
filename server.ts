@@ -1,8 +1,13 @@
 import express from 'express';
 import path from 'path';
-import { google } from 'googleapis';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { suggestAyatForMateri, PRINSIP_PEMBELAJARAN_MENDALAM } from './src/lib/quranAyatPresets';
+import { buildOfficialCpData, formatCpToPlainText } from './src/lib/capaianPembelajaranHelper';
+import { buildOfficialAtpData, formatAtpToPlainText } from './src/lib/atpHelper';
+import { buildOfficialKktpData, formatKktpToPlainText } from './src/lib/kktpHelper';
+import { buildOfficialProtaData, formatProtaToPlainText } from './src/lib/protaHelper';
+import { buildOfficialProsemData, formatProsemToPlainText } from './src/lib/prosemHelper';
 
 dotenv.config();
 
@@ -10,6 +15,10 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
+
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
 
 function getGenAI() {
   const currentKey = process.env.GEMINI_API_KEY || '';
@@ -33,7 +42,7 @@ async function generateContentWithFallback(options: { model: string; contents: s
   }
 
   const client = getGenAI();
-  const primaryModel = options.model || 'gemini-3.8-flash';
+  const primaryModel = options.model || 'gemini-4-hydrogen';
   const models = [primaryModel, 'gemini-3.1-flash-lite'];
   const uniqueModels = Array.from(new Set(models.filter(Boolean)));
   
@@ -74,6 +83,7 @@ app.post('/api/export-sheets', async (req, res) => {
       });
     }
 
+    const { google } = await import('googleapis');
     const oauth2Client = new google.auth.OAuth2();
     oauth2Client.setCredentials({ access_token: accessToken });
 
@@ -668,7 +678,7 @@ KEMBALIKAN HANYA ARRAY JSON VALID (tanpa teks pengantar / penutup):
 ]`;
 
       const response = await generateContentWithFallback({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-4-hydrogen',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -740,6 +750,7 @@ app.post('/api/ai/generate-administrasi', async (req, res) => {
   let kelas = '';
   let topik = '';
   let tahunAjaran = '';
+  let semester = 'Ganjil';
   try {
     const body = req.body || {};
     tipe = body.tipe;
@@ -747,17 +758,29 @@ app.post('/api/ai/generate-administrasi', async (req, res) => {
     kelas = body.kelas;
     topik = body.topik;
     tahunAjaran = body.tahunAjaran;
+    semester = body.semester || 'Ganjil';
 
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (tipe === 'modul_ajar') {
-      const prompt = `Anda adalah konsultan Kurikulum Merdeka Kementerian Pendidikan Indonesia.
-Buatkan Modul Ajar lengkap Kurikulum Merdeka yang sangat detail, profesional, berlandaskan prinsip deep learning (Mindful, Meaningful, Joyful) dan ramah inklusi dalam format JSON terstruktur yang valid.
+      const suggestedAyat = suggestAyatForMateri(mataPelajaran, topik);
+      const topikLabel = topik || 'Materi Pokok Kurikulum Nasional';
+      const prompt = `Anda adalah pakar Pembelajaran Mendalam (Deep Learning) Kemendikdasmen RI sekaligus pendidik di SMP Islam Modern Al Fakhir.
+Buatkan **Modul Ajar Pembelajaran Mendalam (Deep Learning)** yang sangat detail, profesional, ramah inklusi, berlandaskan 3 prinsip Pembelajaran Mendalam (Berkesadaran/Mindful, Bermakna/Meaningful, Menggembirakan/Joyful), mengacu pada **8 Dimensi Profil Lulusan**, menggunakan pengalaman belajar bertahap (**Memahami, Mengaplikasi, Merefleksi**), serta **WAJIB menyisipkan 1 Ayat Al-Qur'an yang sahih, tepat, dan benar-benar relevan dengan materi yang diajarkan** dalam format JSON terstruktur yang valid.
 
 Mata Pelajaran: "${mataPelajaran}"
 Kelas: "${kelas}"
-Topik/Materi: "${topik || 'Standard Kurikulum Merdeka'}"
+Topik/Materi: "${topikLabel}"
 Tahun Ajaran: "${tahunAjaran || '2026/2027'}"
+
+Ketentuan Integrasi Ayat Al-Qur'an:
+- Pilih ayat Al-Qur'an yang paling kontekstual dengan materi "${topikLabel}" pada mata pelajaran "${mataPelajaran}" (jika relevan boleh merujuk seperti ${suggestedAyat.surahAyat} atau ayat Al-Qur'an sahih lainnya yang lebih spesifik).
+- Pastikan "teksArab" ditulis dengan huruf Arab Al-Qur'an berharakat yang benar dan sahih.
+- Pastikan "terjemahan" akurat sesuai terjemahan Al-Qur'an Kemenag RI.
+- Pastikan "kaitanMateri" menjelaskan secara mendalam hubungan/tadabbur ayat tersebut dengan materi "${topikLabel}" dan bagaimana nilai ayat dihidupkan selama pembelajaran.
+
+Ketentuan 8 Dimensi Profil Lulusan (pilih 3-5 yang paling relevan dari daftar ini):
+["Keimanan dan Ketakwaan terhadap Tuhan YME", "Kewargaan", "Penalaran Kritis", "Kreativitas", "Kolaborasi", "Kemandirian", "Kesehatan", "Komunikasi"]
 
 Format output HARUS berupa JSON object valid yang memiliki struktur berikut (jangan gunakan pembungkus markdown, langsung kembalikan raw JSON):
 {
@@ -770,184 +793,979 @@ Format output HARUS berupa JSON object valid yang memiliki struktur berikut (jan
     "semester": "Ganjil",
     "tahunAjaran": "${tahunAjaran || '2026/2027'}",
     "alokasiWaktu": "2 JP (2 x 40 Menit)",
-    "materi": "${topik}"
+    "materi": "${topikLabel}"
   },
-  "kompetensiAwal": "Deskripsi detail tentang kompetensi awal murid sebelum memulai materi ini.",
-  "profilPelajarPancasila": ["Beriman, Bertakwa kepada Tuhan YME, dan Berakhlak Mulia", "Bernalar Kritis", "Kreatif", "Gotong Royong"],
-  "saranaPrasarana": ["Laptop/Chromebook", "Koneksi Internet", "Proyektor LCD", "Slide Presentasi Interaktif", "Buku Paket Pendamping"],
+  "ayatAlQuran": {
+    "surahAyat": "Contoh: QS. Nama Surah (No): Ayat",
+    "teksArab": "Teks Arab ayat Al-Qur'an berharakat lengkap dan sahih",
+    "terjemahan": "Terjemahan Bahasa Indonesia yang akurat sesuai Kemenag RI",
+    "kaitanMateri": "Uraian tadabbur mendalam mengenai kaitan ayat Al-Qur'an dengan materi ${topikLabel} dan penerapannya dalam pembelajaran."
+  },
+  "kompetensiAwal": "Identifikasi kesiapan belajar, pengetahuan prasyarat, minat, dan kebutuhan inklusi peserta didik sebelum mempelajari ${topikLabel}.",
+  "dimensiProfilLulusan": ["Keimanan dan Ketakwaan terhadap Tuhan YME", "Penalaran Kritis", "Kreativitas", "Kolaborasi", "Komunikasi"],
+  "profilPelajarPancasila": ["Keimanan dan Ketakwaan terhadap Tuhan YME", "Penalaran Kritis", "Kreativitas", "Kolaborasi", "Komunikasi"],
+  "capaianPembelajaran": "Uraian Capaian Pembelajaran (CP) Fase D yang relevan untuk mata pelajaran ${mataPelajaran} pada materi ${topikLabel}.",
+  "lintasDisiplinIlmu": "Keterkaitan materi ${topikLabel} dengan mata pelajaran/disiplin ilmu lain (termasuk PAI & Budi Pekerti serta konteks kehidupan nyata).",
+  "kerangkaPembelajaran": {
+    "praktikPedagogis": "Model dan strategi pedagogis mendalam (misalnya Problem-Based / Inquiry / Project-Based Learning) yang menumbuhkan pemahaman bermakna.",
+    "kemitraanPembelajaran": "Kolaborasi dengan guru mapel serumpun, orang tua, praktisi, atau komunitas sekolah.",
+    "lingkunganPembelajaran": "Pengaturan ruang fisik (kelas/lab/lingkungan sekolah), ruang virtual, serta budaya belajar yang aman, inklusif, dan saling menghargai.",
+    "pemanfaatanDigital": "Pemanfaatan media digital interaktif, simulasi, LKPD digital, atau platform asesmen daring yang mendukung pembelajaran."
+  },
+  "saranaPrasarana": ["Laptop/Chromebook", "Koneksi Internet", "Proyektor LCD", "Slide Presentasi & Simulasi Interaktif", "Mushaf Al-Qur'an / Aplikasi Qur'an Digital", "LKPD Pembelajaran Mendalam"],
   "targetPesertaDidik": "Reguler",
-  "modelPembelajaran": "Problem Based Learning (PBL) / Project Based Learning",
+  "modelPembelajaran": "Problem Based Learning (Pembelajaran Mendalam)",
   "tujuanPembelajaran": [
-    "Menjelaskan konsep dasar dari ${topik} dengan tepat.",
-    "Menganalisis penerapan ${topik} dalam kehidupan nyata.",
-    "Menunjukkan karakter bernalar kritis dan kreatif melalui penugasan mandiri maupun kelompok."
+    "Menjelaskan konsep esensial ${topikLabel} serta mengaitkannya dengan nilai ayat Al-Qur'an secara mendalam.",
+    "Menganalisis dan mengaplikasikan konsep ${topikLabel} untuk memecahkan permasalahan nyata secara kolaboratif.",
+    "Merefleksikan makna pembelajaran ${topikLabel} dan menumbuhkan karakter unggul sesuai Dimensi Profil Lulusan."
   ],
-  "pemahamanBermakna": "Penjelasan mengapa materi ${topik} ini bermakna bagi kehidupan siswa di masa depan.",
+  "pemahamanBermakna": "Penjelasan kontekstual mengapa penguasaan ${topikLabel} sangat bermakna bagi kehidupan peserta didik dan kontribusinya bagi kemaslahatan umat.",
   "pertanyaanPemantik": [
-    "Apa yang pertama kali terlintas di pikiran kalian saat mendengar tentang ${topik}?",
-    "Bagaimana jika konsep ${topik} ini tidak pernah diterapkan dalam kehidupan sehari-hari?"
+    "Pertanyaan pemantik berbasis fenomena nyata terkait ${topikLabel} yang mendorong rasa ingin tahu?",
+    "Bagaimana nilai ayat Al-Qur'an yang kita tadabburi hari ini membimbing sikap kita saat menerapkan ${topikLabel}?"
   ],
+  "pengalamanBelajarMendalam": {
+    "prinsipPembelajaran": ["Berkesadaran (Mindful)", "Bermakna (Meaningful)", "Menggembirakan (Joyful)"],
+    "memahami": "Tahap Memahami (Berkesadaran & Bermakna): Aktivitas mengkonstruksi konsep esensial ${topikLabel} secara mendalam melalui pengamatan kasus nyata, tadabbur ayat Al-Qur'an, dan diskusi konsep.",
+    "mengaplikasi": "Tahap Mengaplikasi (Bermakna & Menggembirakan): Aktivitas menerapkan konsep ${topikLabel} pada konteks/proyek nyata secara kolaboratif, eksploratif, dan terdiferensiasi.",
+    "merefleksi": "Tahap Merefleksi (Berkesadaran & Bermakna): Aktivitas mengevaluasi proses dan hasil belajar, memaknai hikmah ayat Al-Qur'an, serta merencanakan tindak lanjut pengembangan diri."
+  },
   "kegiatanPembelajaran": {
-    "pendahuluan": { "deskripsi": "1. Guru mengucapkan salam dan berdoa bersama.\\n2. Guru memeriksa kehadiran siswa.\\n3. Apersepsi: Mengaitkan materi dengan kehidupan sehari-hari.\\n4. Guru menyampaikan tujuan pembelajaran.", "durasi": "15 Menit" },
-    "inti": { "deskripsi": "Tahap 1: Orientasi Masalah\\n- Siswa menyimak tayangan presentasi tentang kasus nyata ${topik}.\\n\\nTahap 2: Mengorganisasikan Siswa\\n- Siswa dibagi kelompok 4-5 orang secara inklusif.\\n\\nTahap 3: Membimbing Penyelidikan\\n- Guru membimbing penyelidikan kelompok dengan diferensiasi proses bagi murid yang membutuhkan bantuan lebih.\\n\\nTahap 4: Mengembangkan & Menyajikan Hasil Karya\\n- Perwakilan kelompok mempresentasikan hasil diskusi.", "durasi": "50 Menit" },
-    "penutup": { "deskripsi": "1. Siswa bersama guru menyimpulkan pembelajaran hari ini.\\n2. Refleksi bersama mengenai apa yang sudah dipelajari.\\n3. Guru memberikan apresiasi dan informasi materi pertemuan selanjutnya.\\n4. Doa penutup dan salam.", "durasi": "15 Menit" }
+    "pendahuluan": { "deskripsi": "1. Salam, doa bersama, dan pengkondisian suasana kelas yang nyaman serta berkesadaran (Mindful).\\n2. Tadabbur singkat Ayat Al-Qur'an yang relevan dengan materi ${topikLabel}.\\n3. Apersepsi kontekstual, pertanyaan pemantik, dan asesmen awal kesiapan belajar.\\n4. Penyampaian tujuan pembelajaran mendalam dan alur aktivitas hari ini.", "durasi": "15 Menit" },
+    "inti": { "deskripsi": "A. TAHAP MEMAHAMI (Berkesadaran & Bermakna)\\n- Peserta didik mengeksplorasi konsep esensial ${topikLabel} melalui studi kasus/simulasi interaktif dan diskusi terpimpin.\\n\\nB. TAHAP MENGAPLIKASI (Bermakna & Menggembirakan)\\n- Peserta didik bekerja dalam kelompok inklusif untuk merancang solusi/proyek nyata berbasis ${topikLabel} dengan diferensiasi proses dan produk.\\n- Kelompok mempresentasikan karya dan menerima umpan balik konstruktif.\\n\\nC. TAHAP MEREFLEKSI (Berkesadaran)\\n- Peserta didik menguji kembali pemahaman, mengaitkan temuan dengan tadabbur ayat Al-Qur'an, dan menyimpulkan nilai guna materi.", "durasi": "50 Menit" },
+    "penutup": { "deskripsi": "1. Guru bersama peserta didik merangkum konsep inti dan hikmah ayat Al-Qur'an.\\n2. Refleksi diri peserta didik terkait pengalaman belajar (Mindful, Meaningful, Joyful).\\n3. Tindak lanjut (pengayaan/remedial) dan informasi materi pertemuan berikutnya.\\n4. Doa penutup majelis dan salam.", "durasi": "15 Menit" }
   },
   "asesmen": {
-    "diagnostik": "Tanya jawab non-kognitif sebelum pembelajaran dimulai untuk mengukur kesiapan belajar.",
-    "formatif": "Observasi sikap saat diskusi kelompok dan rubrik performa presentasi.",
-    "sumatif": "Tes tertulis berupa soal pemecahan masalah atau proyek sederhana di akhir bab.",
-    "teknik": "Tertulis & Performa Kelompok",
-    "instrumen": "Lembar Kerja Siswa (LKPD) & Rubrik Penilaian Presentasi",
-    "rubrik": "Skor 4: Sangat Baik (Memahami seluruh konsep dan aktif)\\nSkor 3: Baik (Memahami konsep dasar dan berpartisipasi)\\nSkor 2: Cukup (Kurang memahami konsep dasar, pasif)\\nSkor 1: Perlu Bimbingan (Tidak memahami konsep)",
-    "kriteriaPenilaian": "Siswa dinyatakan tuntas jika mencapai minimal skor 3 (Baik) pada seluruh kriteria penilaian asesmen formatif."
+    "diagnostik": "Asesmen pada Awal Pembelajaran: Tanya jawab pemantik, kuis singkat prasyarat, dan pemetaan kesiapan serta gaya belajar peserta didik.",
+    "formatif": "Asesmen pada Proses Pembelajaran: Observasi penalaran kritis, kolaborasi kelompok, umpan balik sejawat, dan pemeriksaan LKPD selama tahap Memahami & Mengaplikasi.",
+    "sumatif": "Asesmen pada Akhir Pembelajaran: Evaluasi proyek/unjuk karya nyata dan soal studi kasus HOTS mengenai ${topikLabel}.",
+    "teknik": "Observasi Kinerja, Penilaian Proyek/Produk, dan Tes Uraian Kontekstual",
+    "instrumen": "LKPD Pembelajaran Mendalam, Lembar Observasi Dimensi Profil Lulusan, dan Rubrik Analitik",
+    "rubrik": "Mahir (Skor 4): Menguasai konsep ${topikLabel} secara mendalam, mampu mengaplikasikan pada kasus baru, dan mengaitkannya dengan nilai Al-Qur'an.\\nCakap (Skor 3): Memahami konsep inti dengan tepat dan mampu menerapkannya dalam diskusi/proyek.\\nLayak (Skor 2): Memahami sebagian konsep dasar namun masih memerlukan bimbingan saat aplikasi.\\nBaru Berkembang (Skor 1): Membutuhkan pendampingan intensif untuk memahami konsep dasar.",
+    "kriteriaPenilaian": "Peserta didik dinyatakan tuntas mencapai tujuan pembelajaran mendalam jika minimal mencapai predikat Cakap (Skor 3) pada aspek Memahami, Mengaplikasi, dan Merefleksi."
   },
   "diferensiasi": {
-    "konten": "Menyediakan bahan bacaan dalam bentuk teks, infografis, maupun video penjelasan tambahan untuk siswa visual/auditori.",
-    "proses": "Memberikan pendampingan lebih intensif bagi siswa kelompok slow learner dan tantangan mandiri bagi kelompok fast learner.",
-    "produk": "Siswa bebas memilih menyajikan hasil laporan kelompok dalam bentuk poster, infografis, file presentasi PPT, atau tulisan tangan."
+    "konten": "Menyediakan variasi sumber belajar (teks terstruktur, infografis visual, simulasi digital, serta panduan audio) sesuai kesiapan dan profil belajar.",
+    "proses": "Pendampingan scaffolding bagi peserta didik yang membutuhkan dukungan tambahan (inklusi) serta tantangan eksplorasi terbuka bagi peserta didik dengan kesiapan tinggi.",
+    "produk": "Peserta didik memilih bentuk karya akhir yang sesuai minat (laporan analisis, poster infografis, simulasi digital, atau presentasi lisan)."
   },
-  "remedial": "Bimbingan individu atau pengerjaan ulang soal-soal asesmen formatif dengan penyederhanaan instruksi untuk siswa yang belum tuntas.",
-  "pengayaan": "Pemberian tugas eksploratif mandiri berupa analisis studi kasus lanjutan yang lebih kompleks bagi siswa yang mencapai nilai di atas rata-rata.",
-  "refleksiGuru": "Apakah tujuan pembelajaran telah tercapai secara efektif?\\nKendala apa yang paling dirasakan oleh siswa saat berdiskusi?\\nBagaimana keefektifan akomodasi inklusif yang disiapkan?",
-  "refleksiPesertaDidik": "Bagian mana dari materi ini yang paling kalian senangi?\\nApakah kalian merasa terbantu dengan metode belajar kelompok ini?\\nApa tantangan terbesar yang kalian hadapi hari ini?",
+  "remedial": "Pendampingan personal atau kelompok kecil menggunakan media visual konkret dan penyederhanaan tahapan latihan hingga peserta didik menguasai konsep inti ${topikLabel}.",
+  "pengayaan": "Tantangan proyek eksploratif lanjutan berupa studi kasus lintas disiplin atau peran sebagai tutor sebaya dalam diskusi kelas.",
+  "refleksiGuru": "1. Sejauh mana prinsip Berkesadaran, Bermakna, dan Menggembirakan terwujud sepanjang sesi?\\n2. Apakah integrasi tadabbur Ayat Al-Qur'an membantu siswa memaknai materi ${topikLabel} lebih dalam?\\n3. Bagian mana yang perlu disesuaikan agar peserta didik inklusi lebih optimal berpartisipasi?",
+  "refleksiPesertaDidik": "1. Pemahaman baru apa yang paling bermakna dari materi ${topikLabel} hari ini?\\n2. Hikmah apa yang kamu petik dari Ayat Al-Qur'an yang dibahas bersama?\\n3. Bagaimana kamu akan menerapkan ilmu ini dalam kehidupan sehari-hari?",
   "lampiran": {
-    "lkpd": "Lembar Kerja Peserta Didik berisi petunjuk pengerjaan studi kasus ${topik} secara berkelompok beserta lembar jawaban diskusi.",
-    "bahanBacaan": "Artikel ringkas pengantar ${topik}, glosarium istilah-istilah penting, dan rangkuman poin-poin pembelajaran utama.",
-    "rubrik": "Rubrik Penilaian Sikap (Gotong Royong, Bernalar Kritis) dan Rubrik Penilaian Produk Presentasi Kelompok.",
-    "instrumenAsesmen": "3 Butir soal formatif pilihan ganda kompleks dan 2 butir soal esai studi kasus.",
-    "daftarPustaka": "Buku Paket Informatika Kelas VII Kemendikbudristek 2022, artikel ilmiah, dan sumber digital terpercaya."
+    "lkpd": "Lembar Kerja Pembelajaran Mendalam (Tahap Memahami, Mengaplikasi, dan Merefleksi) beserta kolom tadabbur nilai Al-Qur'an untuk materi ${topikLabel}.",
+    "bahanBacaan": "Ringkasan konsep esensial ${topikLabel}, glosarium istilah kunci, dan catatan tadabbur Ayat Al-Qur'an relevan.",
+    "rubrik": "Rubrik Penilaian Analitik (Baru Berkembang, Layak, Cakap, Mahir) untuk asesmen proses, produk, dan dimensi profil lulusan.",
+    "instrumenAsesmen": "3 soal penalaran HOTS kontekstual dan 1 tugas proyek kolaboratif tentang ${topikLabel}.",
+    "daftarPustaka": "Buku Panduan Guru & Siswa ${mataPelajaran} Kemendikdasmen, Panduan Pembelajaran Mendalam (Deep Learning) Kemendikdasmen 2025, serta Al-Qur'an dan Terjemahannya Kemenag RI."
   }
 }
 
-Pastikan isi Modul Ajar sangat lengkap, kontekstual, mendalam, dan menggunakan Bahasa Indonesia yang profesional. Jangan tambahkan komentar teks apapun di luar JSON tersebut agar JSON dapat diparse langsung.`;
+Pastikan seluruh isi Modul Ajar Pembelajaran Mendalam benar-benar spesifik, mendalam, aplikatif untuk materi "${topikLabel}", dan menggunakan Bahasa Indonesia yang profesional. Jangan tambahkan komentar teks apapun di luar JSON tersebut agar JSON dapat diparse langsung.`;
 
       const response = await generateContentWithFallback({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-4-hydrogen',
         contents: prompt,
         config: {
           responseMimeType: 'application/json'
         }
       });
 
-      const parsedData = JSON.parse(response.text);
+      const parsedData = JSON.parse(response.text || '{}');
+      // Pastikan integrasi Ayat Al-Qur'an & field Pembelajaran Mendalam selalu terisi valid
+      if (!parsedData.ayatAlQuran || !parsedData.ayatAlQuran.surahAyat || !parsedData.ayatAlQuran.teksArab) {
+        parsedData.ayatAlQuran = {
+          surahAyat: parsedData.ayatAlQuran?.surahAyat || suggestedAyat.surahAyat,
+          teksArab: parsedData.ayatAlQuran?.teksArab || suggestedAyat.teksArab,
+          terjemahan: parsedData.ayatAlQuran?.terjemahan || suggestedAyat.terjemahan,
+          kaitanMateri: parsedData.ayatAlQuran?.kaitanMateri || suggestedAyat.kaitanMateri,
+        };
+      }
+      if (!Array.isArray(parsedData.dimensiProfilLulusan) || parsedData.dimensiProfilLulusan.length === 0) {
+        parsedData.dimensiProfilLulusan = parsedData.profilPelajarPancasila?.length
+          ? parsedData.profilPelajarPancasila
+          : ['Keimanan dan Ketakwaan terhadap Tuhan YME', 'Penalaran Kritis', 'Kreativitas', 'Kolaborasi', 'Komunikasi'];
+      }
+      if (!parsedData.pengalamanBelajarMendalam) {
+        parsedData.pengalamanBelajarMendalam = {
+          prinsipPembelajaran: [...PRINSIP_PEMBELAJARAN_MENDALAM],
+          memahami: `Peserta didik mengeksplorasi konsep inti ${topikLabel} dan mentadabburi ${parsedData.ayatAlQuran.surahAyat} secara berkesadaran dan bermakna.`,
+          mengaplikasi: `Peserta didik menerapkan konsep ${topikLabel} untuk memecahkan studi kasus/proyek nyata secara kolaboratif dan menggembirakan.`,
+          merefleksi: `Peserta didik merefleksikan pemahaman, sikap, dan kebermanfaatan ${topikLabel} dalam kehidupan sehari-hari.`,
+        };
+      }
       return res.json({ success: true, isJson: true, data: parsedData });
+    }
+
+    if (tipe === 'cp') {
+      const baseCp = buildOfficialCpData({
+        mataPelajaran,
+        kelas,
+        topik,
+        tahunAjaran: tahunAjaran || '2026/2027',
+      });
+      const prompt = `Anda adalah pakar Kurikulum Nasional & BSKAP Kemendikdasmen RI sekaligus pendidik di SMP Islam Modern Al Fakhir.
+Buatkan dokumen **CAPAIAN PEMBELAJARAN (CP)** resmi standar BSKAP Kemendikdasmen (Pendekatan Pembelajaran Mendalam) dalam format JSON valid yang rapi dan kontekstual.
+
+Mata Pelajaran: "${mataPelajaran}"
+Kelas / Fase: "${kelas}" (${baseCp.identitas.fase})
+Fokus Materi / Topik: "${topik || 'Seluruh Elemen Fase D'}"
+Tahun Ajaran: "${tahunAjaran || '2026/2027'}"
+
+PENTING:
+- Ini adalah dokumen CAPAIAN PEMBELAJARAN (CP), BUKAN Modul Ajar/RPP. Jangan sertakan identitas modul atau langkah pendahuluan/inti/penutup!
+- Gunakan struktur resmi BSKAP Kemendikdasmen: Rasional, Tujuan Mata Pelajaran, Karakteristik, Capaian Pembelajaran Umum Akhir Fase, Capaian Pembelajaran Per Elemen (minimal 3–4 elemen resmi mata pelajaran ${mataPelajaran}, dengan penekanan khusus pada topik "${topik || mataPelajaran}"), 8 Dimensi Profil Lulusan, serta Integrasi Nilai Islami (Ayat Al-Qur'an relevan).
+- Kembalikan RAW JSON valid tanpa markdown fence sesuai skema berikut:
+{
+  "formatType": "cp_resmi",
+  "identitas": {
+    "mataPelajaran": "${mataPelajaran}",
+    "satuanPendidikan": "SMP Islam Modern Al Fakhir",
+    "fase": "${baseCp.identitas.fase}",
+    "kelas": "${kelas}",
+    "tahunAjaran": "${tahunAjaran || '2026/2027'}",
+    "semester": "Ganjil",
+    "namaPenyusun": "Guru Mata Pelajaran",
+    "topikFokus": "${topik || `Seluruh Elemen ${mataPelajaran}`}",
+    "referensiRegulasi": "Standar Capaian Pembelajaran (CP) BSKAP Kemendikdasmen — Pembelajaran Mendalam"
+  },
+  "rasional": "Uraian mendalam rasional mata pelajaran dan urgensi topik ${topik || mataPelajaran}.",
+  "tujuanMataPelajaran": ["Tujuan 1", "Tujuan 2", "Tujuan 3", "Tujuan 4"],
+  "karakteristik": "Karakteristik khas mata pelajaran ${mataPelajaran} beserta penjelasan ruang lingkup elemennya.",
+  "capaianUmumFase": "Pada akhir ${baseCp.identitas.fase}, peserta didik mampu ...",
+  "elemenList": [
+    {
+      "elemen": "Nama Elemen Resmi BSKAP",
+      "deskripsiCp": "Rumusan Capaian Pembelajaran resmi dan mendalam untuk elemen ini (kaitkan dengan ${topik || mataPelajaran}).",
+      "kompetensiInti": "Ringkasan kompetensi kunci",
+      "lingkupMateri": "Lingkup materi utama terkait"
+    }
+  ],
+  "dimensiProfilLulusan": ["Keimanan dan Ketakwaan terhadap Tuhan YME", "Penalaran Kritis", "Kreativitas", "Kolaborasi", "Komunikasi"],
+  "integrasiNilaiIslami": {
+    "surahAyat": "${baseCp.integrasiNilaiIslami.surahAyat}",
+    "teksArab": "${baseCp.integrasiNilaiIslami.teksArab}",
+    "terjemahan": "${baseCp.integrasiNilaiIslami.terjemahan}",
+    "relevansiCp": "Keterkaitan ayat Al-Qur'an dengan pencapaian kompetensi pada mata pelajaran ${mataPelajaran} topik ${topik || mataPelajaran}."
+  }
+}`;
+
+      const response = await generateContentWithFallback({
+        model: 'gemini-4-hydrogen',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json'
+        }
+      });
+
+      const parsedCp = JSON.parse(response.text || '{}');
+      const finalCp = {
+        formatType: 'cp_resmi' as const,
+        identitas: {
+          ...baseCp.identitas,
+          ...(parsedCp.identitas || {}),
+          mataPelajaran: mataPelajaran || baseCp.identitas.mataPelajaran,
+          kelas: kelas || baseCp.identitas.kelas,
+          topikFokus: topik || parsedCp.identitas?.topikFokus || baseCp.identitas.topikFokus,
+        },
+        rasional: parsedCp.rasional || baseCp.rasional,
+        tujuanMataPelajaran: Array.isArray(parsedCp.tujuanMataPelajaran) && parsedCp.tujuanMataPelajaran.length > 0
+          ? parsedCp.tujuanMataPelajaran
+          : baseCp.tujuanMataPelajaran,
+        karakteristik: parsedCp.karakteristik || baseCp.karakteristik,
+        capaianUmumFase: parsedCp.capaianUmumFase || baseCp.capaianUmumFase,
+        elemenList: Array.isArray(parsedCp.elemenList) && parsedCp.elemenList.length > 0
+          ? parsedCp.elemenList
+          : baseCp.elemenList,
+        dimensiProfilLulusan: Array.isArray(parsedCp.dimensiProfilLulusan) && parsedCp.dimensiProfilLulusan.length > 0
+          ? parsedCp.dimensiProfilLulusan
+          : baseCp.dimensiProfilLulusan,
+        integrasiNilaiIslami: {
+          surahAyat: parsedCp.integrasiNilaiIslami?.surahAyat || baseCp.integrasiNilaiIslami.surahAyat,
+          teksArab: parsedCp.integrasiNilaiIslami?.teksArab || baseCp.integrasiNilaiIslami.teksArab,
+          terjemahan: parsedCp.integrasiNilaiIslami?.terjemahan || baseCp.integrasiNilaiIslami.terjemahan,
+          relevansiCp: parsedCp.integrasiNilaiIslami?.relevansiCp || baseCp.integrasiNilaiIslami.relevansiCp,
+        },
+      };
+
+      return res.json({
+        success: true,
+        isJson: true,
+        formatType: 'cp_resmi',
+        data: finalCp,
+        content: formatCpToPlainText(finalCp),
+      });
+    }
+
+    if (tipe === 'atp') {
+      const baseAtp = buildOfficialAtpData({
+        mataPelajaran,
+        kelas,
+        topik,
+        tahunAjaran: tahunAjaran || '2026/2027',
+      });
+      const prompt = `Anda adalah pakar Kurikulum Nasional & BSKAP Kemendikdasmen RI sekaligus pendidik di SMP Islam Modern Al Fakhir.
+Buatkan dokumen resmi **ALUR TUJUAN PEMBELAJARAN (ATP)** yang terstruktur, logis, berjenjang dari konkret ke abstrak, dan siap cetak dalam format JSON valid.
+
+Mata Pelajaran: "${mataPelajaran}"
+Kelas / Fase: "${kelas}" (${baseAtp.identitas.fase})
+Fokus Topik / Materi Utama: "${topik || baseAtp.identitas.fokusTopik}"
+Beban Belajar Standar: ${baseAtp.identitas.jpPerMinggu} JP / Minggu
+Tahun Ajaran: "${tahunAjaran || '2026/2027'}"
+
+PENTING:
+- Ini adalah dokumen resmi ALUR TUJUAN PEMBELAJARAN (ATP), BUKAN Modul Ajar.
+- Susun minimal 3–4 Tujuan Pembelajaran (TP) untuk Semester "Ganjil" dan 3–4 TP untuk Semester "Genap" yang selaras dengan Elemen CP Fase D dan fokus topik "${topik || baseAtp.identitas.fokusTopik}".
+- Setiap TP wajib memiliki kodeTp unik (contoh: INF-7.1), rumusan kompetensi + lingkup materi operasional, materiEsensial, alokasiJp realistis, dimensiProfil (dari 8 Dimensi Profil Lulusan), kataKunci, dan strategiAsesmen.
+- Sertakan 4–6 istilah kunci pada "glosarium" dan integrasi ayat Al-Qur'an yang relevan dengan materi.
+- Kembalikan RAW JSON valid tanpa markdown fence sesuai skema berikut:
+{
+  "formatType": "atp_resmi",
+  "identitas": {
+    "mataPelajaran": "${mataPelajaran}",
+    "satuanPendidikan": "SMP Islam Modern Al Fakhir",
+    "fase": "${baseAtp.identitas.fase}",
+    "kelas": "${kelas}",
+    "tahunAjaran": "${tahunAjaran || '2026/2027'}",
+    "namaPenyusun": "Guru Mata Pelajaran",
+    "jpPerMinggu": ${baseAtp.identitas.jpPerMinggu},
+    "fokusTopik": "${topik || baseAtp.identitas.fokusTopik}",
+    "referensiRegulasi": "Panduan Pembelajaran & Asesmen Kurikulum Nasional Kemendikdasmen • Pembelajaran Mendalam"
+  },
+  "rasionalAlur": "Penjelasan logika pengurutan ATP dari konsep fondasi menuju aplikasi mendalam.",
+  "capaianPembelajaranUmum": "Ringkasan Capaian Pembelajaran (CP) umum Fase D untuk mata pelajaran ini.",
+  "daftarAlur": [
+    {
+      "kodeTp": "TP-1",
+      "semester": "Ganjil",
+      "elemen": "Nama Elemen CP",
+      "tujuanPembelajaran": "Peserta didik mampu ...",
+      "materiEsensial": "Lingkup materi pokok dan sub-topik",
+      "alokasiJp": 12,
+      "dimensiProfil": "Penalaran Kritis, Kreativitas, Kolaborasi",
+      "kataKunci": "Kata kunci 1, Kata kunci 2",
+      "strategiAsesmen": "Strategi pembelajaran mendalam dan asesmen formatif/sumatif"
+    }
+  ],
+  "glosarium": [
+    { "istilah": "Istilah Kunci", "definisi": "Definisi singkat dan jelas." }
+  ],
+  "catatanImplementasi": "Catatan diferensiasi, fleksibilitas pengurutan, dan keterkaitan dengan Modul Ajar/KKTP.",
+  "integrasiNilaiIslami": {
+    "surahAyat": "${baseAtp.integrasiNilaiIslami.surahAyat}",
+    "teksArab": "${baseAtp.integrasiNilaiIslami.teksArab}",
+    "terjemahan": "${baseAtp.integrasiNilaiIslami.terjemahan}",
+    "relevansiAtp": "Relevansi ayat Al-Qur'an terhadap alur tujuan pembelajaran."
+  }
+}`;
+
+      const response = await generateContentWithFallback({
+        model: 'gemini-4-hydrogen',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const parsedAtp = JSON.parse(response.text || '{}');
+      const normalizedAlur =
+        Array.isArray(parsedAtp.daftarAlur) && parsedAtp.daftarAlur.length >= 3
+          ? parsedAtp.daftarAlur.map((row: any, idx: number) => ({
+              kodeTp: String(row.kodeTp || `TP-${idx + 1}`),
+              semester:
+                row.semester === 'Genap' ||
+                String(row.semester).toLowerCase().includes('genap') ||
+                String(row.semester) === '2' ||
+                String(row.semester) === 'II'
+                  ? ('Genap' as const)
+                  : ('Ganjil' as const),
+              elemen: String(row.elemen || `Elemen ${idx + 1}`),
+              tujuanPembelajaran: String(row.tujuanPembelajaran || '-'),
+              materiEsensial: String(row.materiEsensial || '-'),
+              alokasiJp: Math.max(2, Number(row.alokasiJp) || baseAtp.identitas.jpPerMinggu * 3),
+              dimensiProfil: String(row.dimensiProfil || 'Penalaran Kritis, Kreativitas'),
+              kataKunci: String(row.kataKunci || '-'),
+              strategiAsesmen: String(row.strategiAsesmen || 'Asesmen formatif, LKPD, dan rubrik proyek.'),
+            }))
+          : baseAtp.daftarAlur;
+
+      const normalizedGlosarium =
+        Array.isArray(parsedAtp.glosarium) && parsedAtp.glosarium.length > 0
+          ? parsedAtp.glosarium
+              .map((g: any) => ({
+                istilah: String(g.istilah || '').trim(),
+                definisi: String(g.definisi || '').trim(),
+              }))
+              .filter((g: any) => g.istilah || g.definisi)
+          : baseAtp.glosarium;
+
+      const finalAtp = {
+        formatType: 'atp_resmi' as const,
+        identitas: {
+          ...baseAtp.identitas,
+          ...(parsedAtp.identitas || {}),
+          mataPelajaran: mataPelajaran || baseAtp.identitas.mataPelajaran,
+          kelas: kelas || baseAtp.identitas.kelas,
+          jpPerMinggu: Number(parsedAtp.identitas?.jpPerMinggu) || baseAtp.identitas.jpPerMinggu,
+          fokusTopik: topik || parsedAtp.identitas?.fokusTopik || baseAtp.identitas.fokusTopik,
+        },
+        rasionalAlur: parsedAtp.rasionalAlur || baseAtp.rasionalAlur,
+        capaianPembelajaranUmum:
+          parsedAtp.capaianPembelajaranUmum || baseAtp.capaianPembelajaranUmum,
+        daftarAlur: normalizedAlur,
+        glosarium: normalizedGlosarium,
+        catatanImplementasi: parsedAtp.catatanImplementasi || baseAtp.catatanImplementasi,
+        integrasiNilaiIslami: {
+          surahAyat:
+            parsedAtp.integrasiNilaiIslami?.surahAyat || baseAtp.integrasiNilaiIslami.surahAyat,
+          teksArab:
+            parsedAtp.integrasiNilaiIslami?.teksArab || baseAtp.integrasiNilaiIslami.teksArab,
+          terjemahan:
+            parsedAtp.integrasiNilaiIslami?.terjemahan || baseAtp.integrasiNilaiIslami.terjemahan,
+          relevansiAtp:
+            parsedAtp.integrasiNilaiIslami?.relevansiAtp ||
+            baseAtp.integrasiNilaiIslami.relevansiAtp,
+        },
+      };
+
+      return res.json({
+        success: true,
+        isJson: true,
+        formatType: 'atp_resmi',
+        data: finalAtp,
+        content: formatAtpToPlainText(finalAtp),
+      });
+    }
+
+    if (tipe === 'kktp') {
+      const baseKktp = buildOfficialKktpData({
+        mataPelajaran,
+        kelas,
+        topik,
+        tahunAjaran: tahunAjaran || '2026/2027',
+      });
+      const prompt = `Anda adalah pakar Asesmen Kurikulum Nasional & Panduan Pembelajaran dan Asesmen (PPA) BSKAP Kemendikdasmen RI sekaligus pendidik di SMP Islam Modern Al Fakhir.
+Buatkan dokumen resmi **KKTP (KRITERIA KETERCAPAIAN TUJUAN PEMBELAJARAN)** dalam format JSON valid yang terstruktur, spesifik, dan siap digunakan oleh guru.
+
+Mata Pelajaran: "${mataPelajaran}"
+Kelas / Fase: "${kelas}" (${baseKktp.identitas.fase})
+Topik / Materi Pokok: "${topik || baseKktp.identitas.topikMateri}"
+Tahun Ajaran: "${tahunAjaran || '2026/2027'}"
+
+PENTING:
+- Ini adalah dokumen resmi KKTP (Kriteria Ketercapaian Tujuan Pembelajaran), BUKAN Modul Ajar.
+- Susun lengkap mengikuti 3 pendekatan resmi PPA Kemendikdasmen:
+  1. Tujuan Pembelajaran (TP) spesifik yang diukur (3–4 TP operasional).
+  2. Rubrik Penilaian 4 Level Penguasaan (Baru Berkembang, Layak, Cakap, Mahir) dengan 4 aspek penilaian yang konkret dan terukur sesuai materi "${topik || baseKktp.identitas.topikMateri}".
+  3. Skala Interval Nilai (0–40%, 41–65%, 66–85%, 86–100%) lengkap dengan predikat, status ketuntasan ("Belum Tuntas" atau "Tuntas"), dan rencana tindak lanjut intervensi yang spesifik.
+  4. Deskripsi Kriteria (Memadai / Tidak Memadai), Keputusan Ketuntasan, Strategi Remedial & Pengayaan, serta Integrasi Nilai Islami (Ayat Al-Qur'an relevan).
+- Kembalikan RAW JSON valid tanpa markdown fence sesuai skema berikut:
+{
+  "formatType": "kktp_resmi",
+  "identitas": {
+    "mataPelajaran": "${mataPelajaran}",
+    "satuanPendidikan": "SMP Islam Modern Al Fakhir",
+    "fase": "${baseKktp.identitas.fase}",
+    "kelas": "${kelas}",
+    "tahunAjaran": "${tahunAjaran || '2026/2027'}",
+    "semester": "Ganjil",
+    "namaPenyusun": "Guru Mata Pelajaran",
+    "topikMateri": "${topik || baseKktp.identitas.topikMateri}",
+    "pendekatanUtama": "Kombinasi Rubrik 4 Level, Interval Nilai, & Deskripsi Kriteria",
+    "batasMinimalPersen": 66,
+    "referensiRegulasi": "Panduan Pembelajaran dan Asesmen (PPA) BSKAP Kemendikdasmen — Pembelajaran Mendalam"
+  },
+  "capaianPembelajaranRingkas": "Rumusan CP ringkas yang menjadi acuan KKTP ini.",
+  "tujuanPembelajaran": ["TP 1: ...", "TP 2: ...", "TP 3: ...", "TP 4: ..."],
+  "rubrikPenilaian": [
+    {
+      "aspek": "Nama Aspek / Indikator Penilaian",
+      "baruBerkembang": "Deskripsi level Baru Berkembang (Skor 1)",
+      "layak": "Deskripsi level Layak (Skor 2)",
+      "cakap": "Deskripsi level Cakap / Tuntas (Skor 3)",
+      "mahir": "Deskripsi level Mahir / Melampaui (Skor 4)"
+    }
+  ],
+  "intervalNilai": [
+    {
+      "rentang": "0 – 40%",
+      "predikat": "Baru Berkembang (Perlu Bimbingan)",
+      "ketuntasan": "Belum Tuntas",
+      "tindakLanjut": "Remedial di seluruh bagian..."
+    }
+  ],
+  "deskripsiKriteria": [
+    {
+      "kriteria": "Nama Aspek",
+      "targetMemadai": "Bukti ketercapaian kategori Memadai"
+    }
+  ],
+  "keputusanKetuntasan": "Ketentuan pengambilan keputusan ketercapaian tujuan pembelajaran.",
+  "strategiRemedial": "Rencana program remedial spesifik untuk materi ${topik || baseKktp.identitas.topikMateri}.",
+  "strategiPengayaan": "Rencana program pengayaan HOTS untuk materi ${topik || baseKktp.identitas.topikMateri}.",
+  "integrasiNilaiIslami": {
+    "surahAyat": "${baseKktp.integrasiNilaiIslami.surahAyat}",
+    "teksArab": "${baseKktp.integrasiNilaiIslami.teksArab}",
+    "terjemahan": "${baseKktp.integrasiNilaiIslami.terjemahan}",
+    "relevansiKktp": "Relevansi ayat dengan ketuntasan kompetensi dan akhlak belajar."
+  }
+}`;
+
+      const response = await generateContentWithFallback({
+        model: 'gemini-4-hydrogen',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const parsedKktp = JSON.parse(response.text || '{}');
+      const rubrikFinal =
+        Array.isArray(parsedKktp.rubrikPenilaian) && parsedKktp.rubrikPenilaian.length > 0
+          ? parsedKktp.rubrikPenilaian
+          : baseKktp.rubrikPenilaian;
+
+      const finalKktp = {
+        formatType: 'kktp_resmi' as const,
+        identitas: {
+          ...baseKktp.identitas,
+          ...(parsedKktp.identitas || {}),
+          mataPelajaran: mataPelajaran || baseKktp.identitas.mataPelajaran,
+          kelas: kelas || baseKktp.identitas.kelas,
+          topikMateri: topik || parsedKktp.identitas?.topikMateri || baseKktp.identitas.topikMateri,
+          batasMinimalPersen: Number(parsedKktp.identitas?.batasMinimalPersen) || 66,
+        },
+        capaianPembelajaranRingkas:
+          parsedKktp.capaianPembelajaranRingkas || baseKktp.capaianPembelajaranRingkas,
+        tujuanPembelajaran:
+          Array.isArray(parsedKktp.tujuanPembelajaran) && parsedKktp.tujuanPembelajaran.length > 0
+            ? parsedKktp.tujuanPembelajaran
+            : baseKktp.tujuanPembelajaran,
+        rubrikPenilaian: rubrikFinal,
+        intervalNilai:
+          Array.isArray(parsedKktp.intervalNilai) && parsedKktp.intervalNilai.length > 0
+            ? parsedKktp.intervalNilai
+            : baseKktp.intervalNilai,
+        deskripsiKriteria:
+          Array.isArray(parsedKktp.deskripsiKriteria) && parsedKktp.deskripsiKriteria.length > 0
+            ? parsedKktp.deskripsiKriteria
+            : rubrikFinal.map((r: any) => ({ kriteria: r.aspek, targetMemadai: r.cakap })),
+        keputusanKetuntasan: parsedKktp.keputusanKetuntasan || baseKktp.keputusanKetuntasan,
+        strategiRemedial: parsedKktp.strategiRemedial || baseKktp.strategiRemedial,
+        strategiPengayaan: parsedKktp.strategiPengayaan || baseKktp.strategiPengayaan,
+        integrasiNilaiIslami: {
+          surahAyat: parsedKktp.integrasiNilaiIslami?.surahAyat || baseKktp.integrasiNilaiIslami.surahAyat,
+          teksArab: parsedKktp.integrasiNilaiIslami?.teksArab || baseKktp.integrasiNilaiIslami.teksArab,
+          terjemahan: parsedKktp.integrasiNilaiIslami?.terjemahan || baseKktp.integrasiNilaiIslami.terjemahan,
+          relevansiKktp:
+            parsedKktp.integrasiNilaiIslami?.relevansiKktp || baseKktp.integrasiNilaiIslami.relevansiKktp,
+        },
+      };
+
+      return res.json({
+        success: true,
+        isJson: true,
+        formatType: 'kktp_resmi',
+        data: finalKktp,
+        content: formatKktpToPlainText(finalKktp),
+      });
+    }
+
+    if (tipe === 'prota') {
+      const baseProta = buildOfficialProtaData({
+        mataPelajaran,
+        kelas,
+        topik,
+        tahunAjaran: tahunAjaran || '2026/2027',
+      });
+      const prompt = `Anda adalah pakar Kurikulum Nasional & BSKAP Kemendikdasmen RI sekaligus pendidik di SMP Islam Modern Al Fakhir.
+Buatkan dokumen resmi **PROGRAM TAHUNAN (PROTA)** 1 Tahun Pelajaran (Semester I Ganjil & Semester II Genap) dalam format JSON valid yang terstruktur, realistis sesuai kalender pendidikan 36 minggu efektif (18 minggu Ganjil + 18 minggu Genap), dan siap cetak.
+
+Mata Pelajaran: "${mataPelajaran}"
+Kelas / Fase: "${kelas}" (${baseProta.identitas.fase})
+Fokus / Tema Tahunan: "${topik || baseProta.identitas.fokusTahunan}"
+Beban Belajar Standar: ${baseProta.identitas.jpPerMinggu} JP / Minggu (Target Semester Ganjil: ${baseProta.identitas.jpPerMinggu * baseProta.identitas.mingguEfektifGanjil} JP, Semester Genap: ${baseProta.identitas.jpPerMinggu * baseProta.identitas.mingguEfektifGenap} JP)
+Tahun Ajaran: "${tahunAjaran || '2026/2027'}"
+
+PENTING:
+- Ini adalah dokumen resmi PROGRAM TAHUNAN (PROTA), BUKAN Modul Ajar.
+- Susun minimal 4–6 baris unit untuk Semester "Ganjil" (Juli–Desember) dan minimal 4–6 baris unit untuk Semester "Genap" (Januari–Juni), termasuk ASTS dan SAS/SAT.
+- Pastikan jumlah alokasiJp seluruh baris Semester Ganjil mendekati/sama dengan ${baseProta.identitas.jpPerMinggu * baseProta.identitas.mingguEfektifGanjil} JP dan Semester Genap mendekati/sama dengan ${baseProta.identitas.jpPerMinggu * baseProta.identitas.mingguEfektifGenap} JP.
+- Kembalikan RAW JSON valid tanpa markdown fence sesuai skema berikut:
+{
+  "formatType": "prota_resmi",
+  "identitas": {
+    "mataPelajaran": "${mataPelajaran}",
+    "satuanPendidikan": "SMP Islam Modern Al Fakhir",
+    "fase": "${baseProta.identitas.fase}",
+    "kelas": "${kelas}",
+    "tahunAjaran": "${tahunAjaran || '2026/2027'}",
+    "namaPenyusun": "Guru Mata Pelajaran",
+    "jpPerMinggu": ${baseProta.identitas.jpPerMinggu},
+    "mingguEfektifGanjil": ${baseProta.identitas.mingguEfektifGanjil},
+    "mingguEfektifGenap": ${baseProta.identitas.mingguEfektifGenap},
+    "fokusTahunan": "${topik || baseProta.identitas.fokusTahunan}",
+    "referensiRegulasi": "Struktur Kurikulum Nasional Kemendikdasmen • 36 Minggu Efektif Pertahun Ajaran"
+  },
+  "capaianUmumTahunan": "Ringkasan capaian kompetensi peserta didik selama 1 tahun pelajaran.",
+  "distribusiSemester": [
+    {
+      "semester": "Ganjil",
+      "elemen": "Nama Elemen / Bab",
+      "tujuanPembelajaran": "Uraian Alur Tujuan Pembelajaran / lingkup materi pokok",
+      "alokasiJp": 12,
+      "bulanPelaksanaan": "Juli – Agustus",
+      "keterangan": "Intrakurikuler • Modul Mendalam"
+    }
+  ],
+  "catatanPelaksanaan": "Catatan kalender pendidikan dan fleksibilitas pelaksanaan Prota.",
+  "integrasiNilaiIslami": {
+    "surahAyat": "${baseProta.integrasiNilaiIslami.surahAyat}",
+    "teksArab": "${baseProta.integrasiNilaiIslami.teksArab}",
+    "terjemahan": "${baseProta.integrasiNilaiIslami.terjemahan}",
+    "relevansiProta": "Relevansi ayat Al-Qur'an terhadap perencanaan pembelajaran selama 1 tahun."
+  }
+}`;
+
+      const response = await generateContentWithFallback({
+        model: 'gemini-4-hydrogen',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const parsedProta = JSON.parse(response.text || '{}');
+      const normalizedRows =
+        Array.isArray(parsedProta.distribusiSemester) && parsedProta.distribusiSemester.length >= 4
+          ? parsedProta.distribusiSemester.map((row: any) => ({
+              semester: (row.semester === 'Genap' || String(row.semester).toLowerCase().includes('genap') || String(row.semester) === '2' || String(row.semester) === 'II') ? 'Genap' as const : 'Ganjil' as const,
+              elemen: String(row.elemen || 'Unit Pembelajaran'),
+              tujuanPembelajaran: String(row.tujuanPembelajaran || '-'),
+              alokasiJp: Math.max(2, Number(row.alokasiJp) || baseProta.identitas.jpPerMinggu * 2),
+              bulanPelaksanaan: String(row.bulanPelaksanaan || '-'),
+              keterangan: String(row.keterangan || 'Intrakurikuler'),
+            }))
+          : baseProta.distribusiSemester;
+
+      const finalProta = {
+        formatType: 'prota_resmi' as const,
+        identitas: {
+          ...baseProta.identitas,
+          ...(parsedProta.identitas || {}),
+          mataPelajaran: mataPelajaran || baseProta.identitas.mataPelajaran,
+          kelas: kelas || baseProta.identitas.kelas,
+          jpPerMinggu: Number(parsedProta.identitas?.jpPerMinggu) || baseProta.identitas.jpPerMinggu,
+          mingguEfektifGanjil: Number(parsedProta.identitas?.mingguEfektifGanjil) || baseProta.identitas.mingguEfektifGanjil,
+          mingguEfektifGenap: Number(parsedProta.identitas?.mingguEfektifGenap) || baseProta.identitas.mingguEfektifGenap,
+          fokusTahunan: topik || parsedProta.identitas?.fokusTahunan || baseProta.identitas.fokusTahunan,
+        },
+        capaianUmumTahunan: parsedProta.capaianUmumTahunan || baseProta.capaianUmumTahunan,
+        distribusiSemester: normalizedRows,
+        catatanPelaksanaan: parsedProta.catatanPelaksanaan || baseProta.catatanPelaksanaan,
+        integrasiNilaiIslami: {
+          surahAyat: parsedProta.integrasiNilaiIslami?.surahAyat || baseProta.integrasiNilaiIslami.surahAyat,
+          teksArab: parsedProta.integrasiNilaiIslami?.teksArab || baseProta.integrasiNilaiIslami.teksArab,
+          terjemahan: parsedProta.integrasiNilaiIslami?.terjemahan || baseProta.integrasiNilaiIslami.terjemahan,
+          relevansiProta: parsedProta.integrasiNilaiIslami?.relevansiProta || baseProta.integrasiNilaiIslami.relevansiProta,
+        },
+      };
+
+      return res.json({
+        success: true,
+        isJson: true,
+        formatType: 'prota_resmi',
+        data: finalProta,
+        content: formatProtaToPlainText(finalProta),
+      });
+    }
+
+    if (tipe === 'prosem') {
+      const baseProsem = buildOfficialProsemData({
+        mataPelajaran,
+        kelas,
+        semester,
+        topik,
+        tahunAjaran: tahunAjaran || '2026/2027',
+      });
+      const semMonths =
+        baseProsem.identitas.semester === 'Genap'
+          ? ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni']
+          : ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+      const prompt = `Anda adalah pakar Kurikulum Nasional & BSKAP Kemendikdasmen RI sekaligus pendidik di SMP Islam Modern Al Fakhir.
+Buatkan dokumen resmi **PROGRAM SEMESTER (PROSEM)** Semester ${baseProsem.identitas.semester} (${semMonths.join(', ')}) dalam format JSON valid yang memuat **Rincian Pekan Efektif (RPE)** dan **Matriks Distribusi Mingguan (Bulan × M1..M4)** yang siap cetak.
+
+Mata Pelajaran: "${mataPelajaran}"
+Kelas / Fase: "${kelas}" (${baseProsem.identitas.fase})
+Semester: "${baseProsem.identitas.semester}" (${semMonths[0]} s.d. ${semMonths[semMonths.length - 1]})
+Beban Belajar Standar: ${baseProsem.identitas.jpPerMinggu} JP / Minggu
+Fokus Semester: "${topik || baseProsem.identitas.fokusSemester}"
+Tahun Ajaran: "${tahunAjaran || '2026/2027'}"
+
+PENTING:
+- Ini adalah dokumen resmi PROGRAM SEMESTER (PROSEM), BUKAN Modul Ajar.
+- Format key pada objek "mingguAktif" HARUS menggunakan format "<NamaBulan>_M<1|2|3|4>", contoh: "${semMonths[0]}_M3": ${baseProsem.identitas.jpPerMinggu}, "${semMonths[1]}_M1": ${baseProsem.identitas.jpPerMinggu}.
+- Total minggu efektif (jumlah seluruh pekan efektif di rincianPekanEfektif) idealnya 18 pekan (= ${18 * baseProsem.identitas.jpPerMinggu} JP).
+- Kembalikan RAW JSON valid tanpa markdown fence sesuai skema berikut:
+{
+  "formatType": "prosem_resmi",
+  "identitas": {
+    "mataPelajaran": "${mataPelajaran}",
+    "satuanPendidikan": "SMP Islam Modern Al Fakhir",
+    "fase": "${baseProsem.identitas.fase}",
+    "kelas": "${kelas}",
+    "semester": "${baseProsem.identitas.semester}",
+    "tahunAjaran": "${tahunAjaran || '2026/2027'}",
+    "namaPenyusun": "Guru Mata Pelajaran",
+    "jpPerMinggu": ${baseProsem.identitas.jpPerMinggu},
+    "fokusSemester": "${topik || baseProsem.identitas.fokusSemester}",
+    "referensiRegulasi": "${baseProsem.identitas.referensiRegulasi}"
+  },
+  "rincianPekanEfektif": ${JSON.stringify(baseProsem.rincianPekanEfektif)},
+  "distribusiMingguan": [
+    {
+      "elemen": "Nama Elemen / Unit",
+      "tujuanPembelajaran": "Rumusan ATP / lingkup materi pokok",
+      "alokasiJp": ${baseProsem.identitas.jpPerMinggu * 4},
+      "mingguAktif": { "${semMonths[0]}_M3": ${baseProsem.identitas.jpPerMinggu}, "${semMonths[0]}_M4": ${baseProsem.identitas.jpPerMinggu}, "${semMonths[1]}_M1": ${baseProsem.identitas.jpPerMinggu}, "${semMonths[1]}_M2": ${baseProsem.identitas.jpPerMinggu} },
+      "jenisKegiatan": "Intrakurikuler",
+      "keterangan": "Intrakurikuler • Modul Mendalam"
+    }
+  ],
+  "catatanPelaksanaan": "Catatan kalender pendidikan dan fleksibilitas pelaksanaan Prosem.",
+  "integrasiNilaiIslami": {
+    "surahAyat": "${baseProsem.integrasiNilaiIslami.surahAyat}",
+    "teksArab": "${baseProsem.integrasiNilaiIslami.teksArab}",
+    "terjemahan": "${baseProsem.integrasiNilaiIslami.terjemahan}",
+    "relevansiProsem": "Relevansi ayat Al-Qur'an terhadap pelaksanaan pembelajaran semester ini."
+  }
+}`;
+
+      const response = await generateContentWithFallback({
+        model: 'gemini-4-hydrogen',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const parsedProsem = JSON.parse(response.text || '{}');
+      const jpMg = Number(parsedProsem.identitas?.jpPerMinggu) || baseProsem.identitas.jpPerMinggu;
+
+      const normalizedDistribusi =
+        Array.isArray(parsedProsem.distribusiMingguan) && parsedProsem.distribusiMingguan.length >= 3
+          ? parsedProsem.distribusiMingguan.map((row: any, idx: number) => {
+              const rawWeeks = row.mingguAktif && typeof row.mingguAktif === 'object' ? row.mingguAktif : {};
+              const cleanedWeeks: Record<string, number> = {};
+              Object.entries(rawWeeks).forEach(([k, v]) => {
+                const num = Number(v);
+                if (num > 0) cleanedWeeks[k] = num;
+              });
+              const fallbackRow = baseProsem.distribusiMingguan[idx % baseProsem.distribusiMingguan.length];
+              const finalWeeks =
+                Object.keys(cleanedWeeks).length > 0 ? cleanedWeeks : fallbackRow.mingguAktif;
+              const sumJp = Object.values(finalWeeks).reduce((s, v) => s + v, 0);
+              const rawJenis = String(row.jenisKegiatan || '');
+              const jenisKegiatan: 'Intrakurikuler' | 'Asesmen' | 'Proyek' | 'Remedial' =
+                rawJenis === 'Asesmen' || rawJenis === 'Proyek' || rawJenis === 'Remedial'
+                  ? rawJenis
+                  : 'Intrakurikuler';
+              return {
+                elemen: String(row.elemen || fallbackRow.elemen),
+                tujuanPembelajaran: String(row.tujuanPembelajaran || fallbackRow.tujuanPembelajaran),
+                alokasiJp: sumJp || Number(row.alokasiJp) || jpMg * 2,
+                mingguAktif: finalWeeks,
+                jenisKegiatan,
+                keterangan: String(row.keterangan || 'Intrakurikuler'),
+              };
+            })
+          : baseProsem.distribusiMingguan;
+
+      const finalProsem = {
+        formatType: 'prosem_resmi' as const,
+        identitas: {
+          ...baseProsem.identitas,
+          ...(parsedProsem.identitas || {}),
+          mataPelajaran: mataPelajaran || baseProsem.identitas.mataPelajaran,
+          kelas: kelas || baseProsem.identitas.kelas,
+          semester: baseProsem.identitas.semester,
+          jpPerMinggu: jpMg,
+          fokusSemester: topik || parsedProsem.identitas?.fokusSemester || baseProsem.identitas.fokusSemester,
+        },
+        rincianPekanEfektif:
+          Array.isArray(parsedProsem.rincianPekanEfektif) && parsedProsem.rincianPekanEfektif.length === 6
+            ? parsedProsem.rincianPekanEfektif
+            : baseProsem.rincianPekanEfektif,
+        distribusiMingguan: normalizedDistribusi,
+        catatanPelaksanaan: parsedProsem.catatanPelaksanaan || baseProsem.catatanPelaksanaan,
+        integrasiNilaiIslami: {
+          surahAyat: parsedProsem.integrasiNilaiIslami?.surahAyat || baseProsem.integrasiNilaiIslami.surahAyat,
+          teksArab: parsedProsem.integrasiNilaiIslami?.teksArab || baseProsem.integrasiNilaiIslami.teksArab,
+          terjemahan: parsedProsem.integrasiNilaiIslami?.terjemahan || baseProsem.integrasiNilaiIslami.terjemahan,
+          relevansiProsem: parsedProsem.integrasiNilaiIslami?.relevansiProsem || baseProsem.integrasiNilaiIslami.relevansiProsem,
+        },
+      };
+
+      return res.json({
+        success: true,
+        isJson: true,
+        formatType: 'prosem_resmi',
+        data: finalProsem,
+        content: formatProsemToPlainText(finalProsem),
+      });
     }
 
     let customInstructions = '';
     if (tipe === 'modul_ajar') {
       // Fallback for non-JSON or other logic paths
-      customInstructions = `Format WAJIB Mengikuti Standar Template Modul Ajar Deep Learning & Inklusif 2026/2027 (Format Profesional PDF):
-Gunakan elemen Markdown secara maksimal (Header #, ##, ###, Tabel, List, Horizontal Rule ---) untuk mensimulasikan tata letak dokumen PDF resmi.`;
+      customInstructions = `Format WAJIB Mengikuti Standar Template Modul Ajar Pembelajaran Mendalam (Deep Learning) & Inklusif 2026/2027 dengan sisipan Ayat Al-Qur'an sesuai materi.`;
     }
  else {
-      customInstructions = `Berikan isi dokumen lengkap yang rapi, profesional, terstruktur dengan poin-poin (Identitas, Tujuan Pembelajaran, Asesmen, Langkah Pembelajaran, Media & Sumber Belajar, Refleksi, Pengesahan).`;
+      customInstructions = `Berikan isi dokumen resmi yang rapi, profesional, terstruktur dengan huruf kapital untuk judul bagian (tanpa simbol markdown # atau **), sesuai standar administrasi Kurikulum Nasional (Identitas, Uraian Inti sesuai jenis dokumen "${tipe}", serta Pengesahan).`;
     }
 
-    const prompt = `Anda adalah konsultan Kurikulum Merdeka Kementerian Pendidikan Indonesia.
-Buatkan draf dokumen Administrasi Guru tipe: "${tipe}" untuk Mata Pelajaran "${mataPelajaran}", Kelas "${kelas}", Topik/Capaian "${topik || 'Standard Kurikulum Merdeka'}", Tahun Ajaran "${tahunAjaran || '2026/2027'}".
+    const prompt = `Anda adalah konsultan Kurikulum Nasional & Pembelajaran Mendalam Kementerian Pendidikan Indonesia.
+Buatkan draf dokumen Administrasi Guru tipe: "${tipe}" untuk Mata Pelajaran "${mataPelajaran}", Kelas "${kelas}", Topik/Capaian "${topik || 'Standard Kurikulum Nasional'}", Tahun Ajaran "${tahunAjaran || '2026/2027'}".
 
 ${customInstructions}
 
 Format output lengkap dalam Bahasa Indonesia yang sangat rapi, jelas, dan siap pakai.`;
 
     const response = await generateContentWithFallback({
-      model: 'gemini-3.8-flash',
+      model: 'gemini-4-hydrogen',
       contents: prompt,
     });
 
     return res.json({ success: true, content: response.text });
 
   } catch (error: any) {
-    console.log('[Administrasi AI Generator] Using standard Kurikulum Merdeka smart template generator.');
+    console.log('[Administrasi AI Generator] Using Pembelajaran Mendalam smart template generator.');
     
     if (tipe === 'modul_ajar') {
+      const topikLabel = topik || 'Materi Pokok';
+      const mapelLabel = mataPelajaran || 'Umum';
+      const ayat = suggestAyatForMateri(mapelLabel, topikLabel);
       const fallbackData = {
         informasiUmum: {
           namaPenyusun: "Guru Pengampu Mapel",
           namaSekolah: "SMP Islam Modern Al Fakhir",
-          mataPelajaran: mataPelajaran || "Umum",
+          mataPelajaran: mapelLabel,
           fase: "D",
-          kelas: kelas || "7",
+          kelas: kelas || "VII",
           semester: "Ganjil",
-          tahunAjaran: "2026/2027",
+          tahunAjaran: tahunAjaran || "2026/2027",
           alokasiWaktu: "2 JP (2 x 40 Menit)",
-          materi: topik || "Materi Pokok"
+          materi: topikLabel
         },
-        kompetensiAwal: "Siswa telah mengetahui pengenalan dasar mata pelajaran.",
-        profilPelajarPancasila: ["Beriman, Bertakwa kepada Tuhan YME, dan Berakhlak Mulia", "Bernalar Kritis", "Kreatif"],
-        saranaPrasarana: ["Laptop/Chromebook", "Koneksi Internet", "Proyektor LCD"],
+        ayatAlQuran: ayat,
+        kompetensiAwal: `Peserta didik telah memiliki pengetahuan awal terkait dasar-dasar ${mapelLabel} dan kesiapan belajar untuk mendalami materi ${topikLabel} secara kontekstual serta inklusif.`,
+        dimensiProfilLulusan: [
+          "Keimanan dan Ketakwaan terhadap Tuhan YME",
+          "Penalaran Kritis",
+          "Kreativitas",
+          "Kolaborasi",
+          "Komunikasi"
+        ],
+        profilPelajarPancasila: [
+          "Keimanan dan Ketakwaan terhadap Tuhan YME",
+          "Penalaran Kritis",
+          "Kreativitas",
+          "Kolaborasi",
+          "Komunikasi"
+        ],
+        capaianPembelajaran: `Peserta didik mampu memahami konsep esensial, menganalisis permasalahan nyata, serta mengaplikasikan materi ${topikLabel} dalam mata pelajaran ${mapelLabel} secara kritis, kreatif, dan bertanggung jawab.`,
+        lintasDisiplinIlmu: `Terintegrasi dengan Pendidikan Agama Islam (tadabbur ${ayat.surahAyat}), Bahasa Indonesia (komunikasi presentasi), serta literasi digital dalam kehidupan sehari-hari.`,
+        kerangkaPembelajaran: {
+          praktikPedagogis: `Problem-Based Learning & Inquiry terintegrasi Pembelajaran Mendalam (Memahami, Mengaplikasi, Merefleksi) untuk materi ${topikLabel}.`,
+          kemitraanPembelajaran: "Kolaborasi antar-peserta didik (tutor sebaya), guru mata pelajaran serumpun, dan dukungan orang tua dalam refleksi di rumah.",
+          lingkunganPembelajaran: "Ruang kelas/laboratorium yang kondusif, inklusif, aman untuk berpendapat, serta mendukung interaksi kolaboratif dan budaya tadabbur.",
+          pemanfaatanDigital: "Penggunaan presentasi interaktif, simulasi/video pembelajaran, Al-Qur'an digital, serta LKPD digital untuk mendokumentasikan karya."
+        },
+        saranaPrasarana: ["Laptop/Chromebook", "Koneksi Internet", "Proyektor LCD", "Al-Qur'an / Aplikasi Qur'an Digital", "LKPD Pembelajaran Mendalam"],
         targetPesertaDidik: "Reguler",
-        modelPembelajaran: "Problem Based Learning",
-        tujuanPembelajaran: [`Siswa dapat menganalisis materi ${topik || "pembelajaran"} dengan baik.`],
-        pemahamanBermakna: "Pembelajaran ini memberikan pemahaman mendalam tentang konsep kehidupan nyata.",
-        pertanyaanPemantik: ["Mengapa konsep ini penting bagi masa depan kalian?"],
+        modelPembelajaran: "Problem Based Learning (Pembelajaran Mendalam)",
+        tujuanPembelajaran: [
+          `Menjelaskan konsep esensial ${topikLabel} secara mendalam dan mengaitkannya dengan pesan ${ayat.surahAyat}.`,
+          `Menganalisis dan mengaplikasikan ${topikLabel} untuk menyelesaikan studi kasus nyata secara kolaboratif.`,
+          `Merefleksikan kebermanfaatan ${topikLabel} dengan menunjukkan penalaran kritis, kreativitas, dan akhlak mulia.`
+        ],
+        pemahamanBermakna: `Penguasaan materi ${topikLabel} membekali peserta didik untuk berpikir sistematis, memecahkan masalah nyata secara bijak, serta mengamalkan nilai ${ayat.surahAyat} demi kemaslahatan bersama.`,
+        pertanyaanPemantik: [
+          `Bagaimana peran ${topikLabel} dalam aktivitas kita sehari-hari, dan apa dampaknya jika tidak dipahami dengan baik?`,
+          `Apa hikmah yang dapat kita ambil dari ${ayat.surahAyat} untuk diterapkan saat mempelajari dan mempraktikkan ${topikLabel}?`
+        ],
+        pengalamanBelajarMendalam: {
+          prinsipPembelajaran: [...PRINSIP_PEMBELAJARAN_MENDALAM],
+          memahami: `Berkesadaran & Bermakna: Peserta didik mengkaji konsep inti ${topikLabel} melalui studi fenomena nyata, pembacaan serta tadabbur ${ayat.surahAyat}, dan tanya jawab konseptual untuk membangun pemahaman mendalam.`,
+          mengaplikasi: `Bermakna & Menggembirakan: Peserta didik berkolaborasi dalam kelompok inklusif untuk mempraktikkan/merancang solusi kasus nyata berbasis ${topikLabel}, kemudian menyajikan karyanya secara interaktif.`,
+          merefleksi: `Berkesadaran & Bermakna: Peserta didik mengevaluasi proses belajar, menuliskan pemahaman kunci serta nilai iman dari ${ayat.surahAyat}, dan merumuskan aksi nyata penerapan materi.`
+        },
         kegiatanPembelajaran: {
-          pendahuluan: { deskripsi: "1. Doa dan salam.\n2. Absensi dan apersepsi.", durasi: "10 Menit" },
-          inti: { deskripsi: "1. Orientasi masalah siswa.\n2. Diskusi kelompok terdiferensiasi.\n3. Presentasi karya kelompok.", durasi: "60 Menit" },
-          penutup: { deskripsi: "1. Kesimpulan pembelajaran.\n2. Refleksi dan penutup.", durasi: "10 Menit" }
+          pendahuluan: {
+            deskripsi: `1. Guru membuka kelas dengan salam, doa, dan latihan fokus singkat agar siswa belajar secara berkesadaran (Mindful).\n2. Tadabbur Ayat Al-Qur'an: Membaca dan mengaitkan pesan ${ayat.surahAyat} dengan materi ${topikLabel}.\n3. Apersepsi kontekstual, asesmen awal kesiapan belajar, dan penyampaian tujuan pembelajaran mendalam.`,
+            durasi: "15 Menit"
+          },
+          inti: {
+            deskripsi: `A. TAHAP MEMAHAMI (Berkesadaran & Bermakna)\n1. Peserta didik mengamati studi kasus nyata tentang ${topikLabel} dan mengidentifikasi konsep kuncinya.\n2. Diskusi terpimpin untuk menghubungkan konsep materi dengan pengalaman sehari-hari dan nilai ${ayat.surahAyat}.\n\nB. TAHAP MENGAPLIKASI (Bermakna & Menggembirakan)\n3. Dalam kelompok kolaboratif inklusif, peserta didik menyelesaikan tantangan/proyek nyata berbasis ${topikLabel} dengan diferensiasi proses & produk.\n4. Presentasi karya kelompok dan saling memberi umpan balik konstruktif.\n\nC. TAHAP MEREFLEKSI (Berkesadaran)\n5. Peserta didik mengonfirmasi pemahaman baru, mengevaluasi strategi pemecahan masalah, dan menyimpulkan makna pembelajaran.`,
+            durasi: "50 Menit"
+          },
+          penutup: {
+            deskripsi: `1. Guru dan peserta didik menyimpulkan konsep inti ${topikLabel} beserta hikmah ${ayat.surahAyat}.\n2. Refleksi pribadi peserta didik mengenai hal paling bermakna dan menggembirakan hari ini.\n3. Penyampaian umpan balik, tindak lanjut (remedial/pengayaan), doa penutup, dan salam.`,
+            durasi: "15 Menit"
+          }
         },
         asesmen: {
-          diagnostik: "Tanya jawab non-kognitif awal belajar.",
-          formatif: "Observasi diskusi kelompok.",
-          sumatif: "Tes tertulis di akhir pertemuan.",
-          teknik: "Tertulis & Observasi",
-          instrumen: "Lembar Observasi & Lembar Soal",
-          rubrik: "Skor 4 (Sangat Baik), Skor 3 (Baik), Skor 2 (Cukup), Skor 1 (Kurang)",
-          kriteriaPenilaian: "Ketuntasan minimal jika mencapai predikat Baik."
+          diagnostik: "Asesmen Awal: Pertanyaan pemantik lisan dan kuis singkat untuk memetakan pengetahuan prasyarat serta gaya belajar siswa.",
+          formatif: "Asesmen Proses: Observasi penalaran kritis, kolaborasi kelompok, keaktifan diskusi, dan umpan balik pada LKPD.",
+          sumatif: `Asesmen Akhir: Penilaian produk/unjuk karya penyelesaian kasus nyata dan tes uraian HOTS materi ${topikLabel}.`,
+          teknik: "Observasi Kinerja, Penilaian Produk, dan Tes Uraian Kontekstual",
+          instrumen: "LKPD Pembelajaran Mendalam, Lembar Observasi Profil Lulusan, dan Rubrik Analitik",
+          rubrik: "Mahir (Skor 4): Memahami konsep mendalam, mampu mengaplikasikan pada kasus baru, dan mengaitkan nilai Al-Qur'an.\nCakap (Skor 3): Memahami konsep inti dengan tepat dan menerapkannya dalam kelompok.\nLayak (Skor 2): Memahami sebagian konsep dasar dengan bantuan.\nBaru Berkembang (Skor 1): Memerlukan bimbingan intensif.",
+          kriteriaPenilaian: "Peserta didik dinyatakan tuntas jika mencapai minimal predikat Cakap (Skor 3) pada tahap Memahami, Mengaplikasi, dan Merefleksi."
         },
         diferensiasi: {
-          konten: "Menyediakan bacaan visual dan penugasan audio.",
-          proses: "Pendampingan khusus bagi yang membutuhkan.",
-          produk: "Laporan dibebaskan berupa slide, tulisan, atau gambar."
+          konten: "Menyediakan bahan bacaan berjenjang, infografis visual, serta video/simulasi interaktif sesuai kesiapan belajar.",
+          proses: "Pendampingan bertahap (scaffolding) bagi peserta didik inklusi/butuh bimbingan dan eksplorasi mandiri bagi peserta didik mahir.",
+          produk: "Peserta didik memilih format sajian hasil karya berupa poster infografis, presentasi digital, diagram konsep, atau laporan tertulis."
         },
-        remedial: "Penjelasan ulang materi esensial dan latihan soal sederhana.",
-        pengayaan: "Pemberian materi tambahan tingkat lanjut.",
-        refleksiGuru: "Apakah seluruh siswa aktif berpartisipasi?",
-        refleksiPesertaDidik: "Apa bagian paling berkesan hari ini?",
+        remedial: `Bimbingan kelompok kecil dengan media visual konkret dan latihan terpandu untuk menguatkan konsep dasar ${topikLabel}.`,
+        pengayaan: `Eksplorasi studi kasus lanjutan lintas disiplin terkait ${topikLabel} dan penugasan sebagai mentor sebaya.`,
+        refleksiGuru: "Apakah 3 prinsip Pembelajaran Mendalam (Berkesadaran, Bermakna, Menggembirakan) dan tadabbur Ayat Al-Qur'an berjalan optimal? Apa perbaikan untuk pertemuan berikutnya?",
+        refleksiPesertaDidik: `Apa pemahaman baru paling bermakna tentang ${topikLabel} hari ini, dan bagaimana hikmah ${ayat.surahAyat} menginspirasi sikapmu?`,
         lampiran: {
-          lkpd: "Lembar Kerja berisi langkah eksperimen mandiri.",
-          bahanBacaan: "Modul ringkas materi pelajaran.",
-          rubrik: "Rubrik penilaian keaktifan kerja sama.",
-          instrumenAsesmen: "Soal uraian pendek sebanyak 3 butir.",
-          daftarPustaka: "Buku Panduan Guru Kurikulum Merdeka 2022."
+          lkpd: `LKPD Pembelajaran Mendalam (Tahap Memahami, Mengaplikasi, Merefleksi) dan lembar tadabbur ${ayat.surahAyat} untuk materi ${topikLabel}.`,
+          bahanBacaan: `Ringkasan materi esensial ${topikLabel}, glosarium istilah kunci, dan catatan tadabbur ${ayat.surahAyat}.`,
+          rubrik: "Rubrik Analitik Pembelajaran Mendalam (Baru Berkembang, Layak, Cakap, Mahir) dan lembar observasi 8 Dimensi Profil Lulusan.",
+          instrumenAsesmen: `3 soal studi kasus HOTS dan 1 tugas proyek kolaboratif tentang ${topikLabel}.`,
+          daftarPustaka: `Buku Panduan Guru & Siswa ${mapelLabel} Kemendikdasmen, Panduan Pembelajaran Mendalam (Deep Learning) Kemendikdasmen 2025, serta Al-Qur'an dan Terjemahannya Kemenag RI.`
         }
       };
       return res.json({ success: true, isJson: true, data: fallbackData, isFallback: true });
     }
 
-    const fallbackContent = `# DOKUMEN ADMINISTRASI GURU (MODE FALLBACK PINTAR)
-**Mata Pelajaran:** ${mataPelajaran || 'Umum'}
-**Kelas:** ${kelas || '7'}
-**Tahun Ajaran:** ${tahunAjaran || '2026/2027'}
-**Topik:** ${topik || 'Kurikulum Merdeka Deep Learning & Inklusif'}
+    if (tipe === 'cp') {
+      const fallbackCp = buildOfficialCpData({
+        mataPelajaran,
+        kelas,
+        topik,
+        tahunAjaran: tahunAjaran || '2026/2027',
+      });
+      return res.json({
+        success: true,
+        isJson: true,
+        formatType: 'cp_resmi',
+        data: fallbackCp,
+        content: formatCpToPlainText(fallbackCp),
+        isFallback: true,
+      });
+    }
 
----
+    if (tipe === 'atp') {
+      const fallbackAtp = buildOfficialAtpData({
+        mataPelajaran,
+        kelas,
+        topik,
+        tahunAjaran: tahunAjaran || '2026/2027',
+      });
+      return res.json({
+        success: true,
+        isJson: true,
+        formatType: 'atp_resmi',
+        data: fallbackAtp,
+        content: formatAtpToPlainText(fallbackAtp),
+        isFallback: true,
+      });
+    }
 
-### A. IDENTITAS MODUL
-- **Nama Penyusun:** Dewan Guru / Staf Akademik
-- **Satuan Pendidikan:** SMP Islam Modern Al Fakhír
-- **Fase / Kelas:** D / ${kelas || '7'}
-- **Alokasi Waktu:** 2 JP (2 x 40 Menit)
+    if (tipe === 'kktp') {
+      const fallbackKktp = buildOfficialKktpData({
+        mataPelajaran,
+        kelas,
+        topik,
+        tahunAjaran: tahunAjaran || '2026/2027',
+      });
+      return res.json({
+        success: true,
+        isJson: true,
+        formatType: 'kktp_resmi',
+        data: fallbackKktp,
+        content: formatKktpToPlainText(fallbackKktp),
+        isFallback: true,
+      });
+    }
 
-### B. KARAKTERISTIK PESERTA DIDIK
-1. **Reguler:** Peserta didik memiliki antusiasme tinggi dalam pembelajaran interaktif berbasis digital dan kolaboratif.
-2. **Inklusif:** Menyediakan pendekatan diferensiasi proses dan produk untuk mendukung peserta didik dengan kebutuhan khusus ringan (slow learner / gaya belajar visual & kinestetik).
+    if (tipe === 'prota') {
+      const fallbackProta = buildOfficialProtaData({
+        mataPelajaran,
+        kelas,
+        topik,
+        tahunAjaran: tahunAjaran || '2026/2027',
+      });
+      return res.json({
+        success: true,
+        isJson: true,
+        formatType: 'prota_resmi',
+        data: fallbackProta,
+        content: formatProtaToPlainText(fallbackProta),
+        isFallback: true,
+      });
+    }
 
-### C. TUJUAN PEMBELAJARAN
-- Peserta didik mampu memahami konsep esensial materi secara mendalam.
-- Mengintegrasikan nilai-nilai keimanan, ketakwaan, serta profil pelajar Rahmatan Lil Alamin.
+    if (tipe === 'prosem') {
+      const fallbackProsem = buildOfficialProsemData({
+        mataPelajaran,
+        kelas,
+        semester,
+        topik,
+        tahunAjaran: tahunAjaran || '2026/2027',
+      });
+      return res.json({
+        success: true,
+        isJson: true,
+        formatType: 'prosem_resmi',
+        data: fallbackProsem,
+        content: formatProsemToPlainText(fallbackProsem),
+        isFallback: true,
+      });
+    }
 
-### D. LANGKAH PEMBELAJARAN (DEEP LEARNING)
-1. **Mindful (Berkesadaran - 10 Menit):** Apersepsi, doa bersama, dan penyelarasan fokus belajar.
-2. **Meaningful (Bermakna - 40 Menit):** Eksplorasi konsep, diskusi kelompok terbimbing, dan studi kasus nyata.
-3. **Joyful (Menyenangkan - 10 Menit):** Presentasi interaktif, kuis gamifikasi, dan refleksi pemahaman.
+    const tipeLabelMap: Record<string, string> = {
+      atp: 'ALUR TUJUAN PEMBELAJARAN (ATP)',
+      kktp: 'KRITERIA KETERCAPAIAN TUJUAN PEMBELAJARAN (KKTP)',
+      prota: 'PROGRAM TAHUNAN (PROTA)',
+      prosem: 'PROGRAM SEMESTER (PROSEM)',
+      jurnal: 'JURNAL MENGAJAR HARIAN',
+    };
+    const docHeaderTitle = tipeLabelMap[tipe] || `DOKUMEN ADMINISTRASI GURU (${(tipe || 'UMUM').toUpperCase()})`;
+    const mapelLabel = mataPelajaran || 'Umum';
+    const kelasLabel = kelas || 'VII';
+    const topikLabel = topik || `Materi Pokok ${mapelLabel}`;
 
-### E. ASESMEN & PENILAIAN
-- **Diagnostik:** Tanya jawab awal pembelajaran.
-- **Formatif:** Penilaian proses diskusi dan tugas kelompok.
-- **Sumatif:** Tes tertulis pilihan ganda dan esai.
+    const fallbackContent = `${docHeaderTitle}
+SMP ISLAM MODERN AL FAKHIR
+TAHUN AJARAN ${tahunAjaran || '2026/2027'}
 
-*(Catatan: Draf ini dibuat otomatis secara instan untuk memastikan kelancaran administrasi guru meskipun kuota API sedang padat.)*`;
+IDENTITAS DOKUMEN
+Mata Pelajaran   : ${mapelLabel}
+Fase / Kelas     : Fase D / Kelas ${kelasLabel}
+Fokus Topik      : ${topikLabel}
+Satuan Pendidikan: SMP Islam Modern Al Fakhir
+
+A. LANDASAN & CAPAIAN KOMPETENSI
+Peserta didik mampu memahami konsep esensial, menganalisis permasalahan nyata, dan mengaplikasikan kompetensi ${mapelLabel} khususnya pada topik ${topikLabel} secara mendalam (Berkesadaran, Bermakna, Menggembirakan) serta mengintegrasikan 8 Dimensi Profil Lulusan dan nilai keislaman.
+
+B. RINCIAN TARGET & INDIKATOR PEMBELAJARAN
+1. Memahami konsep fundamental dan ruang lingkup ${topikLabel} secara sistematis.
+2. Menganalisis studi kasus kontekstual yang berkaitan dengan ${topikLabel} secara kritis dan kolaboratif.
+3. Mengaplikasikan pengetahuan dan keterampilan ${topikLabel} dalam proyek nyata serta merefleksikan kebermanfaatannya.
+
+C. STRATEGI ASESMEN & TINDAK LANJUT
+- Asesmen Awal (Diagnostik): Pemetaan kesiapan belajar dan pengetahuan prasyarat peserta didik.
+- Asesmen Proses (Formatif): Observasi diskusi kolaboratif, unjuk kerja, dan umpan balik LKPD.
+- Asesmen Akhir (Sumatif): Evaluasi produk/proyek serta soal pemecahan masalah HOTS.`;
 
     return res.json({ success: true, content: fallbackContent, isFallback: true });
   }
@@ -956,10 +1774,12 @@ Format output lengkap dalam Bahasa Indonesia yang sangat rapi, jelas, dan siap p
 // Vite & Static file handling
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
+  let vite: Awaited<ReturnType<typeof import('vite')['createServer']>> | null = null;
+
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
+    vite = await createViteServer({
+      server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -976,13 +1796,27 @@ async function startServer() {
   });
 
   server.on('error', (err: any) => {
-    if (err.code === 'EADDRINUSE') {
-      console.log(`Port ${PORT} already in use, cleaning up...`);
-      process.exit(0);
-    } else {
-      console.error('Server error:', err);
-    }
+    console.error('Server error:', err);
+    process.exit(1);
   });
+
+  const shutdown = async () => {
+    server.close();
+    if (vite) {
+      try {
+        await vite.close();
+      } catch {
+        // ignore close errors on shutdown
+      }
+    }
+    process.exit(0);
+  };
+
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});

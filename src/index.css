@@ -143,6 +143,11 @@
     color: #0f172a !important;
   }
 
+  #printable-denah-ruang {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
   .print\:hidden {
     display: none !important;
   }
@@ -156,8 +161,8 @@
   }
 
   @page {
-    size: auto;
-    margin: 10mm;
+    size: A4;
+    margin: 5mm;
   }
 
   @page kartu-a4-page {

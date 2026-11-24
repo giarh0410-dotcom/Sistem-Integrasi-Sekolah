@@ -115,6 +115,8 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   // Filter Data Pembayaran Siswa State
   const [tahunAjaran, setTahunAjaran] = useState<string>(schoolSettings?.tahunAjaran || '2026/2027');
   const [semester, setSemester] = useState<string>(schoolSettings?.semesterAktif || 'Ganjil');
+  const [filterKelasPembayaran, setFilterKelasPembayaran] = useState<string>('all');
+  const [selectedSiswaId, setSelectedSiswaId] = useState<string>('');
   const [searchKey, setSearchKey] = useState<string>('');
   const [appliedSearch, setAppliedSearch] = useState<string>('');
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
@@ -861,36 +863,70 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
     showToast('📋 Ringkasan Rekap Gaji Bulanan berhasil disalin ke Clipboard!');
   };
 
-  // Search Suggestions memo
-  const searchSuggestions = useMemo(() => {
-    if (!searchKey.trim() || searchKey.trim().length < 1) return [];
-    const q = searchKey.trim().toLowerCase();
-    return siswaList.filter(s => 
-      s.nama.toLowerCase().includes(q) ||
-      s.nis.toLowerCase().includes(q) ||
-      (s.nisn && s.nisn.toLowerCase().includes(q))
-    ).slice(0, 6);
-  }, [siswaList, searchKey]);
+  // Students filtered by selected Kelas / Rombel on Pembayaran Siswa
+  const siswaInSelectedKelas = useMemo(() => {
+    const list = (siswaList || []).filter(Boolean);
+    const filtered = filterKelasPembayaran === 'all'
+      ? list
+      : list.filter(s => {
+          const kelasVal = (s.kelas || '').trim().toLowerCase();
+          const rombelVal = (s.rombel || '').trim().toLowerCase();
+          const target = filterKelasPembayaran.trim().toLowerCase();
+          return kelasVal === target || rombelVal === target;
+        });
+    return [...filtered].sort((a, b) => (a.nama || '').localeCompare(b.nama || '', 'id'));
+  }, [siswaList, filterKelasPembayaran]);
 
-  // Find Selected Siswa
+  // Search Suggestions memo (null-safe, works immediately on focus or typing, falls back across all classes if needed)
+  const searchSuggestions = useMemo(() => {
+    const q = searchKey.trim().toLowerCase();
+    if (!q) {
+      return siswaInSelectedKelas.slice(0, 25);
+    }
+    const matchesStudent = (s: Siswa) =>
+      (s.nama || '').toLowerCase().includes(q) ||
+      (s.nis || '').toLowerCase().includes(q) ||
+      (s.nisn || '').toLowerCase().includes(q) ||
+      (s.kelas || '').toLowerCase().includes(q) ||
+      (s.rombel || '').toLowerCase().includes(q);
+
+    const inClass = siswaInSelectedKelas.filter(matchesStudent);
+    if (inClass.length > 0) return inClass.slice(0, 20);
+
+    // Fallback to all classes if not found in the filtered class
+    return (siswaList || []).filter(s => s && matchesStudent(s)).slice(0, 20);
+  }, [siswaList, siswaInSelectedKelas, searchKey]);
+
+  // Find Selected Siswa (prefer exact ID match, fallback to safe search query)
   const selectedSiswa = useMemo(() => {
-    if (!siswaList.length) return null;
+    if (!siswaList || !siswaList.length) return null;
+    if (selectedSiswaId) {
+      const exact = siswaList.find(s => s && s.id === selectedSiswaId);
+      if (exact) return exact;
+    }
     const query = appliedSearch.trim().toLowerCase();
     if (!query) return null;
 
-    const match = siswaList.find(
-      s => s.nis.toLowerCase() === query || 
-           (s.nisn && s.nisn.toLowerCase() === query) ||
-           s.nis.toLowerCase().includes(query) ||
-           (s.nisn && s.nisn.toLowerCase().includes(query)) ||
-           s.nama.toLowerCase().includes(query) ||
-           s.id.toLowerCase() === query
-    );
+    const match = siswaList.find(s => {
+      if (!s) return false;
+      const nis = (s.nis || '').toLowerCase();
+      const nisn = (s.nisn || '').toLowerCase();
+      const nama = (s.nama || '').toLowerCase();
+      const id = (s.id || '').toLowerCase();
+      return (
+        nis === query ||
+        (nisn && nisn === query) ||
+        (nis && nis.includes(query)) ||
+        (nisn && nisn.includes(query)) ||
+        nama.includes(query) ||
+        id === query
+      );
+    });
 
     return match || null;
-  }, [siswaList, appliedSearch]);
+  }, [siswaList, selectedSiswaId, appliedSearch]);
 
-  const studentKey = `${selectedSiswa?.nis || 'default'}_${tahunAjaran}_${semester}`;
+  const studentKey = `${selectedSiswa?.id || selectedSiswa?.nis || 'default'}_${tahunAjaran}_${semester}`;
 
   // Selected Months for Bulanan SPP Payment
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
@@ -909,34 +945,135 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
     'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni'
   ];
 
-  // Dynamic Monthly SPP Fee derived from Tarif Biaya settings matching student's class
-  const monthlyFee = useMemo(() => {
-    if (!tarifList || tarifList.length === 0) return 100000;
+  // Strict grade number parser (Arabic 7–12 & Roman VII–XII with boundary guards so VIII never matches VII, IX never matches X)
+  const extractAllGradeNumbers = (text?: string): number[] => {
+    if (!text) return [];
+    const s = text.toLowerCase().trim();
+    const found = new Set<number>();
+    if (/(^|[^0-9])12([^0-9]|$)/.test(s) || /(^|[^a-z])xii([^a-z]|$)/.test(s)) found.add(12);
+    if (/(^|[^0-9])11([^0-9]|$)/.test(s) || /(^|[^a-z])xi([^a-z]|$)/.test(s)) found.add(11);
+    if (/(^|[^0-9])10([^0-9]|$)/.test(s) || /(^|[^a-z])x([^a-z]|$)/.test(s)) found.add(10);
+    if (/(^|[^0-9])9([^0-9]|$)/.test(s) || /(^|[^a-z])ix([^a-z]|$)/.test(s)) found.add(9);
+    if (/(^|[^0-9])8([^0-9]|$)/.test(s) || /(^|[^a-z])viii([^a-z]|$)/.test(s)) found.add(8);
+    if (/(^|[^0-9])7([^0-9]|$)/.test(s) || /(^|[^a-z])vii([^a-z]|$)/.test(s)) found.add(7);
+    return Array.from(found);
+  };
 
-    const sppTarifs = tarifList.filter(t => t.tipe === 'spp' && t.status === 'Aktif');
-    if (sppTarifs.length === 0) return 100000;
+  const extractGradeNumber = (text?: string): number | null => {
+    const nums = extractAllGradeNumbers(text);
+    return nums.length > 0 ? nums[0] : null;
+  };
 
-    if (selectedSiswa && selectedSiswa.kelas) {
-      const k = selectedSiswa.kelas.toLowerCase();
-      const match = sppTarifs.find(t => {
-        const tk = t.tingkatKelas.toLowerCase();
-        if ((k.includes('7') || k.includes('vii')) && (tk.includes('7') || tk.includes('vii'))) return true;
-        if ((k.includes('8') || k.includes('viii')) && (tk.includes('8') || tk.includes('viii'))) return true;
-        if ((k.includes('9') || k.includes('ix')) && (tk.includes('9') || tk.includes('ix'))) return true;
-        if ((k.includes('10') || k.includes('x')) && (tk.includes('10') || tk.includes('x'))) return true;
-        if ((k.includes('11') || k.includes('xi')) && (tk.includes('11') || tk.includes('xi'))) return true;
-        if ((k.includes('12') || k.includes('xii')) && (tk.includes('12') || tk.includes('xii'))) return true;
-        return false;
+  // Authoritative student grade & rombel resolver (checks rombelList and explicit kelas/rombel before falling back to tingkatKelas)
+  const getStudentTingkatDanRombel = (siswa: Siswa | null) => {
+    if (!siswa) return { tingkatKelas: '-', rombel: '-', gradeNum: null as number | null };
+
+    const rb = (siswa.rombel || siswa.kelas || '-').trim() || '-';
+    const kelasLower = (siswa.kelas || '').trim().toLowerCase();
+    const rombelLower = (siswa.rombel || '').trim().toLowerCase();
+
+    let resolvedTk: string | undefined;
+
+    // 1. Authoritative lookup from rombelList (handles rombel names with or without Roman prefix)
+    if (rombelList && rombelList.length > 0) {
+      const matchRombel = rombelList.find(r => {
+        const rn = (r.namaRombel || '').trim().toLowerCase();
+        return rn && (rn === kelasLower || rn === rombelLower);
       });
-      if (match) return match.nominal;
+      if (matchRombel?.tingkatKelas) {
+        resolvedTk = matchRombel.tingkatKelas;
+      }
     }
 
-    return sppTarifs[0].nominal;
-  }, [tarifList, selectedSiswa]);
+    // 2. Parse grade directly from siswa.kelas or siswa.rombel (e.g. "VIII - Al Kindi" -> Kelas 8)
+    if (!resolvedTk) {
+      const fromKelas = extractGradeNumber(siswa.kelas) ?? extractGradeNumber(siswa.rombel);
+      if (fromKelas !== null) {
+        resolvedTk = `Kelas ${fromKelas}`;
+      }
+    }
+
+    // 3. Fallback to siswa.tingkatKelas
+    if (!resolvedTk && siswa.tingkatKelas) {
+      const fromTk = extractGradeNumber(siswa.tingkatKelas);
+      resolvedTk = fromTk !== null ? `Kelas ${fromTk}` : siswa.tingkatKelas;
+    }
+
+    const finalTk = resolvedTk || 'Kelas 7';
+    const gradeNum = extractGradeNumber(finalTk);
+
+    return {
+      tingkatKelas: finalTk,
+      rombel: rb,
+      gradeNum,
+    };
+  };
+
+  // Check if a tariff applies to a specific student (exact rombel -> exact grade -> multi-grade -> Semua Tingkat)
+  const doesTarifMatchStudent = (tarif: TarifBiaya, siswa: Siswa | null): number => {
+    if (!siswa || !tarif) return 0;
+    const { tingkatKelas, rombel, gradeNum } = getStudentTingkatDanRombel(siswa);
+    const tkNorm = (tarif.tingkatKelas || '').trim().toLowerCase();
+    const kelasNorm = (siswa.kelas || '').trim().toLowerCase();
+    const rombelNorm = rombel.trim().toLowerCase();
+
+    // Priority 4 (highest): exact rombel name match (e.g. "VIII - Al Kindi")
+    if (tkNorm && (tkNorm === kelasNorm || tkNorm === rombelNorm)) {
+      return 4;
+    }
+
+    // Priority 3: exact single-grade match on tarif.tingkatKelas (e.g. "Kelas 8" === 8)
+    const tarifTkGrades = extractAllGradeNumbers(tarif.tingkatKelas);
+    if (gradeNum !== null && tarifTkGrades.length > 0 && tarifTkGrades.includes(gradeNum)) {
+      return 3;
+    }
+
+    // Priority 2: multi-grade or descriptive match on namaBiaya (e.g. "SPP Bulanan Kelas 8 & 9")
+    const namaGrades = extractAllGradeNumbers(tarif.namaBiaya);
+    if (gradeNum !== null && namaGrades.length > 0 && namaGrades.includes(gradeNum)) {
+      return 2;
+    }
+
+    // Priority 1: applies to Semua Tingkat / exact string match
+    if (tkNorm.includes('semua') || tkNorm === tingkatKelas.trim().toLowerCase()) {
+      return 1;
+    }
+
+    return 0;
+  };
+
+  // Dynamic Active SPP Tariff & Monthly Fee derived strictly from Tarif Biaya matching student's class
+  const activeSppTarif = useMemo<TarifBiaya | null>(() => {
+    if (!tarifList || tarifList.length === 0) return null;
+    const sppTarifs = tarifList.filter(t => t.tipe === 'spp' && t.status === 'Aktif');
+    if (sppTarifs.length === 0) return null;
+
+    if (selectedSiswa) {
+      let bestTarif: TarifBiaya | null = null;
+      let bestScore = 0;
+      sppTarifs.forEach(t => {
+        const score = doesTarifMatchStudent(t, selectedSiswa);
+        if (score > bestScore) {
+          bestScore = score;
+          bestTarif = t;
+        }
+      });
+      if (bestTarif) return bestTarif;
+    }
+
+    return sppTarifs[0];
+  }, [tarifList, selectedSiswa, rombelList]);
+
+  const monthlyFee = activeSppTarif ? activeSppTarif.nominal : 100000;
 
   const calculatedTotal = selectedMonths.length > 0 ? selectedMonths.length * monthlyFee : 0;
 
-  const uktTarifs = useMemo(() => tarifList.filter(t => t.tipe === 'ukt' && t.status === 'Aktif'), [tarifList]);
+  const uktTarifs = useMemo(() => {
+    const active = tarifList.filter(t => t.tipe === 'ukt' && t.status === 'Aktif');
+    if (!selectedSiswa) return active;
+    return [...active].sort((a, b) => doesTarifMatchStudent(b, selectedSiswa) - doesTarifMatchStudent(a, selectedSiswa));
+  }, [tarifList, selectedSiswa, rombelList]);
+
   const ekskulTarifs = useMemo(() => tarifList.filter(t => t.tipe === 'ekskul' && t.status === 'Aktif'), [tarifList]);
   const [quickPayType, setQuickPayType] = useState<'spp' | 'ukt' | 'ekskul'>('spp');
   const [quickPayItemId, setQuickPayItemId] = useState<string>('');
@@ -1012,14 +1149,19 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   );
   const [selectedMetodePembayaran, setSelectedMetodePembayaran] = useState<string>('Cash / Kasir');
 
-  // Auto-select first item when type changes or tariffs update
+  // Auto-select matching class item when type, student, or tariffs update
   React.useEffect(() => {
-    if (quickPayType === 'ukt' && uktTarifs.length > 0 && !uktTarifs.some(t => t.id === quickPayItemId)) {
-      setQuickPayItemId(uktTarifs[0].id);
+    if (quickPayType === 'ukt' && uktTarifs.length > 0) {
+      const bestMatch = selectedSiswa
+        ? uktTarifs.find(t => doesTarifMatchStudent(t, selectedSiswa) > 0) || uktTarifs[0]
+        : uktTarifs[0];
+      if (!uktTarifs.some(t => t.id === quickPayItemId) || (selectedSiswa && bestMatch.id !== quickPayItemId && doesTarifMatchStudent(uktTarifs.find(t => t.id === quickPayItemId) as TarifBiaya, selectedSiswa) === 0)) {
+        setQuickPayItemId(bestMatch.id);
+      }
     } else if (quickPayType === 'ekskul' && ekskulTarifs.length > 0 && !ekskulTarifs.some(t => t.id === quickPayItemId)) {
       setQuickPayItemId(ekskulTarifs[0].id);
     }
-  }, [quickPayType, uktTarifs, ekskulTarifs]);
+  }, [quickPayType, uktTarifs, ekskulTarifs, selectedSiswa]);
 
   // Sync total when selected months, monthlyFee, or selected item change
   React.useEffect(() => {
@@ -1030,7 +1172,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
     } else if (quickPayType === 'ekskul') {
       const found = ekskulTarifs.find(t => t.id === quickPayItemId);
       const fee = found ? found.nominal : 0;
-      const tot = selectedMonths.length > 0 ? selectedMonths.length * fee : fee;
+      const tot = selectedMonths.length > 0 ? selectedMonths.length * fee : 0;
       setInputTotal(tot);
       setInputDibayar(tot);
     } else {
@@ -1046,8 +1188,8 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
     }
   }, [selectedMonths, monthlyFee, quickPayType, quickPayItemId, uktTarifs, ekskulTarifs]);
 
-  // Calculate Kembalian
-  const kembalian = Math.max(0, inputDibayar - (selectedMonths.length > 0 ? calculatedTotal : inputTotal));
+  // Calculate Kembalian accurately across SPP, UKT, and Ekskul
+  const kembalian = Math.max(0, inputDibayar - inputTotal);
 
   // Bebas Payment Custom Amount State
   const [bebasPayInput, setBebasPayInput] = useState<{ [key: string]: number }>({});
@@ -1195,10 +1337,16 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       });
 
       tagihanList.forEach(t => {
-        if (t && !t.isDeleted && t.siswaNama && (t.siswaNama || '').trim().toLowerCase() === normName && t.tipe === 'spp' && t.status === 'Lunas') {
+        if (!t || t.isDeleted || t.tipe !== 'spp' || t.status !== 'Lunas') return;
+        const tNormName = (t.siswaNama || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const isSameStudent = (t.siswaId && sId && t.siswaId === sId) || tNormName === normName;
+        if (isSameStudent) {
           allMonths.forEach(m => {
-            if (t.namaTagihan && t.namaTagihan.toLowerCase().includes(m.toLowerCase())) {
-              derivedPaid[m] = t.tanggalBayar || '09/08/2026';
+            if (
+              (t.namaTagihan && t.namaTagihan.toLowerCase().includes(m.toLowerCase())) ||
+              (t.bulanTahun && t.bulanTahun.toLowerCase().includes(m.toLowerCase()))
+            ) {
+              derivedPaid[m] = t.tanggalBayar || 'Lunas';
             }
           });
         }
@@ -1337,13 +1485,23 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
     // Combine and sort by date (newest first)
     return [...explicitBills, ...orphanBills].sort((a, b) => {
       const parseFlexibleDate = (dateStr?: string) => {
-        if (!dateStr) return 0;
-        if (typeof dateStr !== 'string') return 0;
-        
-        // Try standard parsing first
+        if (!dateStr || typeof dateStr !== 'string') return 0;
+
+        // Parse dd/mm/yyyy or dd-mm-yyyy (Indonesian numeric format)
+        const dmyMatch = dateStr.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+        if (dmyMatch) {
+          const day = parseInt(dmyMatch[1], 10);
+          const month = parseInt(dmyMatch[2], 10) - 1;
+          const rawYear = parseInt(dmyMatch[3], 10);
+          const year = rawYear < 100 ? 2000 + rawYear : rawYear;
+          const parsed = new Date(year, month, day).getTime();
+          if (!isNaN(parsed)) return parsed;
+        }
+
+        // Try standard parsing (ISO yyyy-mm-dd, etc.)
         const d = new Date(dateStr);
         if (!isNaN(d.getTime())) return d.getTime();
-        
+
         // Manual parsing for Indonesian formats like "10 Agustus 2026"
         try {
           const months = [
@@ -1361,16 +1519,90 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
             }
           }
         } catch (e) {}
-        
+
         return 0;
       };
 
-      const dateA = parseFlexibleDate(a.tanggalBayar || a.jatuhTempo);
-      const dateB = parseFlexibleDate(b.tanggalBayar || b.jatuhTempo);
+      const dateA = parseFlexibleDate(a.tanggalBayar || a.tanggalTagihan || a.jatuhTempo);
+      const dateB = parseFlexibleDate(b.tanggalBayar || b.tanggalTagihan || b.jatuhTempo);
       if (dateB === dateA) return b.id.localeCompare(a.id);
       return dateB - dateA;
     });
   }, [selectedSiswa, allEffectiveTagihanList, transaksiList, tahunAjaran]);
+
+  // Accurate per-student paid & outstanding totals synced directly with studentBills
+  const studentSummary = useMemo(() => {
+    if (!selectedSiswa) {
+      return { sppPaid: 0, uktPaid: 0, ekskulPaid: 0, totalPaid: 0, totalTunggakan: 0, unpaidCount: 0 };
+    }
+    let sppPaid = 0;
+    let uktPaid = 0;
+    let ekskulPaid = 0;
+    let totalTunggakan = 0;
+    let unpaidCount = 0;
+
+    studentBills.forEach(b => {
+      const paid = b.terbayar || 0;
+      const sisa = Math.max(0, (b.nominal || 0) - paid);
+      if (b.tipe === 'spp') sppPaid += paid;
+      else if (b.tipe === 'ukt') uktPaid += paid;
+      else if (b.tipe === 'ekskul') ekskulPaid += paid;
+      if (sisa > 0) {
+        totalTunggakan += sisa;
+        unpaidCount += 1;
+      }
+    });
+
+    return {
+      sppPaid,
+      uktPaid,
+      ekskulPaid,
+      totalPaid: sppPaid + uktPaid + ekskulPaid,
+      totalTunggakan,
+      unpaidCount,
+    };
+  }, [selectedSiswa, studentBills]);
+
+  // Quick 1-click settlement for an unpaid / partial bill in student history
+  const handleQuickSettleBill = (bill: TagihanKeuangan) => {
+    if (!selectedSiswa) return;
+    const sisa = Math.max(0, (bill.nominal || 0) - (bill.terbayar || 0));
+    if (sisa <= 0) return;
+
+    const now = new Date();
+    const dateNumeric = now.toLocaleDateString('id-ID', {
+      day: '2-digit', month: '2-digit', year: 'numeric'
+    });
+    const dateIso = now.toISOString().split('T')[0];
+
+    localStorage.removeItem('edu_tagihan_force_clear');
+    localStorage.removeItem('edu_transaksi_force_clear');
+
+    setTagihanList(prev =>
+      prev.map(t =>
+        t.id === bill.id
+          ? { ...t, terbayar: t.nominal, status: 'Lunas', tanggalBayar: dateIso }
+          : t
+      )
+    );
+
+    if (setTransaksiList) {
+      const newTrx: TransaksiKeuangan = {
+        id: `tx-${Date.now()}`,
+        tagihanId: bill.id,
+        siswaNama: selectedSiswa.nama,
+        pembayaran: bill.namaTagihan,
+        tipe: bill.tipe,
+        nominal: sisa,
+        tanggal: dateNumeric,
+        metodePembayaran: selectedMetodePembayaran as 'Cash / Kasir' | 'Transfer Bank' | 'QRIS',
+        penerima: 'Kasir / Bendahara Sekolah',
+      };
+      setTransaksiList(prev => [newTrx, ...prev]);
+    }
+
+    showToast(`Tagihan "${bill.namaTagihan}" sebesar Rp ${sisa.toLocaleString('id-ID')} berhasil dilunasi!`, 'success');
+  };
 
   // Execute Permanent Bill Deletion (Deletes bill & removes all associated transaction records)
   const handleExecuteDeleteTagihanPermanen = (t: TagihanKeuangan) => {
@@ -1673,7 +1905,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
         localStorage.setItem(`edu_student_paid_${studentKey}`, JSON.stringify({}));
         localStorage.setItem(`edu_student_bebas_${studentKey}`, JSON.stringify({}));
       } catch (e) {}
-      alert('Semua riwayat transaksi berhasil di-reset dari awal.');
+      showToast('Semua riwayat transaksi berhasil di-reset dari awal.', 'success');
     }
   };
 
@@ -2016,7 +2248,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Download receipt error:', err);
-      alert('Gagal mengunduh file kwitansi.');
+      showToast('Gagal mengunduh file kwitansi.', 'error');
     }
   };
 
@@ -2186,7 +2418,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       document.body.removeChild(link);
     } catch (err) {
       console.error('Download receipt image error:', err);
-      alert('Gagal mengunduh gambar kwitansi.');
+      showToast('Gagal mengunduh gambar kwitansi.', 'error');
     }
   };
 
@@ -2234,38 +2466,6 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   const [qrisUrl, setQrisUrl] = useState(schoolSettings?.qrisUrl || 'https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg');
   const [showVaConfigModal, setShowVaConfigModal] = useState(false);
 
-  const getStudentTingkatDanRombel = (siswa: Siswa | null) => {
-    if (!siswa) return { tingkatKelas: '-', rombel: '-' };
-    
-    let tk = siswa.tingkatKelas;
-    let rb = siswa.rombel || siswa.kelas || '-';
-
-    if (!tk && rombelList && rombelList.length > 0) {
-      const matchRombel = rombelList.find(r => 
-        r.namaRombel.trim().toLowerCase() === (siswa.kelas || '').trim().toLowerCase() || 
-        r.namaRombel.trim().toLowerCase() === (siswa.rombel || '').trim().toLowerCase()
-      );
-      if (matchRombel) {
-        tk = matchRombel.tingkatKelas;
-      }
-    }
-
-    if (!tk && siswa.kelas) {
-      const k = siswa.kelas.toLowerCase();
-      if (k.includes('7') || k.includes('vii')) tk = 'Kelas 7';
-      else if (k.includes('8') || k.includes('viii')) tk = 'Kelas 8';
-      else if (k.includes('9') || k.includes('ix')) tk = 'Kelas 9';
-      else if (k.includes('10') || k.includes(' x') || k.startsWith('x-') || k.startsWith('x ')) tk = 'Kelas 10';
-      else if (k.includes('11') || k.includes('xi')) tk = 'Kelas 11';
-      else if (k.includes('12') || k.includes('xii')) tk = 'Kelas 12';
-    }
-
-    return {
-      tingkatKelas: tk || 'Kelas 7',
-      rombel: rb
-    };
-  };
-
   const [showEditSiswaModal, setShowEditSiswaModal] = useState(false);
   const [editingSiswaData, setEditingSiswaData] = useState<Partial<Siswa>>({});
 
@@ -2286,7 +2486,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
 
     setSiswaList(prev => prev.map(s => s.id === selectedSiswa.id ? updatedSiswa : s));
     setShowEditSiswaModal(false);
-    alert("Data siswa (Kelas & Rombel) berhasil diperbarui!");
+    showToast('Data siswa (Kelas & Rombel) berhasil diperbarui!', 'success');
   };
 
   const defaultReminderText = `Yth. Bapak/Ibu Wali dari *{NAMA_SISWA}* ({KELAS}),\n\nMenginformasikan tagihan :\n• *No. Invoice*: {NO_INVOICE}\n• *{TAGIHAN}* : *Rp {NOMINAL}*\n• *Jatuh tempo* : {JATUH_TEMPO}\n• *Status saat ini*: {STATUS}.\n\nMohon dapat melakukan pembayaran melalui Rekening Kasir Sekolah / QRIS / Transfer Bank :\n• *{BANK_VA_NAME}*\n• No. Rek/VA : *{BANK_VA_NUMBER}*\n• a.n *{BANK_VA_OWNER}*\n\nTerima kasih atas perhatian Bapak/Ibu.\n• *Bendahara SMPI MODERN AL FAKHIR*`;
@@ -2323,14 +2523,14 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       qrisUrl
     }));
     setShowVaConfigModal(false);
-    alert("Pengaturan Virtual Account & QRIS berhasil disimpan!");
+    showToast('Pengaturan Virtual Account & QRIS berhasil disimpan!', 'success');
   };
 
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
   const handleSaveTemplates = () => {
     if (!setSchoolSettings) {
-      alert("Fasilitas simpan pengaturan tidak tersedia!");
+      showToast('Fasilitas simpan pengaturan tidak tersedia!', 'error');
       return;
     }
     setSchoolSettings(prev => ({
@@ -2466,10 +2666,43 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
     metodePembayaran: 'Cash / Kasir'
   });
 
+  // Select a specific student cleanly
+  const handleSelectSiswa = (s: Siswa) => {
+    setSelectedSiswaId(s.id);
+    setSearchKey(s.nama);
+    setAppliedSearch(s.nama);
+    setShowSuggestions(false);
+    setSelectedMonths([]);
+  };
+
+  const handleResetSiswa = () => {
+    setSelectedSiswaId('');
+    setSearchKey('');
+    setAppliedSearch('');
+    setSelectedMonths([]);
+    setShowSuggestions(false);
+  };
+
   // Search Submit Handler
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setAppliedSearch(searchKey);
+    const q = searchKey.trim();
+    if (!q) {
+      if (siswaInSelectedKelas.length > 0) {
+        handleSelectSiswa(siswaInSelectedKelas[0]);
+      } else {
+        showToast('Masukkan Nama, NIS, atau NISN siswa terlebih dahulu.', 'error');
+      }
+      return;
+    }
+    if (searchSuggestions.length > 0) {
+      handleSelectSiswa(searchSuggestions[0]);
+    } else {
+      setSelectedSiswaId('');
+      setAppliedSearch(q);
+      setShowSuggestions(false);
+      showToast(`Siswa dengan kata kunci "${q}" tidak ditemukan di database.`, 'error');
+    }
   };
 
   // Month Selection Toggle
@@ -2580,7 +2813,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   // Process Payment / Create Tagihan Submission
   const handleProcessPayment = () => {
     if (!selectedSiswa) {
-      alert('Silakan cari dan pilih nama siswa terlebih dahulu!');
+      showToast('Silakan cari dan pilih nama siswa terlebih dahulu!', 'error');
       return;
     }
 
@@ -2599,17 +2832,17 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
 
     if (quickPayType === 'spp' || quickPayType === 'ekskul') {
       if (selectedMonths.length === 0) {
-        alert(`Silakan pilih bulan ${quickPayType === 'spp' ? 'SPP' : 'Ekskul'} pada Jenis Tagihan terlebih dahulu.`);
+        showToast(`Silakan pilih bulan ${quickPayType === 'spp' ? 'SPP' : 'Ekskul'} pada Jenis Tagihan terlebih dahulu.`, 'error');
         return;
       }
       if (quickPayType === 'ekskul' && !quickPayItemId) {
-        alert('Silakan pilih item ekskul terlebih dahulu.');
+        showToast('Silakan pilih item ekskul terlebih dahulu.', 'error');
         return;
       }
       const fee = quickPayType === 'spp' ? monthlyFee : (ekskulTarifs.find(t => t.id === quickPayItemId)?.nominal || 0);
       const totalToPay = selectedMonths.length * fee;
       if (totalToPay <= 0) {
-        alert('Total tagihan harus lebih dari 0.');
+        showToast('Total tagihan harus lebih dari 0.', 'error');
         return;
       }
 
@@ -2687,14 +2920,14 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
         setSlipPrintDate(inputTanggalTagihan || new Date().toISOString().split("T")[0]);
         // Jangan tampilkan kuitansi secara otomatis sesuai permintaan user
         // setShowPrintModal(true);
-        alert(`Pembayaran ${itemTitle} sebesar Rp ${inputDibayar.toLocaleString('id-ID')} berhasil diproses!`);
+        showToast(`Pembayaran ${itemTitle} sebesar Rp ${inputDibayar.toLocaleString('id-ID')} berhasil diproses!`, 'success');
 
         if (selectedSiswa && selectedSiswa.teleponWali) {
           const msg = `Yth. Ibu/Bapak Wali dari ${studentName},\n\nTerima kasih! Pembayaran ${itemTitle} sebesar Rp ${inputDibayar.toLocaleString('id-ID')} telah DITERIMA oleh Kasir Sekolah pada ${todayFormatted}.\n\n_Tata Usaha & Keuangan Sekolah_`;
           sendFonnteMessage(selectedSiswa.teleponWali, msg, fonnteToken);
         }
       } else {
-        alert(`Tagihan ${itemTitle} sebesar Rp ${totalToPay.toLocaleString('id-ID')} berhasil dibuat dan muncul di Rekap (Daftar Tagihan)!`);
+        showToast(`Tagihan ${itemTitle} sebesar Rp ${totalToPay.toLocaleString('id-ID')} berhasil dibuat & masuk ke Rekap!`, 'success');
       }
 
       setSelectedMonths([]);
@@ -2705,7 +2938,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       const payNominal = inputTotal > 0 ? inputTotal : (targetTarif ? targetTarif.nominal : 100000);
 
       if (payNominal <= 0) {
-        alert('Total tagihan harus lebih dari 0.');
+        showToast('Total tagihan harus lebih dari 0.', 'error');
         return;
       }
 
@@ -2778,14 +3011,14 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
         setPrintReceiptData(receipt);
         // Jangan tampilkan kuitansi secara otomatis sesuai permintaan user
         // setShowPrintModal(true);
-        alert(`Pembayaran ${itemTitle} sebesar Rp ${inputDibayar.toLocaleString('id-ID')} berhasil diproses!`);
+        showToast(`Pembayaran ${itemTitle} sebesar Rp ${inputDibayar.toLocaleString('id-ID')} berhasil diproses!`, 'success');
 
         if (selectedSiswa && selectedSiswa.teleponWali) {
           const msg = `Yth. Ibu/Bapak Wali dari ${studentName},\n\nTerima kasih! Pembayaran ${itemTitle} sebesar Rp ${inputDibayar.toLocaleString('id-ID')} telah DITERIMA oleh Kasir Sekolah pada ${todayFormatted}.\n\n_Tata Usaha & Keuangan Sekolah_`;
           sendFonnteMessage(selectedSiswa.teleponWali, msg, fonnteToken);
         }
       } else {
-        alert(`Tagihan ${itemTitle} sebesar Rp ${payNominal.toLocaleString('id-ID')} berhasil dibuat dan muncul di Rekap (Daftar Tagihan)!`);
+        showToast(`Tagihan ${itemTitle} sebesar Rp ${payNominal.toLocaleString('id-ID')} berhasil dibuat & masuk ke Rekap!`, 'success');
       }
 
       setInputTotal(0);
@@ -2908,10 +3141,10 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       }, 3000);
       
       setShowDeleteAllModal(false);
-      alert('Seluruh data tagihan dan transaksi berhasil dikosongkan!');
+      showToast('Seluruh data tagihan dan transaksi berhasil dikosongkan!', 'success');
     } catch (error) {
       console.error('Error during mass deletion:', error);
-      alert('Gagal mengosongkan data. Silakan coba lagi.');
+      showToast('Gagal mengosongkan data. Silakan coba lagi.', 'error');
     }
   };
 
@@ -2948,7 +3181,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   const handleSaveTarif = (e: React.FormEvent) => {
     e.preventDefault();
     if (!tarifForm.namaBiaya.trim() || tarifForm.nominal <= 0) {
-      alert('Mohon isi nama biaya dan nominal tarif dengan benar.');
+      showToast('Mohon isi nama biaya dan nominal tarif dengan benar.', 'error');
       return;
     }
 
@@ -2984,13 +3217,13 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
 
   const handleGenerateTagihanMassal = () => {
     if (!siswaList || siswaList.length === 0) {
-      alert('Data siswa kosong. Tidak dapat membuat tagihan.');
+      showToast('Data siswa kosong. Tidak dapat membuat tagihan.', 'error');
       return;
     }
 
     const activeTarifs = tarifList.filter(t => t.status === 'Aktif' && generateTypes.includes(t.tipe));
     if (activeTarifs.length === 0) {
-      alert('Tidak ada tarif aktif untuk kategori yang dipilih.');
+      showToast('Tidak ada tarif aktif untuk kategori yang dipilih.', 'error');
       return;
     }
 
@@ -3008,7 +3241,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
           }
           return false;
         }
-        return t.tingkatKelas === tingkatKelas || t.tingkatKelas === 'Semua Tingkat';
+        return doesTarifMatchStudent(t, siswa) > 0;
       });
 
       matchingTarifs.forEach(tarif => {
@@ -3043,9 +3276,9 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
 
     if (newTagihan.length > 0) {
       setTagihanList(prev => [...newTagihan, ...prev]);
-      alert(`Berhasil membuat ${createdCount} tagihan baru secara otomatis sesuai tarif & kelas masing-masing.`);
+      showToast(`Berhasil membuat ${createdCount} tagihan baru secara otomatis sesuai tarif & kelas masing-masing.`, 'success');
     } else {
-      alert('Tidak ada tagihan baru yang dibuat. Semua tagihan untuk kriteria ini sudah ada sebelumnya.');
+      showToast('Tidak ada tagihan baru yang dibuat. Semua tagihan untuk kriteria ini sudah ada sebelumnya.', 'error');
     }
     
     setShowGenerateModal(false);
@@ -3291,46 +3524,107 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
   return (
     <div className="space-y-6 text-slate-100">
 
-      {/* TOP HEADER & NAVIGATION SUBTABS */}
-      <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          {schoolSettings?.logoUrl ? (
-            <div className="w-12 h-12 rounded-xl p-1 bg-white/10 border border-slate-700 flex items-center justify-center shrink-0 shadow-md overflow-hidden">
-              <img 
-                src={schoolSettings.logoUrl} 
-                alt="Logo Sekolah" 
-                className="w-full h-full object-contain" 
-              />
-            </div>
+      {/* GLOBAL FLOATING TOAST NOTIFICATION */}
+      {gajiToast && (
+        <div
+          className={`fixed bottom-6 right-6 z-[120] flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-2xl border max-w-md transition-all ${
+            gajiToast.type === 'success'
+              ? 'bg-emerald-950/95 border-emerald-500/40 text-emerald-200'
+              : 'bg-rose-950/95 border-rose-500/40 text-rose-200'
+          }`}
+        >
+          {gajiToast.type === 'success' ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
           ) : (
-            <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center font-bold text-white shadow-md shadow-emerald-600/30">
-              <Wallet className="w-6 h-6 text-white" />
-            </div>
+            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
           )}
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-extrabold text-white">
-                {schoolSettings?.namaSekolah || 'Manajemen Keuangan Sekolah & Kasir'}
-              </h2>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
-                {schoolSettings?.npsn ? `NPSN: ${schoolSettings.npsn}` : 'Keuangan'}
-              </span>
+          <span className="text-xs font-bold leading-snug">{gajiToast.message}</span>
+          <button
+            type="button"
+            onClick={() => setGajiToast(null)}
+            className="ml-1 p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors shrink-0"
+            title="Tutup"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* TOP HEADER & NAVIGATION SUBTABS */}
+      <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-xl space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            {schoolSettings?.logoUrl ? (
+              <div className="w-12 h-12 rounded-xl p-1 bg-white/10 border border-slate-700 flex items-center justify-center shrink-0 shadow-md overflow-hidden">
+                <img
+                  src={schoolSettings.logoUrl}
+                  alt="Logo Sekolah"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center font-bold text-white shadow-md shadow-emerald-600/30">
+                <Wallet className="w-6 h-6 text-white" />
+              </div>
+            )}
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-xl font-extrabold text-white">
+                  {schoolSettings?.namaSekolah || 'Manajemen Keuangan Sekolah & Kasir'}
+                </h2>
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                  {schoolSettings?.npsn && schoolSettings.npsn.trim() !== '-' && schoolSettings.npsn.trim() !== ''
+                    ? `NPSN: ${schoolSettings.npsn}`
+                    : 'Keuangan Terpadu'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
+                <span>{schoolSettings?.namaSekolah ? `Dashboard Keuangan • ${schoolSettings.namaSekolah}` : 'Modul transaksi kasir SPP, iuran UKT/Uang Masuk, setting tarif biaya, kwitansi.'}</span>
+                {schoolSettings?.akreditasi && <span>• Akreditasi {schoolSettings.akreditasi}</span>}
+              </p>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
-              <span>{schoolSettings?.namaSekolah ? `Dashboard Keuangan • ${schoolSettings.namaSekolah}` : 'Modul transaksi kasir SPP, iuran UKT/Uang Masuk, setting tarif biaya, kwitansi.'}</span>
-              {schoolSettings?.akreditasi && <span>• Akreditasi {schoolSettings.akreditasi}</span>}
-            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowFonnteConfigModal(true)}
+              className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-700/70 transition-colors flex items-center gap-1.5 text-xs font-bold"
+              title="Pengaturan Gateway WA Fonnte"
+            >
+              <Settings className="w-4 h-4 text-emerald-400" />
+              <span className="hidden sm:inline">Gateway WA</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setShowFonnteConfigModal(true)}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700/60 transition-colors"
-            title="Pengaturan Gateway WA Fonnte"
-          >
-            <Settings className="w-4 h-4 text-emerald-400" />
-          </button>
+        {/* SUBTAB NAVIGATION BAR */}
+        <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-800/80">
+          {([
+            { id: 'pembayaran', label: 'Pembayaran Siswa', icon: CreditCard },
+            { id: 'pengaturan_biaya', label: 'Pengaturan Biaya', icon: Tag },
+            { id: 'rekap', label: 'Rekap & Tagihan', icon: FileSpreadsheet },
+            { id: 'redaksi', label: 'Redaksi WA', icon: MessageSquare },
+            { id: 'gaji', label: 'Gaji Guru & Staf', icon: Coins },
+          ] as const).map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleTabChange(tab.id)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
+                  isActive
+                    ? 'bg-emerald-600 border-emerald-500 text-white shadow-md shadow-emerald-600/20'
+                    : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -3339,13 +3633,22 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
         <div className="space-y-6">
 
           {/* 1. FILTER DATA PEMBAYARAN SISWA */}
-          <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-lg space-y-3">
-            <h3 className="text-sm font-bold text-white tracking-wide border-b border-slate-800 pb-2">
-              Filter Data Pembayaran Siswa
-            </h3>
+          <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-lg space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+              <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
+                <Filter className="w-4 h-4 text-emerald-400" />
+                Filter Data Pembayaran Siswa
+              </h3>
+              <span className="text-[11px] font-semibold text-slate-400">
+                Database: <strong className="text-emerald-400">{siswaList.length}</strong> siswa
+                {filterKelasPembayaran !== 'all' && (
+                  <> • Kelas ini: <strong className="text-sky-400">{siswaInSelectedKelas.length}</strong> siswa</>
+                )}
+              </span>
+            </div>
 
-            <form onSubmit={handleSearchSubmit} className="flex flex-col md:flex-row items-end gap-4 pt-1">
-              <div className="w-full md:w-48 space-y-1">
+            <form onSubmit={handleSearchSubmit} className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-end">
+              <div className="md:col-span-2 space-y-1">
                 <label className="text-xs font-bold text-slate-300">Tahun Ajaran</label>
                 <select
                   value={tahunAjaran}
@@ -3358,7 +3661,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                 </select>
               </div>
 
-              <div className="w-full md:w-40 space-y-1">
+              <div className="md:col-span-2 space-y-1">
                 <label className="text-xs font-bold text-slate-300">Semester</label>
                 <select
                   value={semester}
@@ -3370,68 +3673,153 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                 </select>
               </div>
 
-              <div className="flex-1 w-full space-y-1 relative">
+              <div className="md:col-span-3 space-y-1">
+                <label className="text-xs font-bold text-slate-300">Filter Kelas / Rombel</label>
+                <select
+                  value={filterKelasPembayaran}
+                  onChange={e => {
+                    setFilterKelasPembayaran(e.target.value);
+                  }}
+                  className="w-full bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                >
+                  <option value="all">Semua Kelas ({siswaList.length})</option>
+                  {availableKelasList.map(kls => (
+                    <option key={kls} value={kls}>{kls}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-5 space-y-1 relative">
                 <label className="text-xs font-bold text-slate-300">Cari Siswa (Nama / NIS / NISN)</label>
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Cari berdasarkan Nama, NIS, atau NISN (contoh: Ahmad / 20261001)..."
+                      placeholder="Ketik Nama, NIS, NISN, atau klik untuk daftar..."
                       value={searchKey}
                       onChange={e => {
                         setSearchKey(e.target.value);
                         setShowSuggestions(true);
                       }}
                       onFocus={() => setShowSuggestions(true)}
-                      onBlur={() => setTimeout(() => setShowSuggestions(false), 250)}
-                      className="w-full bg-[#181818] border border-slate-700/80 text-white placeholder-slate-500 rounded-xl pl-9 pr-4 py-2 text-xs font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 220)}
+                      className="w-full bg-[#181818] border border-slate-700/80 text-white placeholder-slate-500 rounded-xl pl-9 pr-8 py-2 text-xs font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                     />
+                    {(searchKey || selectedSiswa) && (
+                      <button
+                        type="button"
+                        onClick={handleResetSiswa}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded"
+                        title="Bersihkan pencarian"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
 
-                    {/* Suggestions Dropdown */}
-                    {showSuggestions && searchSuggestions.length > 0 && (
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-[#181818] border border-slate-700 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto divide-y divide-slate-800">
-                        {searchSuggestions.map(s => (
-                          <div
-                            key={s.id}
-                            onMouseDown={() => {
-                              setSearchKey(s.nama);
-                              setAppliedSearch(s.nama);
-                              setShowSuggestions(false);
-                            }}
-                            className="px-3.5 py-2.5 hover:bg-emerald-950/40 cursor-pointer flex items-center justify-between transition-colors text-left"
-                          >
-                            <div>
-                              <p className="text-white font-bold text-xs">{s.nama}</p>
-                              <p className="text-[10px] text-slate-400">NIS: {s.nis} | NISN: {s.nisn || '-'}</p>
+                    {/* Suggestions Dropdown (works on focus & live typing) */}
+                    {showSuggestions && (
+                      <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#181818] border border-slate-700 rounded-xl shadow-2xl z-50 max-h-64 overflow-y-auto divide-y divide-slate-800">
+                        {searchSuggestions.length > 0 ? (
+                          searchSuggestions.map(s => (
+                            <div
+                              key={s.id}
+                              onMouseDown={() => handleSelectSiswa(s)}
+                              className={`px-3.5 py-2.5 hover:bg-emerald-950/50 cursor-pointer flex items-center justify-between gap-2 transition-colors text-left ${
+                                selectedSiswa?.id === s.id ? 'bg-emerald-950/40' : ''
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <p className="text-white font-bold text-xs truncate">{s.nama}</p>
+                                <p className="text-[10px] text-slate-400 font-mono">
+                                  NIS: {s.nis || '-'} • NISN: {s.nisn || '-'}
+                                </p>
+                              </div>
+                              <span className="text-[10px] font-semibold bg-emerald-900/40 text-emerald-300 px-2 py-0.5 rounded-md border border-emerald-700/50 shrink-0">
+                                {s.kelas || s.rombel || '-'}
+                              </span>
                             </div>
-                            <span className="text-[10px] font-semibold bg-emerald-900/40 text-emerald-300 px-2 py-0.5 rounded-md border border-emerald-700/50">
-                              Kelas {s.kelas}
-                            </span>
+                          ))
+                        ) : (
+                          <div className="px-4 py-3 text-xs text-slate-400 text-center">
+                            {siswaList.length === 0
+                              ? 'Belum ada data siswa di Database Sekolah.'
+                              : `Tidak ditemukan siswa untuk "${searchKey}".`}
                           </div>
-                        ))}
+                        )}
                       </div>
                     )}
                   </div>
 
                   <button
                     type="submit"
-                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-600/20 shrink-0"
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-600/20 shrink-0"
                   >
                     Cari
                   </button>
                 </div>
               </div>
             </form>
+
+            {/* Quick Student Selector Dropdown */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 pt-2 border-t border-slate-800/70">
+              <label className="text-[11px] font-bold text-slate-400 shrink-0 flex items-center gap-1.5">
+                <GraduationCap className="w-3.5 h-3.5 text-sky-400" />
+                Pilih Cepat Siswa:
+              </label>
+              <select
+                value={selectedSiswa?.id || ''}
+                onChange={e => {
+                  const id = e.target.value;
+                  if (!id) {
+                    handleResetSiswa();
+                    return;
+                  }
+                  const found = siswaList.find(s => s && s.id === id);
+                  if (found) handleSelectSiswa(found);
+                }}
+                className="flex-1 bg-[#181818] border border-slate-700/80 text-white font-bold rounded-xl px-3 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              >
+                <option value="">
+                  -- Pilih langsung dari {siswaInSelectedKelas.length} siswa {filterKelasPembayaran !== 'all' ? `(${filterKelasPembayaran})` : '(Semua Kelas)'} --
+                </option>
+                {siswaInSelectedKelas.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.nama} — {s.kelas || s.rombel || '-'} (NIS: {s.nis || s.nisn || '-'})
+                  </option>
+                ))}
+              </select>
+              {appliedSearch && !selectedSiswa && (
+                <span className="text-[11px] font-bold text-rose-400 bg-rose-950/50 border border-rose-500/30 px-2.5 py-1 rounded-lg shrink-0">
+                  Siswa &ldquo;{appliedSearch}&rdquo; tidak ditemukan
+                </span>
+              )}
+            </div>
           </div>
 
           {/* 2. INFORMASI SISWA */}
           <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-lg space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
-                <User className="w-4 h-4 text-emerald-400" />
-                Informasi Siswa
-              </h3>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
+                  <User className="w-4 h-4 text-emerald-400" />
+                  Informasi Siswa
+                </h3>
+                {selectedSiswa ? (
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    Terpilih • SPP Rp {monthlyFee.toLocaleString('id-ID')}/bln
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                    Belum Ada Siswa Dipilih
+                  </span>
+                )}
+                {selectedSiswa && studentSummary.totalTunggakan > 0 && (
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                    Tunggakan: Rp {studentSummary.totalTunggakan.toLocaleString('id-ID')} ({studentSummary.unpaidCount} item)
+                  </span>
+                )}
+              </div>
 
               <div className="flex items-center gap-2">
                 <button
@@ -3440,7 +3828,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                   onClick={() => {
                     if (!selectedSiswa) return;
                     const { tingkatKelas, rombel } = getStudentTingkatDanRombel(selectedSiswa);
-                    setEditingSiswaData({ 
+                    setEditingSiswaData({
                       ...selectedSiswa,
                       tingkatKelas,
                       rombel: selectedSiswa.rombel || selectedSiswa.kelas || rombel,
@@ -3460,19 +3848,34 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                   onClick={() => {
                     if (!selectedSiswa) return;
                     const { tingkatKelas, rombel } = getStudentTingkatDanRombel(selectedSiswa);
+                    const billItems = studentBills.length > 0
+                      ? studentBills.map((b, i) => ({
+                          id: b.id || `bill-${i}`,
+                          uraian: `${b.namaTagihan} (${b.status})`,
+                          jumlah: Math.max(0, b.nominal || 0)
+                        }))
+                      : [{
+                          id: 'spp-sisa',
+                          uraian: `Sisa Tagihan SPP T.A ${tahunAjaran} (${unpaidMonthsCount} bulan)`,
+                          jumlah: totalSisaBulanan
+                        }];
+                    const totalNominalAll = billItems.reduce((acc, it) => acc + it.jumlah, 0);
+                    const totalPaidAll = studentBills.length > 0 ? studentSummary.totalPaid : 0;
+
                     setPrintReceiptData({
                       noNota: generateInvoiceNumber(),
                       tahunAjaran,
-                      nis: selectedSiswa.nisn || selectedSiswa.nis,
+                      nis: selectedSiswa.nisn || selectedSiswa.nis || '-',
                       nama: selectedSiswa.nama,
-                      namaIbu: selectedSiswa.namaIbu || selectedSiswa.namaWali,
+                      namaIbu: selectedSiswa.namaIbu || selectedSiswa.namaWali || '-',
                       kelas: `${tingkatKelas} - ${rombel}`,
                       pembayaranTitle: `Rekap Seluruh Tagihan T.A ${tahunAjaran}`,
-                      nominal: totalSisaBulanan + 650000,
-                      dibayar: totalSisaBulanan + 650000,
+                      items: billItems,
+                      nominal: totalNominalAll,
+                      dibayar: totalPaidAll,
                       kembalian: 0,
                       tanggal: new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }),
-                      penerima: 'Bendahara Sekolah'
+                      penerima: bendaharaNama
                     });
                     setShowPrintModal(true);
                   }}
@@ -3488,8 +3891,10 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
               {/* Left Student Attributes Table */}
               <div className="md:col-span-3 space-y-2.5 text-xs text-slate-300">
                 <div className="grid grid-cols-12 py-1 border-b border-slate-800/60">
-                  <span className="col-span-4 font-semibold text-slate-400">NISN</span>
-                  <span className="col-span-8 font-mono font-bold text-emerald-400">: {selectedSiswa ? (selectedSiswa.nisn || selectedSiswa.nis || '-') : '-'}</span>
+                  <span className="col-span-4 font-semibold text-slate-400">NISN / NIS</span>
+                  <span className="col-span-8 font-mono font-bold text-emerald-400">
+                    : {selectedSiswa ? `${selectedSiswa.nisn || '-'}${selectedSiswa.nis ? ` / ${selectedSiswa.nis}` : ''}` : '-'}
+                  </span>
                 </div>
                 <div className="grid grid-cols-12 py-1 border-b border-slate-800/60">
                   <span className="col-span-4 font-semibold text-slate-400">Nama Siswa</span>
@@ -3517,9 +3922,9 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
               <div className="flex justify-center md:justify-end">
                 <div className="w-32 h-32 rounded-full border-4 border-slate-800 bg-sky-500/10 p-1 flex items-center justify-center overflow-hidden shadow-xl shrink-0">
                   {selectedSiswa?.fotoUrl ? (
-                    <img 
-                      src={selectedSiswa.fotoUrl} 
-                      alt={selectedSiswa.nama} 
+                    <img
+                      src={selectedSiswa.fotoUrl}
+                      alt={selectedSiswa.nama}
                       className="w-full h-full object-cover rounded-full"
                       referrerPolicy="no-referrer"
                     />
@@ -3538,64 +3943,74 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
           </div>
 
           {/* RINGKASAN TOTAL PEMBAYARAN (SPP, UKT, EKSKUL) */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 bg-[#121212] border border-slate-800/80 p-4 rounded-2xl shadow-lg">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-[#121212] border border-slate-800/80 p-4 rounded-2xl shadow-lg">
             <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
               <span className="text-[11px] font-semibold text-slate-400">Total SPP Terbayar</span>
-              <span className="text-sm font-mono font-extrabold text-emerald-400 mt-1">Rp {totalSppPaid.toLocaleString('id-ID')}</span>
-              <span className="text-[10px] text-slate-500 mt-1">{selectedSiswa ? Object.keys(paidMonthsState).length : 0} bulan lunas</span>
+              <span className="text-sm font-mono font-extrabold text-emerald-400 mt-1">Rp {studentSummary.sppPaid.toLocaleString('id-ID')}</span>
+              <span className="text-[10px] text-slate-500 mt-1">{selectedSiswa ? Object.keys(paidMonthsState).length : 0} / 12 bulan lunas</span>
             </div>
             <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
               <span className="text-[11px] font-semibold text-slate-400">Total UKT / Masuk</span>
-              <span className="text-sm font-mono font-extrabold text-amber-400 mt-1">Rp {totalUktPaid.toLocaleString('id-ID')}</span>
+              <span className="text-sm font-mono font-extrabold text-amber-400 mt-1">Rp {studentSummary.uktPaid.toLocaleString('id-ID')}</span>
               <span className="text-[10px] text-slate-500 mt-1">Uang gedung & atribut</span>
             </div>
             <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
               <span className="text-[11px] font-semibold text-slate-400">Total Ekskul / Kegiatan</span>
-              <span className="text-sm font-mono font-extrabold text-sky-400 mt-1">Rp {totalEkskulPaid.toLocaleString('id-ID')}</span>
+              <span className="text-sm font-mono font-extrabold text-sky-400 mt-1">Rp {studentSummary.ekskulPaid.toLocaleString('id-ID')}</span>
               <span className="text-[10px] text-slate-500 mt-1">Iuran ekstrakurikuler</span>
             </div>
             <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3.5 flex flex-col justify-between">
               <span className="text-[11px] font-bold text-emerald-300">Total Keseluruhan</span>
-              <span className="text-base font-mono font-black text-emerald-400 mt-1">Rp {totalSemuaPembayaran.toLocaleString('id-ID')}</span>
-              <span className="text-[10px] text-emerald-400/70 mt-1">Akumulasi tuntas</span>
+              <span className="text-base font-mono font-black text-emerald-400 mt-1">Rp {studentSummary.totalPaid.toLocaleString('id-ID')}</span>
+              <span className="text-[10px] text-emerald-400/70 mt-1">
+                {studentSummary.totalTunggakan > 0
+                  ? `Sisa tunggakan: Rp ${studentSummary.totalTunggakan.toLocaleString('id-ID')}`
+                  : 'Akumulasi tuntas'}
+              </span>
             </div>
           </div>
-               {/* 3. THREE PANELS GRID: TRANSAKSI TERAKHIR | PEMBAYARAN | CETAK BUKTI */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              
-              {/* PANEL B: TAGIHAN (PROCESSOR CALCULATOR) */}
-              <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-lg space-y-3.5">
-                <h4 className="text-sm font-extrabold text-white border-b border-slate-800 pb-3 flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <span className="text-emerald-400 font-extrabold text-lg">$</span>
-                    Tagihan
+
+          {/* 3. INPUT TAGIHAN & RIWAYAT TRANSAKSI */}
+          <div className="space-y-5">
+
+            {/* PANEL 1: TAGIHAN (PROCESSOR CALCULATOR) */}
+            <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-lg space-y-4">
+              <h4 className="text-sm font-extrabold text-white border-b border-slate-800 pb-3 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-emerald-400" />
+                  Input Tagihan & Bayar
+                </span>
+                {selectedSiswa && (
+                  <span className="text-[10px] bg-emerald-950 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-800/50 font-medium truncate max-w-[220px]">
+                    {selectedSiswa.nama}
                   </span>
-                  {selectedSiswa && (
-                    <span className="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-800/50 font-medium truncate max-w-[150px]">
-                      {selectedSiswa.nama}
-                    </span>
-                  )}
-                </h4>
-
-                {!selectedSiswa && (
-                  <div className="bg-amber-950/60 border border-amber-600/50 rounded-xl p-3 text-xs text-amber-300 flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                    <span>Silakan cari dan pilih <strong>Nama Siswa</strong> terlebih dahulu pada form di atas untuk menginput tagihan.</span>
-                  </div>
                 )}
+              </h4>
 
-                <div className="space-y-3.5 text-xs">
+              {!selectedSiswa && (
+                <div className="bg-amber-950/60 border border-amber-600/50 rounded-xl p-3 text-xs text-amber-300 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>Silakan pilih <strong>Nama Siswa</strong> pada filter di atas untuk menginput tagihan atau pembayaran.</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 text-xs">
+                {/* Left Column: Jenis Tagihan & Bulan / Item */}
+                <div className="space-y-3.5">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Jenis Tagihan</label>
                     <div className="grid grid-cols-3 gap-1.5">
-                      {['spp', 'ukt', 'ekskul'].map((t) => (
+                      {(['spp', 'ukt', 'ekskul'] as const).map((t) => (
                         <button
                           key={t}
                           type="button"
-                          onClick={() => setQuickPayType(t as any)}
-                          className={`py-1.5 rounded-lg font-bold border transition-all ${
-                            quickPayType === t 
-                              ? 'bg-emerald-600 border-emerald-500 text-white shadow-sm shadow-emerald-600/20' 
+                          onClick={() => {
+                            setQuickPayType(t);
+                            setSelectedMonths([]);
+                          }}
+                          className={`py-2 rounded-lg font-bold border transition-all ${
+                            quickPayType === t
+                              ? 'bg-emerald-600 border-emerald-500 text-white shadow-sm shadow-emerald-600/20'
                               : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
                           }`}
                         >
@@ -3606,14 +4021,14 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                   </div>
 
                   {quickPayType === 'spp' || quickPayType === 'ekskul' ? (
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       {quickPayType === 'ekskul' && (
                         <div className="space-y-1 mb-1">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pilih Item Ekskul</label>
                           <select
                             value={quickPayItemId}
                             onChange={(e) => setQuickPayItemId(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold text-xs"
+                            className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold text-xs"
                           >
                             <option value="">-- Pilih Item Ekskul --</option>
                             {ekskulTarifs.map(t => (
@@ -3622,27 +4037,38 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                           </select>
                         </div>
                       )}
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      {quickPayType === 'spp' && selectedSiswa && (
+                        <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-950/35 border border-emerald-500/25 text-[10px]">
+                          <span className="text-slate-300 font-semibold truncate">
+                            {activeSppTarif ? activeSppTarif.namaBiaya : `Tarif SPP ${getStudentTingkatDanRombel(selectedSiswa).tingkatKelas}`}
+                            <span className="text-slate-400"> ({getStudentTingkatDanRombel(selectedSiswa).tingkatKelas})</span>
+                          </span>
+                          <span className="font-mono font-extrabold text-emerald-400 shrink-0">
+                            Rp {monthlyFee.toLocaleString('id-ID')}/bln
+                          </span>
+                        </div>
+                      )}
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                         {quickPayType === 'spp' ? 'Pilih Bulan SPP' : 'Pilih Bulan Ekskul'}
                       </label>
-                      <div className="grid grid-cols-4 gap-1">
+                      <div className="grid grid-cols-4 gap-1.5">
                         {allMonths.map((m) => {
-                          const isPaid = quickPayType === 'spp' ? paidMonthsState[m] : false;
+                          const isPaid = quickPayType === 'spp' ? !!paidMonthsState[m] : false;
                           const isSelected = selectedMonths.includes(m);
                           return (
                             <button
                               key={m}
                               type="button"
-                              disabled={quickPayType === 'spp' && !!isPaid}
+                              disabled={!selectedSiswa || (quickPayType === 'spp' && isPaid)}
                               onClick={() => toggleMonthSelection(m)}
-                              className={`py-1 rounded text-[9px] font-bold border transition-all ${
-                                quickPayType === 'spp' && isPaid 
-                                  ? 'bg-emerald-950/30 border-emerald-900/50 text-emerald-500/50 cursor-not-allowed' 
+                              className={`py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
+                                quickPayType === 'spp' && isPaid
+                                  ? 'bg-emerald-950/30 border-emerald-900/50 text-emerald-500/60 cursor-not-allowed'
                                   : isSelected
                                     ? 'bg-sky-600 border-sky-500 text-white'
-                                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 disabled:opacity-40'
                               }`}
-                              title={quickPayType === 'spp' && isPaid ? `Lunas: ${isPaid}` : m}
+                              title={quickPayType === 'spp' && isPaid ? `Lunas: ${paidMonthsState[m]}` : m}
                             >
                               {m.substring(0, 3)}
                             </button>
@@ -3665,65 +4091,80 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                       </select>
                     </div>
                   )}
+                </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Tagihan</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">Rp</span>
-                        <input
-                          type="number"
-                          value={inputTotal || ''}
-                          onChange={(e) => setInputTotal(Number(e.target.value))}
-                          readOnly={quickPayType === 'spp' || quickPayType === 'ekskul'}
-                          className={`w-full bg-slate-900 border border-slate-800 text-white rounded-xl pl-8 pr-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono font-bold ${quickPayType === 'spp' || quickPayType === 'ekskul' ? 'opacity-70 cursor-not-allowed' : ''}`}
-                        />
+                {/* Right Column: Nominal, Tanggal, Metode & Proses */}
+                <div className="space-y-3.5 flex flex-col justify-between">
+                  <div className="space-y-3.5">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Tagihan</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">Rp</span>
+                          <input
+                            type="number"
+                            value={inputTotal || ''}
+                            onChange={(e) => setInputTotal(Number(e.target.value))}
+                            readOnly={quickPayType === 'spp' || quickPayType === 'ekskul'}
+                            className={`w-full bg-slate-900 border border-slate-800 text-white rounded-xl pl-8 pr-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono font-bold ${quickPayType === 'spp' || quickPayType === 'ekskul' ? 'opacity-70 cursor-not-allowed' : ''}`}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Jumlah Bayar</label>
+                          {inputTotal > 0 && inputDibayar !== inputTotal && (
+                            <button
+                              type="button"
+                              onClick={() => setInputDibayar(inputTotal)}
+                              className="text-[9px] font-bold text-sky-400 hover:underline"
+                            >
+                              Uang Pas
+                            </button>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 font-bold">Rp</span>
+                          <input
+                            type="number"
+                            value={inputDibayar || ''}
+                            onChange={(e) => setInputDibayar(Number(e.target.value))}
+                            className="w-full bg-slate-900 border border-emerald-900/30 text-emerald-400 rounded-xl pl-8 pr-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono font-bold"
+                          />
+                        </div>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Jumlah Bayar</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 font-bold">Rp</span>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tanggal</label>
                         <input
-                          type="number"
-                          value={inputDibayar || ''}
-                          onChange={(e) => setInputDibayar(Number(e.target.value))}
-                          className="w-full bg-slate-900 border border-emerald-900/30 text-emerald-400 rounded-xl pl-8 pr-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono font-bold"
+                          type="date"
+                          value={inputTanggalTagihan}
+                          onChange={(e) => setInputTanggalTagihan(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold text-xs"
                         />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Metode</label>
+                        <select
+                          value={selectedMetodePembayaran}
+                          onChange={(e) => setSelectedMetodePembayaran(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 text-slate-300 font-bold rounded-xl px-2.5 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        >
+                          <option value="Cash / Kasir">Cash / Kasir</option>
+                          <option value="Transfer Bank - BRI">Transfer - BRI</option>
+                          <option value="Transfer Bank - BNI">Transfer - BNI</option>
+                          <option value="Transfer Bank - Mandiri">Transfer - Mandiri</option>
+                          <option value="Transfer Bank - BCA">Transfer - BCA</option>
+                          <option value="QRIS / E-Wallet">QRIS / E-Wallet</option>
+                          <option value="Tabungan Siswa">Tabungan Siswa</option>
+                        </select>
                       </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tanggal Tagihan</label>
-                      <input
-                        type="date"
-                        value={inputTanggalTagihan}
-                        onChange={(e) => setInputTanggalTagihan(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Metode Pembayaran</label>
-                    <select
-                      value={selectedMetodePembayaran}
-                      onChange={(e) => setSelectedMetodePembayaran(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 text-slate-300 font-bold rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                    >
-                      <option value="Cash / Kasir">Cash / Kasir (Tunai)</option>
-                      <option value="Transfer Bank - BRI">Transfer Bank - BRI</option>
-                      <option value="Transfer Bank - BNI">Transfer Bank - BNI</option>
-                      <option value="Transfer Bank - Mandiri">Transfer Bank - Mandiri</option>
-                      <option value="Transfer Bank - BCA">Transfer Bank - BCA</option>
-                      <option value="QRIS / E-Wallet">QRIS / E-Wallet (OVO/Dana/Gopay)</option>
-                      <option value="Tabungan Siswa">Tabungan Siswa</option>
-                    </select>
-                  </div>
-
-                  <div className="flex items-center justify-between bg-slate-900/50 p-2 rounded-xl border border-slate-800/50">
+                  <div className="flex items-center justify-between bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
                     <div className="flex flex-col">
                       <span className="text-[10px] text-slate-500 font-bold uppercase">Kembalian</span>
                       <span className="text-sm font-mono font-black text-amber-400">Rp {kembalian.toLocaleString('id-ID')}</span>
@@ -3732,7 +4173,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                       type="button"
                       onClick={handleProcessPayment}
                       disabled={!selectedSiswa || ((quickPayType === 'spp' || quickPayType === 'ekskul') && selectedMonths.length === 0) || (quickPayType === 'ekskul' && !quickPayItemId) || (quickPayType === 'ukt' && !quickPayItemId && inputTotal <= 0)}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center gap-1.5"
+                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center gap-1.5"
                     >
                       <CheckCheck className="w-4 h-4" />
                       Proses
@@ -3740,186 +4181,157 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* PANEL NEW: PENGATURAN VA & QRIS (IN BETWEEN) */}
-              <div className="bg-[#121212] p-5 rounded-2xl border border-slate-800/80 shadow-lg space-y-3.5 flex flex-col justify-between">
-                <div>
-                  <h4 className="text-sm font-extrabold text-white border-b border-slate-800 pb-3 flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      <QrCode className="w-4 h-4 text-emerald-400" />
-                      VA & QRIS Bank
-                    </span>
-                    <button 
-                      onClick={() => setShowVaConfigModal(true)}
-                      className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 rounded-lg border border-slate-700 transition-all"
-                      title="Ubah Pengaturan VA & QRIS"
-                    >
-                      <Settings className="w-3.5 h-3.5" />
-                    </button>
-                  </h4>
-                  
-                  <div className="mt-3 space-y-3">
-                    <div className="p-3 bg-slate-900/50 rounded-xl border border-slate-800/50 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">{bankVaName}</span>
-                        <div className="w-5 h-5 rounded bg-white/10 flex items-center justify-center">
-                          <Building2 className="w-3 h-3 text-slate-400" />
-                        </div>
-                      </div>
-                      <p className="text-sm font-mono font-bold text-white tracking-wider">{bankVaNumber}</p>
-                      <p className="text-[9px] text-slate-400 font-medium italic">a.n {bankVaOwner}</p>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-2.5 bg-emerald-950/20 rounded-xl border border-emerald-500/10">
-                      <div className="w-10 h-10 bg-white rounded-lg p-1 shrink-0 overflow-hidden">
-                        <img src={qrisUrl} alt="QRIS" className="w-full h-full object-contain" />
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-black text-emerald-400 uppercase tracking-tighter">QRIS PEMBAYARAN</p>
-                        <p className="text-[9px] text-slate-400 leading-tight">Tampilkan QRIS di kwitansi atau kirim via WA.</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <p className="text-[9px] text-slate-500 italic text-center leading-relaxed">
-                    *Nomor Virtual Account & QRIS ini akan otomatis terlampir pada rincian tagihan yang dikirim ke orang tua.
-                  </p>
-                </div>
+            {/* ROW 2 (FULL WIDTH): SEMUA TRANSAKSI & RIWAYAT TAGIHAN SISWA */}
+            <div className="bg-[#121212] p-4 rounded-2xl border border-slate-800/80 shadow-lg space-y-3">
+              <div className="border-b border-slate-800 pb-2.5 flex items-center justify-between flex-wrap gap-2">
+                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                  Semua Transaksi & Riwayat Tagihan Siswa
+                </h4>
+                {selectedSiswa && (
+                  <span className="text-[11px] text-slate-400 font-semibold">
+                    Total <strong className="text-white">{studentBills.length}</strong> catatan untuk <strong className="text-emerald-400">{selectedSiswa.nama}</strong>
+                  </span>
+                )}
               </div>
 
-              {/* PANEL A: TRANSAKSI TERAKHIR (Landscape, Wide) */}
-              <div className="md:col-span-3 bg-[#121212] p-4 rounded-2xl border border-slate-800/80 shadow-lg space-y-3">
-                <div className="border-b border-slate-800 pb-2 flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-emerald-400" />
-                    Semua Transaksi & Riwayat Tagihan Siswa
-                  </h4>
-                </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[11px]">
+                  <thead className="bg-[#181818] text-slate-400 font-bold border-b border-slate-800">
+                    <tr>
+                      <th className="px-2.5 py-2">Nama Tagihan / Pembayaran</th>
+                      <th className="px-2.5 py-2">Total Tagihan</th>
+                      <th className="px-2.5 py-2">Terbayar</th>
+                      <th className="px-2.5 py-2">Tanggal Tagihan</th>
+                      <th className="px-2.5 py-2">Tanggal Bayar / Realisasi</th>
+                      <th className="px-2.5 py-2">Status</th>
+                      <th className="px-2 py-2 text-center w-28">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                    {studentBills.map((t, idx) => {
+                      const isLunas = t.status === 'Lunas';
+                      const isDicicil = t.status === 'Dicicil';
+                      const isBelumLunas = t.status === 'Belum Lunas';
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-[11px]">
-                    <thead className="bg-[#181818] text-slate-400 font-bold border-b border-slate-800">
-                      <tr>
-                        <th className="px-2 py-2">Nama Tagihan / Pembayaran</th>
-                        <th className="px-2 py-2">Total Tagihan</th>
-                        <th className="px-2 py-2">Terbayar</th>
-                        <th className="px-2 py-2">Tanggal Tagihan</th>
-                        <th className="px-2 py-2">Tanggal Bayar / Realisasi</th>
-                        <th className="px-2 py-2">Status</th>
-                        <th className="px-1 py-2 text-center w-16">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                      {studentBills.map((t, idx) => {
-                        const isLunas = t.status === 'Lunas';
-                        const isDicicil = t.status === 'Dicicil';
-                        const isBelumLunas = t.status === 'Belum Lunas';
-
-                        return (
-                          <tr key={t.id} className="hover:bg-slate-900/50">
-                            <td className="px-2 py-2.5 font-semibold text-slate-200">
-                              {t.namaTagihan}
-                              {idx === 0 && (
-                                <span className="ml-1.5 px-1.5 py-0.2 bg-emerald-500/20 text-emerald-400 text-[9px] rounded font-bold">
-                                  Terbaru
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-2 py-2.5 font-mono font-bold text-slate-300 whitespace-nowrap">
-                              Rp {t.nominal.toLocaleString('id-ID')}
-                            </td>
-                            <td className="px-2 py-2.5 font-mono font-bold text-emerald-400 whitespace-nowrap">
-                              Rp {(t.terbayar || 0).toLocaleString('id-ID')}
-                            </td>
-                            <td className="px-2 py-2.5 text-[10px] text-slate-400 whitespace-nowrap">
-                              {t.tanggalTagihan ? formatDate(t.tanggalTagihan) : (t.jatuhTempo ? formatDate(t.jatuhTempo) : '-')}
-                            </td>
-                            <td className="px-2 py-2.5 text-[10px] text-slate-400 whitespace-nowrap">
-                              {(isLunas || isDicicil) ? (t.tanggalBayar ? formatDate(t.tanggalBayar) : '-') : '-'}
-                            </td>
-                            <td className="px-2 py-2.5 whitespace-nowrap">
-                              {isLunas && (
-                                <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] rounded-full font-bold">
-                                  Lunas
-                                </span>
-                              )}
-                              {isDicicil && (
-                                <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] rounded-full font-bold">
-                                  Dicicil
-                                </span>
-                              )}
-                              {isBelumLunas && (
-                                <span className="px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] rounded-full font-bold">
-                                  Belum Lunas
-                                </span>
-                              )}
-                            </td>
-                             <td className="px-1 py-2.5 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
+                      return (
+                        <tr key={t.id} className="hover:bg-slate-900/50">
+                          <td className="px-2.5 py-2.5 font-semibold text-slate-200">
+                            {t.namaTagihan}
+                            {idx === 0 && (
+                              <span className="ml-1.5 px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 text-[9px] rounded font-bold">
+                                Terbaru
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2.5 py-2.5 font-mono font-bold text-slate-300 whitespace-nowrap">
+                            Rp {t.nominal.toLocaleString('id-ID')}
+                          </td>
+                          <td className="px-2.5 py-2.5 font-mono font-bold text-emerald-400 whitespace-nowrap">
+                            Rp {(t.terbayar || 0).toLocaleString('id-ID')}
+                          </td>
+                          <td className="px-2.5 py-2.5 text-[10px] text-slate-400 whitespace-nowrap">
+                            {t.tanggalTagihan ? formatDate(t.tanggalTagihan) : (t.jatuhTempo ? formatDate(t.jatuhTempo) : '-')}
+                          </td>
+                          <td className="px-2.5 py-2.5 text-[10px] text-slate-400 whitespace-nowrap">
+                            {(isLunas || isDicicil) ? (t.tanggalBayar ? formatDate(t.tanggalBayar) : '-') : '-'}
+                          </td>
+                          <td className="px-2.5 py-2.5 whitespace-nowrap">
+                            {isLunas && (
+                              <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] rounded-full font-bold">
+                                Lunas
+                              </span>
+                            )}
+                            {isDicicil && (
+                              <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] rounded-full font-bold">
+                                Dicicil
+                              </span>
+                            )}
+                            {isBelumLunas && (
+                              <span className="px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] rounded-full font-bold">
+                                Belum Lunas
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 py-2.5 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {!isLunas && (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    const matchingTx = studentTransactions.find(tx => 
-                                      (tx.itemId && tx.itemId === t.id) || 
-                                      (tx.pembayaran && t.namaTagihan && tx.pembayaran === t.namaTagihan)
-                                    );
-                                    if (matchingTx) {
-                                      handleReprintTransaction({
-                                        ...matchingTx,
-                                        terbayar: t.terbayar,
-                                        isLunas,
-                                        isDicicil,
-                                        tanggalTagihan: t.tanggalTagihan || t.jatuhTempo || matchingTx.tanggalTagihan,
-                                        tanggalBayar: (isLunas || isDicicil || ((t.terbayar || 0) > 0)) ? (t.tanggalBayar || matchingTx.tanggal) : '-'
-                                      });
-                                    } else {
-                                      handleReprintTransaction({
-                                        id: t.id,
-                                        pembayaran: t.namaTagihan,
-                                        tagihan: t.nominal || t.terbayar,
-                                        terbayar: t.terbayar || 0,
-                                        isLunas,
-                                        isDicicil,
-                                        tanggal: t.tanggalTagihan || new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }),
-                                        tanggalTagihan: t.tanggalTagihan || t.jatuhTempo,
-                                        tanggalBayar: (isLunas || isDicicil || ((t.terbayar || 0) > 0)) ? t.tanggalBayar : '-'
-                                      });
-                                    }
-                                  }}
-                                  className="p-1 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 rounded transition-colors cursor-pointer"
-                                  title="Cetak kwitansi / rincian tagihan"
+                                  onClick={() => handleQuickSettleBill(t)}
+                                  className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
+                                  title="Lunasi tagihan ini sekarang"
                                 >
-                                  <Printer className="w-3.5 h-3.5" />
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Lunasi
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setDeleteTargetTagihan(t)}
-                                  className="p-1 hover:bg-rose-950/80 text-slate-500 hover:text-rose-400 rounded transition-colors"
-                                  title="Hapus atau batalkan pembayaran"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {studentBills.length === 0 && (
-                        <tr>
-                          <td colSpan={7} className="text-center py-8 text-slate-500 text-[10px]">
-                            Belum ada riwayat tagihan atau transaksi untuk siswa ini.
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const matchingTx = studentTransactions.find(tx =>
+                                    (tx.itemId && tx.itemId === t.id) ||
+                                    (tx.pembayaran && t.namaTagihan && tx.pembayaran === t.namaTagihan)
+                                  );
+                                  if (matchingTx) {
+                                    handleReprintTransaction({
+                                      ...matchingTx,
+                                      terbayar: t.terbayar,
+                                      isLunas,
+                                      isDicicil,
+                                      tanggalTagihan: t.tanggalTagihan || t.jatuhTempo || matchingTx.tanggalTagihan,
+                                      tanggalBayar: (isLunas || isDicicil || ((t.terbayar || 0) > 0)) ? (t.tanggalBayar || matchingTx.tanggal) : '-'
+                                    });
+                                  } else {
+                                    handleReprintTransaction({
+                                      id: t.id,
+                                      pembayaran: t.namaTagihan,
+                                      tagihan: t.nominal || t.terbayar,
+                                      terbayar: t.terbayar || 0,
+                                      isLunas,
+                                      isDicicil,
+                                      tanggal: t.tanggalTagihan || new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }),
+                                      tanggalTagihan: t.tanggalTagihan || t.jatuhTempo,
+                                      tanggalBayar: (isLunas || isDicicil || ((t.terbayar || 0) > 0)) ? t.tanggalBayar : '-'
+                                    });
+                                  }
+                                }}
+                                className="p-1 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 rounded transition-colors cursor-pointer"
+                                title="Cetak kwitansi / rincian tagihan"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteTargetTagihan(t)}
+                                className="p-1 hover:bg-rose-950/80 text-slate-500 hover:text-rose-400 rounded transition-colors"
+                                title="Hapus atau batalkan pembayaran"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                      );
+                    })}
+                    {studentBills.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="text-center py-8 text-slate-500 text-xs">
+                          {selectedSiswa
+                            ? `Belum ada riwayat tagihan atau transaksi untuk ${selectedSiswa.nama}.`
+                            : 'Pilih siswa pada filter di atas untuk melihat riwayat tagihan dan transaksi.'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
+            </div>
           </div>
         </div>
-        )}
+      )}
 
       {activeTab === 'pengaturan_biaya' && (
         <div className="space-y-6">
@@ -5245,6 +5657,15 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                     <option value="Kelas 12">Kelas 12 (Tingkat XII)</option>
                     <option value="Peserta Ekskul">Peserta Ekskul</option>
                     <option value="Semua Tingkat">Semua Tingkat Kelas</option>
+                    {rombelList && rombelList.length > 0 && (
+                      <optgroup label="Spesifik Rombel / Kelas">
+                        {rombelList.map(r => (
+                          <option key={r.id} value={r.namaRombel}>
+                            {r.namaRombel} ({r.tingkatKelas})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
               </div>
@@ -5582,11 +6003,11 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                   
                   // Validasi Input
                   if (!editTagihanForm.namaTagihan.trim()) {
-                    alert('Nama tagihan tidak boleh kosong!');
+                    showToast('Nama tagihan tidak boleh kosong!', 'error');
                     return;
                   }
                   if (isNaN(editTagihanForm.nominal) || editTagihanForm.nominal <= 0) {
-                    alert('Nominal tagihan harus berupa angka dan lebih besar dari 0!');
+                    showToast('Nominal tagihan harus berupa angka dan lebih besar dari 0!', 'error');
                     return;
                   }
 
@@ -5674,7 +6095,7 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                   localStorage.removeItem('edu_tagihan_force_clear');
                   localStorage.removeItem('edu_transaksi_force_clear');
                   
-                  alert('Perubahan tagihan berhasil disimpan!');
+                  showToast('Perubahan tagihan berhasil disimpan!', 'success');
                   setShowEditTagihanModal(false);
                 }}
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-xl text-xs transition-all shadow-md shadow-blue-600/30"
@@ -5984,21 +6405,6 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
       {/* SUBTAB 5: PEMBAYARAN GAJI & PAYROLL GURU/STAF */}
       {activeTab === 'gaji' && (
         <div className="space-y-6">
-          {/* TOAST NOTIFICATION */}
-          {gajiToast && (
-            <div className={`fixed bottom-6 right-6 z-[110] flex items-center gap-3 px-5 py-4 rounded-xl shadow-2xl border transition-all animate-in slide-in-from-bottom duration-300 ${
-              gajiToast.type === 'success' 
-                ? 'bg-emerald-950 border-emerald-500/30 text-emerald-300' 
-                : 'bg-rose-950 border-rose-500/30 text-rose-300'
-            }`}>
-              {gajiToast.type === 'success' ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-              ) : (
-                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-              )}
-              <span className="text-xs font-bold font-sans">{gajiToast.message}</span>
-            </div>
-          )}
 
           {/* MAIN ACTIONS & STATS */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/60">
@@ -6237,10 +6643,10 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
                             importedCount++;
                           }
                         }
-                        alert(`Berhasil mengimpor ${importedCount} data gaji pegawai!`);
+                        showToast(`Berhasil mengimpor ${importedCount} data gaji pegawai!`, 'success');
                       } catch (err) {
                         console.error(err);
-                        alert('Gagal membaca file template. Pastikan format CSV sesuai.');
+                        showToast('Gagal membaca file template. Pastikan format CSV sesuai.', 'error');
                       }
                     };
                     reader.readAsText(file);

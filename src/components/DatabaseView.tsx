@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Users, 
   GraduationCap, 
@@ -42,12 +42,22 @@ import {
   DollarSign,
   CheckSquare,
   Square,
-  AlertCircle
+  AlertCircle,
+  LayoutGrid,
+  List,
+  RefreshCw,
+  ChevronDown,
+  FileDown,
+  Loader2,
+  CopyCheck
 } from 'lucide-react';
 import { Siswa, Guru, Staf, RombelKelas, MataPelajaranItem, ScheduleSlot, SubTab, EkstrakurikulerItem } from '../types/school';
 import { INITIAL_ROMBEL, INITIAL_MAPEL, INITIAL_EKSKUL } from '../data/mockData';
 import { KartuDigitalModal } from './KartuDigitalModal';
+import { SiswaDuplicateModal } from './SiswaDuplicateModal';
 import { exportAllToGoogleSheets } from '../lib/googleDriveSync';
+import { exportSiswaToExcel, exportSiswaToCsv, exportSiswaToPdf } from '../lib/exportSiswa';
+import { summarizeSiswaDuplicates } from '../lib/duplicateSiswa';
 
 interface DatabaseViewProps {
   rombelList?: RombelKelas[];
@@ -221,25 +231,158 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
   const [newScheduleJamSelesai, setNewScheduleJamSelesai] = useState<string>('09:00');
   const [newScheduleRuangan, setNewScheduleRuangan] = useState<string>('');
 
-  // Rombel specific state
+  // Rombel / Kelas specific state
   const [filterTingkat, setFilterTingkat] = useState<string>('Semua');
+  const [rombelViewMode, setRombelViewMode] = useState<'grid' | 'table'>('grid');
   const [activeRombelDetail, setActiveRombelDetail] = useState<RombelKelas | null>(null);
   const [studentToAssign, setStudentToAssign] = useState<string>('');
+  const [detailStudentSearch, setDetailStudentSearch] = useState<string>('');
   const [selectedSiswaIdsForRombel, setSelectedSiswaIdsForRombel] = useState<string[]>([]);
   const [studentSearchInput, setStudentSearchInput] = useState<string>('');
+  const [toastMsg, setToastMsg] = useState<{ text: string; type: 'success' | 'warning' | 'error' } | null>(null);
+
+  const showToast = (text: string, type: 'success' | 'warning' | 'error' = 'success') => {
+    setToastMsg({ text, type });
+    setTimeout(() => {
+      setToastMsg(prev => (prev?.text === text ? null : prev));
+    }, 3800);
+  };
+
+  // --- Helper: Robust Student <-> Kelas / Rombel Matching ---
+  const normalizeKelasStr = (val?: string) => (val || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  const stripTingkatPrefix = (val?: string) => {
+    const clean = normalizeKelasStr(val);
+    return clean
+      .replace(/^(kelas\s*)?(vii|viii|ix|x|xi|xii|7|8|9|10|11|12)\s*[-–—:/|]\s*/i, '')
+      .replace(/^(kelas\s*)?(vii|viii|ix|7|8|9)\s+/i, '')
+      .trim();
+  };
+
+  const extractGradeNumberFromText = (val?: string): string | null => {
+    const t = normalizeKelasStr(val);
+    if (!t) return null;
+    if (/(^|[^a-z])ix([^a-z]|$)/i.test(t) || /(^|\D)9(\D|$)/.test(t)) return '9';
+    if (/(^|[^a-z])viii([^a-z]|$)/i.test(t) || /(^|\D)8(\D|$)/.test(t)) return '8';
+    if (/(^|[^a-z])vii([^a-z]|$)/i.test(t) || /(^|\D)7(\D|$)/.test(t)) return '7';
+    if (/(^|[^a-z])xii([^a-z]|$)/i.test(t) || /(^|\D)12(\D|$)/.test(t)) return '12';
+    if (/(^|[^a-z])xi([^a-z]|$)/i.test(t) || /(^|\D)11(\D|$)/.test(t)) return '11';
+    if (/(^|[^a-z])x([^a-z]|$)/i.test(t) || /(^|\D)10(\D|$)/.test(t)) return '10';
+    return null;
+  };
+
+  const inferTingkatKelas = (kelasName?: string, fallbackTingkat?: string): string => {
+    const g = extractGradeNumberFromText(fallbackTingkat) || extractGradeNumberFromText(kelasName);
+    if (g === '7') return 'Kelas 7';
+    if (g === '8') return 'Kelas 8';
+    if (g === '9') return 'Kelas 9';
+    if (g === '10') return 'Kelas 10';
+    if (g === '11') return 'Kelas 11';
+    if (g === '12') return 'Kelas 12';
+    return 'Kelas 7';
+  };
+
+  const isStudentInRombel = (s: Siswa, rombel: RombelKelas): boolean => {
+    const rName = normalizeKelasStr(rombel.namaRombel);
+    if (!rName) return false;
+    const sKelas = normalizeKelasStr(s.kelas);
+    const sRombel = normalizeKelasStr(s.rombel);
+    if (sKelas === rName || (sRombel && sRombel === rName)) return true;
+
+    // Flexible match when student stores rombel name without grade prefix (e.g. "Ibnu Sina" vs "VII - Ibnu Sina")
+    const rSuffix = stripTingkatPrefix(rombel.namaRombel);
+    const sKelasSuffix = stripTingkatPrefix(s.kelas);
+    const sRombelSuffix = stripTingkatPrefix(s.rombel);
+    if (!rSuffix) return false;
+
+    const suffixMatched =
+      (sKelas && (sKelas === rSuffix || sKelasSuffix === rSuffix)) ||
+      (sRombel && (sRombel === rSuffix || sRombelSuffix === rSuffix));
+
+    if (!suffixMatched) return false;
+
+    const sGrade = extractGradeNumberFromText(s.tingkatKelas) || extractGradeNumberFromText(s.kelas);
+    const rGrade = extractGradeNumberFromText(rombel.tingkatKelas) || extractGradeNumberFromText(rombel.namaRombel);
+    if (sGrade && rGrade && sGrade !== rGrade) return false;
+    return true;
+  };
+
+  const getStudentsInRombel = (rombel: RombelKelas): Siswa[] => {
+    return siswaList.filter(s => isStudentInRombel(s, rombel));
+  };
+
+  const unmatchedStudentClasses = Array.from(
+    new Set(
+      siswaList
+        .map(s => (s.kelas || '').trim())
+        .filter(k => k && k.toLowerCase() !== 'belum ada kelas' && k !== '-')
+    )
+  ).filter(rawKelas => {
+    const sampleSiswa = siswaList.find(s => (s.kelas || '').trim() === rawKelas);
+    return !activeRombelList.some(r => sampleSiswa ? isStudentInRombel(sampleSiswa, r) : normalizeKelasStr(r.namaRombel) === normalizeKelasStr(rawKelas));
+  });
+
+  const handleSyncRombelFromSiswa = () => {
+    if (unmatchedStudentClasses.length === 0) {
+      showToast('Semua kelas dari Data Siswa sudah tersinkronisasi dengan Data Kelas.', 'success');
+      return;
+    }
+    const defaultTahun = activeRombelList[0]?.tahunAjaran || '2026/2027';
+    const defaultSemester = activeRombelList[0]?.semester || 'Ganjil';
+    const newRombels: RombelKelas[] = unmatchedStudentClasses.map((kelasName, idx) => {
+      const sampleSiswa = siswaList.find(s => (s.kelas || '').trim() === kelasName);
+      const countInClass = siswaList.filter(s => (s.kelas || '').trim() === kelasName).length;
+      const tingkat = inferTingkatKelas(kelasName, sampleSiswa?.tingkatKelas);
+      return {
+        id: `rombel-sync-${Date.now()}-${idx}`,
+        namaRombel: kelasName,
+        tingkatKelas: tingkat,
+        jurusanPeminatan: 'Umum',
+        waliKelasNama: guruList[idx % Math.max(1, guruList.length)]?.nama || 'Belum Ditentukan',
+        ruangan: `Ruang R.${101 + activeRombelList.length + idx}`,
+        kurikulum: 'Kurikulum Merdeka',
+        tahunAjaran: defaultTahun,
+        semester: defaultSemester,
+        ketuaKelasNama: '',
+        kapasitas: Math.max(32, countInClass + 4),
+        catatan: 'Disinkronkan otomatis dari Data Siswa'
+      };
+    });
+    setActiveRombelList(prev => [...prev, ...newRombels]);
+    showToast(`Berhasil menambahkan ${newRombels.length} kelas baru dari Data Siswa.`, 'success');
+  };
+
+  const handleExportRombelCsv = () => {
+    let csv = 'Nama Kelas / Rombel,Tingkat,Jurusan / Peminatan,Wali Kelas,Ruangan,Kurikulum,Tahun Ajaran,Semester,Ketua Kelas,Total Siswa,Laki-laki,Perempuan,Kapasitas,Catatan,Daftar Nama Siswa\n';
+    activeRombelList.forEach(r => {
+      const members = getStudentsInRombel(r);
+      const countL = members.filter(s => s.jenisKelamin === 'L').length;
+      const countP = members.filter(s => s.jenisKelamin === 'P').length;
+      const memberNames = members.map(s => s.nama).join('; ');
+      csv += `"${(r.namaRombel || '').replace(/"/g, '""')}","${r.tingkatKelas || '-'}","${(r.jurusanPeminatan || 'Umum').replace(/"/g, '""')}","${(r.waliKelasNama || '-').replace(/"/g, '""')}","${(r.ruangan || '-').replace(/"/g, '""')}","${r.kurikulum || '-'}","${r.tahunAjaran || '-'}","${r.semester || '-'}","${(r.ketuaKelasNama || '-').replace(/"/g, '""')}","${members.length}","${countL}","${countP}","${r.kapasitas}","${(r.catatan || '').replace(/"/g, '""')}","${memberNames.replace(/"/g, '""')}"\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Database_Kelas_Rombel_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Data ${activeRombelList.length} kelas berhasil diekspor ke CSV.`, 'success');
+  };
 
   // Form State for Rombel
   const [formRombel, setFormRombel] = useState<Omit<RombelKelas, 'id'>>({
     namaRombel: '',
     tingkatKelas: 'Kelas 7',
-    jurusanPeminatan: 'MIPA / Umum',
-    waliKelasNama: guruList[0]?.nama || 'Drs. Hendra Kusuma, M.Pd.',
-    ruangan: 'Ruang R.101 (Gedung A)',
+    jurusanPeminatan: 'Umum',
+    waliKelasNama: guruList[0]?.nama || '',
+    ruangan: 'Ruang R.101',
     kurikulum: 'Kurikulum Merdeka' as any,
     tahunAjaran: '2026/2027',
     semester: 'Ganjil',
     ketuaKelasNama: '',
-    kapasitas: 36,
+    kapasitas: 32,
     catatan: ''
   });
 
@@ -269,6 +412,33 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
     count: number;
     targetName: string;
   } | null>(null);
+
+  // Unduh Data Siswa Dropdown State
+  const [showSiswaExportMenu, setShowSiswaExportMenu] = useState(false);
+  const [siswaExportScope, setSiswaExportScope] = useState<'filtered' | 'selected' | 'all'>('all');
+  const [isExportingSiswa, setIsExportingSiswa] = useState(false);
+  const siswaExportMenuRef = useRef<HTMLDivElement>(null);
+
+  // Cek Data Ganda Siswa Modal State
+  const [showSiswaDuplicateModal, setShowSiswaDuplicateModal] = useState(false);
+
+  useEffect(() => {
+    if (!showSiswaExportMenu) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (siswaExportMenuRef.current && !siswaExportMenuRef.current.contains(e.target as Node)) {
+        setShowSiswaExportMenu(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowSiswaExportMenu(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [showSiswaExportMenu]);
 
   // Ekskul specific state & filters
   const [filterKategoriEkskul, setFilterKategoriEkskul] = useState<string>('Semua');
@@ -821,28 +991,192 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                         (s.nis || '').toLowerCase().includes(normalizedSearch) || 
                         (s.nisn || '').toLowerCase().includes(normalizedSearch) ||
                         (s.kelas || '').toLowerCase().includes(normalizedSearch);
-    const matchKelas = filterKelas === 'Semua' || s.kelas === filterKelas;
+    const matchedRombelObj = filterKelas === 'Semua'
+      ? null
+      : activeRombelList.find(r => r.namaRombel === filterKelas);
+    const matchKelas = filterKelas === 'Semua' ||
+                       (s.kelas || '') === filterKelas ||
+                       (matchedRombelObj ? isStudentInRombel(s, matchedRombelObj) : false);
     const matchGender = filterGender === 'Semua' || s.jenisKelamin === filterGender;
     return matchSearch && matchKelas && matchGender;
   });
 
+  const isSiswaFiltered =
+    search.trim() !== '' || filterKelas !== 'Semua' || filterGender !== 'Semua';
+
+  const effectiveSiswaExportScope: 'selected' | 'filtered' | 'all' =
+    siswaExportScope === 'selected' && selectedSiswaIds.length > 0
+      ? 'selected'
+      : siswaExportScope === 'filtered' && isSiswaFiltered
+      ? 'filtered'
+      : siswaExportScope === 'all'
+      ? 'all'
+      : selectedSiswaIds.length > 0
+      ? 'selected'
+      : isSiswaFiltered
+      ? 'filtered'
+      : 'all';
+
+  const siswaExportTargetList: Siswa[] =
+    effectiveSiswaExportScope === 'selected'
+      ? siswaList.filter(s => selectedSiswaIds.includes(s.id))
+      : effectiveSiswaExportScope === 'filtered'
+      ? filteredSiswa
+      : siswaList;
+
+  const handleToggleSiswaExportMenu = () => {
+    setShowSiswaExportMenu(prev => {
+      const next = !prev;
+      if (next) {
+        if (selectedSiswaIds.length > 0) {
+          setSiswaExportScope('selected');
+        } else if (isSiswaFiltered) {
+          setSiswaExportScope('filtered');
+        } else {
+          setSiswaExportScope('all');
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleDownloadSiswa = async (format: 'xlsx' | 'csv' | 'pdf') => {
+    if (siswaExportTargetList.length === 0) {
+      showToast('Tidak ada data siswa yang dapat diunduh.', 'warning');
+      return;
+    }
+
+    let filterLabel = 'Semua Data Siswa';
+    let fileNamePrefix = 'data_siswa';
+
+    if (effectiveSiswaExportScope === 'selected') {
+      filterLabel = `${siswaExportTargetList.length} Siswa Terpilih`;
+      fileNamePrefix = 'data_siswa_terpilih';
+    } else if (effectiveSiswaExportScope === 'filtered') {
+      const parts: string[] = [];
+      if (filterKelas !== 'Semua') parts.push(`Kelas ${filterKelas}`);
+      if (filterGender !== 'Semua') parts.push(filterGender === 'L' ? 'Laki-laki' : 'Perempuan');
+      if (search.trim()) parts.push(`Pencarian "${search.trim()}"`);
+      filterLabel = parts.length > 0 ? parts.join(' • ') : 'Semua Data Siswa';
+      fileNamePrefix = filterKelas !== 'Semua' ? `data_siswa_${filterKelas}` : 'data_siswa_filter';
+    }
+
+    setIsExportingSiswa(true);
+    try {
+      let fileName = '';
+      if (format === 'xlsx') {
+        fileName = await exportSiswaToExcel(siswaExportTargetList, { filterLabel, fileNamePrefix });
+      } else if (format === 'csv') {
+        fileName = exportSiswaToCsv(siswaExportTargetList, { filterLabel, fileNamePrefix });
+      } else {
+        fileName = exportSiswaToPdf(siswaExportTargetList, { filterLabel, fileNamePrefix });
+      }
+      setShowSiswaExportMenu(false);
+      showToast(
+        `Berhasil mengunduh ${siswaExportTargetList.length} data siswa (${fileName}).`,
+        'success'
+      );
+    } catch (err) {
+      console.error('Gagal mengunduh data siswa:', err);
+      showToast('Gagal mengunduh data siswa. Silakan coba lagi.', 'error');
+    } finally {
+      setIsExportingSiswa(false);
+    }
+  };
+
+  // --- Cek Data Ganda Siswa ---
+  const siswaDuplicateSummary = useMemo(
+    () => summarizeSiswaDuplicates(siswaList),
+    [siswaList]
+  );
+
+  const handleDeleteDuplicateStudents = (idsToDelete: string[], toastText: string) => {
+    const removeSet = new Set(idsToDelete);
+    setSiswaList(prev => prev.filter(s => !removeSet.has(s.id)));
+    setSelectedSiswaIds(prev => prev.filter(id => !removeSet.has(id)));
+    showToast(toastText, 'success');
+  };
+
+  const handleMergeDuplicateGroup = (
+    mergedKeep: Siswa,
+    idsToRemove: string[],
+    toastText: string
+  ) => {
+    const removeSet = new Set(idsToRemove);
+    setSiswaList(prev =>
+      prev
+        .filter(s => !removeSet.has(s.id))
+        .map(s => (s.id === mergedKeep.id ? mergedKeep : s))
+    );
+    setSelectedSiswaIds(prev => prev.filter(id => !removeSet.has(id)));
+    showToast(toastText, 'success');
+  };
+
+  const handleBulkAutoCleanDuplicates = (
+    updates: Map<string, Siswa>,
+    idsToRemove: string[],
+    toastText: string
+  ) => {
+    const removeSet = new Set(idsToRemove);
+    setSiswaList(prev =>
+      prev
+        .filter(s => !removeSet.has(s.id))
+        .map(s => updates.get(s.id) || s)
+    );
+    setSelectedSiswaIds(prev => prev.filter(id => !removeSet.has(id)));
+    showToast(toastText, 'success');
+  };
+
+  const handleEditStudentFromDuplicate = (s: Siswa) => {
+    setEditingId(s.id);
+    setFormSiswa({
+      ...s,
+      tanggalLahir: normalizeDateForInput(s.tanggalLahir),
+      email: s.email || '',
+      asalSekolah: s.asalSekolah || '',
+      anakKe: s.anakKe !== undefined ? s.anakKe : 1,
+      jumlahSaudara: s.jumlahSaudara !== undefined ? s.jumlahSaudara : 0,
+      beratBadan: s.beratBadan !== undefined ? s.beratBadan : 0,
+      tinggiBadan: s.tinggiBadan !== undefined ? s.tinggiBadan : 0,
+      namaAyah: s.namaAyah || '',
+      namaIbu: s.namaIbu || '',
+      tempatLahirOrtu: s.tempatLahirOrtu || '',
+      tanggalLahirOrtu: normalizeDateForInput(s.tanggalLahirOrtu || ''),
+      pendidikanOrtu: s.pendidikanOrtu || '',
+      pekerjaanOrtu: s.pekerjaanOrtu || '',
+      nikOrtu: s.nikOrtu || ''
+    });
+    setModalMode('edit');
+    setIsModalOpen(true);
+  };
+
+  const handleSelectDuplicatesInTable = (ids: string[]) => {
+    setSelectedSiswaIds(ids);
+    showToast(
+      `${ids.length} baris siswa ganda ditandai pada tabel utama.`,
+      'warning'
+    );
+  };
+
   const filteredGuru = guruList.filter(g => 
-    g.nama.toLowerCase().includes(search.toLowerCase()) || 
-    g.nip.includes(search) ||
-    g.mataPelajaran.toLowerCase().includes(search.toLowerCase())
+    (g.nama || '').toLowerCase().includes(normalizedSearch) || 
+    (g.nip || '').includes(search) ||
+    (g.mataPelajaran || '').toLowerCase().includes(normalizedSearch)
   );
 
   const filteredStaf = stafList.filter(st => 
-    st.nama.toLowerCase().includes(search.toLowerCase()) || 
-    st.nik.includes(search) ||
-    st.bagian.toLowerCase().includes(search.toLowerCase())
+    (st.nama || '').toLowerCase().includes(normalizedSearch) || 
+    (st.nik || '').includes(search) ||
+    (st.bagian || '').toLowerCase().includes(normalizedSearch)
   );
 
   const filteredRombel = activeRombelList.filter(r => {
-    const matchSearch = r.namaRombel.toLowerCase().includes(search.toLowerCase()) ||
-                        r.waliKelasNama.toLowerCase().includes(search.toLowerCase()) ||
-                        r.ruangan.toLowerCase().includes(search.toLowerCase()) ||
-                        (r.ketuaKelasNama && r.ketuaKelasNama.toLowerCase().includes(search.toLowerCase()));
+    const matchSearch = !normalizedSearch ||
+                        (r.namaRombel || '').toLowerCase().includes(normalizedSearch) ||
+                        (r.waliKelasNama || '').toLowerCase().includes(normalizedSearch) ||
+                        (r.ruangan || '').toLowerCase().includes(normalizedSearch) ||
+                        (r.jurusanPeminatan || '').toLowerCase().includes(normalizedSearch) ||
+                        (r.ketuaKelasNama && r.ketuaKelasNama.toLowerCase().includes(normalizedSearch));
     const matchTingkat = filterTingkat === 'Semua' || r.tingkatKelas === filterTingkat;
     return matchSearch && matchTingkat;
   });
@@ -1171,29 +1505,54 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
         setStafList(prev => prev.map(st => st.id === editingId ? { ...formStaf, id: editingId } : st));
       }
     } else if (subTab === 'rombel') {
+      const trimmedNama = (formRombel.namaRombel || '').trim();
+      if (!trimmedNama) {
+        showToast('Nama Kelas / Rombel wajib diisi.', 'warning');
+        return;
+      }
+      const duplicateRombel = activeRombelList.find(r =>
+        normalizeKelasStr(r.namaRombel) === normalizeKelasStr(trimmedNama) &&
+        (modalMode === 'add' || r.id !== editingId)
+      );
+      if (duplicateRombel) {
+        showToast(`Kelas "${trimmedNama}" sudah ada di database.`, 'warning');
+        return;
+      }
+
+      const cleanedFormRombel = {
+        ...formRombel,
+        namaRombel: trimmedNama,
+        ruangan: (formRombel.ruangan || '').trim() || 'Ruang Kelas',
+        jurusanPeminatan: (formRombel.jurusanPeminatan || '').trim() || 'Umum',
+        waliKelasNama: (formRombel.waliKelasNama || '').trim() || 'Belum Ditentukan'
+      };
+
       if (modalMode === 'add') {
-        const newRombel: RombelKelas = { ...formRombel, id: `rombel-${Date.now()}` };
+        const newRombel: RombelKelas = { ...cleanedFormRombel, id: `rombel-${Date.now()}` };
         setActiveRombelList(prev => [newRombel, ...prev]);
-        setSiswaList(prev => prev.map(s => {
-          if (selectedSiswaIdsForRombel.includes(s.id)) {
-            return { ...s, kelas: newRombel.namaRombel };
-          }
-          return s;
-        }));
+        if (selectedSiswaIdsForRombel.length > 0) {
+          setSiswaList(prev => prev.map(s => {
+            if (selectedSiswaIdsForRombel.includes(s.id)) {
+              return { ...s, kelas: newRombel.namaRombel, tingkatKelas: newRombel.tingkatKelas, rombel: newRombel.namaRombel };
+            }
+            return s;
+          }));
+        }
+        showToast(`Kelas "${newRombel.namaRombel}" berhasil ditambahkan.`, 'success');
       } else if (editingId) {
-        const updatedRombel: RombelKelas = { ...formRombel, id: editingId };
-        setActiveRombelList(prev => prev.map(r => r.id === editingId ? updatedRombel : r));
+        const updatedRombel: RombelKelas = { ...cleanedFormRombel, id: editingId };
         const originalRombel = activeRombelList.find(r => r.id === editingId);
-        const originalName = originalRombel ? originalRombel.namaRombel : formRombel.namaRombel;
+        setActiveRombelList(prev => prev.map(r => r.id === editingId ? updatedRombel : r));
         setSiswaList(prev => prev.map(s => {
           if (selectedSiswaIdsForRombel.includes(s.id)) {
-            return { ...s, kelas: formRombel.namaRombel };
+            return { ...s, kelas: updatedRombel.namaRombel, tingkatKelas: updatedRombel.tingkatKelas, rombel: updatedRombel.namaRombel };
           }
-          if (originalName && s.kelas.toLowerCase() === originalName.toLowerCase()) {
-            return { ...s, kelas: 'Belum Ada Kelas' };
+          if (originalRombel && isStudentInRombel(s, originalRombel)) {
+            return { ...s, kelas: 'Belum Ada Kelas', rombel: '' };
           }
           return s;
         }));
+        showToast(`Perubahan kelas "${updatedRombel.namaRombel}" berhasil disimpan.`, 'success');
       }
     } else if (subTab === 'mapel') {
       if (modalMode === 'add') {
@@ -1246,10 +1605,11 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
       setActiveRombelList(prev => prev.filter(r => r.id !== id));
       if (deletedRombel) {
         setSiswaList(prev => prev.map(s => 
-          s.kelas.toLowerCase() === deletedRombel.namaRombel.toLowerCase() 
-            ? { ...s, kelas: 'Belum Ada Kelas' } 
+          isStudentInRombel(s, deletedRombel)
+            ? { ...s, kelas: 'Belum Ada Kelas', rombel: '' } 
             : s
         ));
+        showToast(`Kelas "${deletedRombel.namaRombel}" berhasil dihapus.`, 'success');
       }
     } else if (targetType === 'mapel') {
       setActiveMapelList(prev => prev.filter(m => m.id !== id));
@@ -1371,6 +1731,32 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
   return (
     <div className="space-y-6 min-w-0 max-w-full">
+      {/* Floating Toast Notification */}
+      {toastMsg && (
+        <div
+          className={`fixed top-5 right-5 z-[100] max-w-md px-4 py-3 rounded-xl border shadow-2xl backdrop-blur-md flex items-center gap-2.5 text-xs font-bold animate-in fade-in slide-in-from-top-3 duration-200 ${
+            toastMsg.type === 'success'
+              ? 'bg-emerald-950/95 border-emerald-500/40 text-emerald-200'
+              : toastMsg.type === 'warning'
+              ? 'bg-amber-950/95 border-amber-500/40 text-amber-200'
+              : 'bg-rose-950/95 border-rose-500/40 text-rose-200'
+          }`}
+        >
+          {toastMsg.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+          )}
+          <span className="flex-1">{toastMsg.text}</span>
+          <button
+            type="button"
+            onClick={() => setToastMsg(null)}
+            className="text-slate-400 hover:text-white p-0.5 rounded"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       
       {/* Top Header Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#121212] p-4 sm:p-5 rounded-xl border border-slate-800 shadow-sm">
@@ -1395,7 +1781,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
               )}
               {subTab === 'rombel' && (
                 <>
-                  <Layers className="w-3.5 h-3.5 text-indigo-400" /> Rombel & Kelas ({activeRombelList.length})
+                  <Layers className="w-3.5 h-3.5 text-indigo-400" /> Data Kelas ({activeRombelList.length})
                 </>
               )}
               {subTab === 'mapel' && (
@@ -1416,8 +1802,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
               : subTab === 'mapel'
               ? 'Manajemen kurikulum, mata pelajaran, alokasi jam, dan jadwal mengajar guru'
               : subTab === 'rombel'
-              ? 'Manajemen rombongan belajar, wali kelas, ruangan, dan pembagian siswa per kelas'
-              : 'Manajemen data master Siswa, Guru, dan Staf Kependidikan'}
+              ? 'Manajemen data kelas, rombongan belajar, wali kelas, ruangan, kapasitas, dan pembagian siswa'
+              : 'Manajemen data master Siswa, Guru, Staf Kependidikan, dan Kelas'}
           </p>
         </div>
 
@@ -1459,6 +1845,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
           { id: 'siswa' as SubTab, label: 'Data Siswa', count: siswaList.length, icon: <GraduationCap className="w-3.5 h-3.5" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
           { id: 'guru' as SubTab, label: 'Data Guru', count: guruList.length, icon: <UserCheck className="w-3.5 h-3.5" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
           { id: 'staf' as SubTab, label: 'Data Staf', count: stafList.length, icon: <Users className="w-3.5 h-3.5" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
+          { id: 'rombel' as SubTab, label: 'Data Kelas', count: activeRombelList.length, icon: <Layers className="w-3.5 h-3.5" />, activeCls: 'bg-indigo-600/15 text-indigo-400 border-indigo-500/40' },
           { id: 'mapel' as SubTab, label: 'Mata Pelajaran', count: activeMapelList.length, icon: <BookOpen className="w-3.5 h-3.5" />, activeCls: 'bg-amber-600/15 text-amber-400 border-amber-500/40' },
           { id: 'ekskul' as SubTab, label: 'Ekstrakurikuler', count: activeEkskulList.length, icon: <Trophy className="w-3.5 h-3.5" />, activeCls: 'bg-emerald-600/15 text-emerald-400 border-emerald-500/40' }
         ].map(tab => {
@@ -1545,7 +1932,12 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   className="w-full sm:w-auto min-w-0 bg-[#181818] border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
                 >
                   <option value="Semua">Semua Kelas / Rombel</option>
-                  {Array.from(new Set(activeRombelList.map(r => r.namaRombel))).map(k => (
+                  {Array.from(
+                    new Set([
+                      ...activeRombelList.map(r => r.namaRombel),
+                      ...unmatchedStudentClasses
+                    ])
+                  ).map(k => (
                     <option key={k} value={k}>{k}</option>
                   ))}
                 </select>
@@ -1565,20 +1957,49 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
             </div>
           )}
 
-          {/* Tingkat Filter for Rombel */}
+          {/* Tingkat Filter & View Toggle for Rombel / Kelas */}
           {subTab === 'rombel' && (
-            <div className="flex items-center gap-2 shrink-0">
-              <Filter className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              <select
-                value={filterTingkat}
-                onChange={e => setFilterTingkat(e.target.value)}
-                className="w-full sm:w-auto bg-[#181818] border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-              >
-                <option value="Semua">Semua Tingkat</option>
-                <option value="Kelas 7">Kelas 7</option>
-                <option value="Kelas 8">Kelas 8</option>
-                <option value="Kelas 9">Kelas 9</option>
-              </select>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <select
+                  value={filterTingkat}
+                  onChange={e => setFilterTingkat(e.target.value)}
+                  className="w-full sm:w-auto bg-[#181818] border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                >
+                  <option value="Semua">Semua Tingkat</option>
+                  <option value="Kelas 7">Kelas 7</option>
+                  <option value="Kelas 8">Kelas 8</option>
+                  <option value="Kelas 9">Kelas 9</option>
+                </select>
+              </div>
+
+              <div className="flex items-center bg-[#181818] border border-slate-800 rounded-lg p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setRombelViewMode('grid')}
+                  title="Tampilan Kartu"
+                  className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold flex items-center gap-1 transition-all ${
+                    rombelViewMode === 'grid'
+                      ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" /> Kartu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRombelViewMode('table')}
+                  title="Tampilan Tabel"
+                  className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold flex items-center gap-1 transition-all ${
+                    rombelViewMode === 'table'
+                      ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <List className="w-3.5 h-3.5" /> Tabel
+                </button>
+              </div>
             </div>
           )}
 
@@ -1720,6 +2141,33 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+            {subTab === 'rombel' && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSyncRombelFromSiswa}
+                  className="px-3 py-2 bg-[#181818] hover:bg-indigo-950/60 text-indigo-300 border border-indigo-500/30 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+                  title="Deteksi & tambahkan kelas otomatis dari Data Siswa"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
+                  Sinkron dari Siswa
+                  {unmatchedStudentClasses.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-indigo-500 text-white text-[10px] font-black leading-none">
+                      +{unmatchedStudentClasses.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportRombelCsv}
+                  className="px-3 py-2 bg-[#181818] hover:bg-slate-800 text-indigo-300 border border-indigo-500/30 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+                  title="Ekspor Database Kelas ke CSV"
+                >
+                  <Download className="w-3.5 h-3.5 text-indigo-400" /> Ekspor Kelas CSV
+                </button>
+              </>
+            )}
+
             {subTab === 'mapel' && (
               <button
                 onClick={handleExportMapelCsv}
@@ -1742,6 +2190,175 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
             {subTab !== 'rombel' && subTab !== 'mapel' && subTab !== 'ekskul' && (
               <>
+                {subTab === 'siswa' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSiswaDuplicateModal(true)}
+                    className={`px-3 py-2 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap border ${
+                      siswaDuplicateSummary.totalGroups > 0
+                        ? 'bg-amber-950/80 hover:bg-amber-900/90 text-amber-200 border-amber-500/45'
+                        : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border-slate-700'
+                    }`}
+                    title="Pindai dan bersihkan data siswa ganda berdasarkan NISN, NIS, NIK, atau Nama"
+                  >
+                    <CopyCheck
+                      className={`w-3.5 h-3.5 ${
+                        siswaDuplicateSummary.totalGroups > 0
+                          ? 'text-amber-400'
+                          : 'text-emerald-400'
+                      }`}
+                    />
+                    <span>Cek Data Ganda</span>
+                    {siswaDuplicateSummary.totalGroups > 0 ? (
+                      <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black leading-none">
+                        {siswaDuplicateSummary.totalGroups}
+                      </span>
+                    ) : (
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" title="Tidak ada data ganda" />
+                    )}
+                  </button>
+                )}
+
+                {subTab === 'siswa' && (
+                  <div className="relative" ref={siswaExportMenuRef}>
+                    <button
+                      type="button"
+                      onClick={handleToggleSiswaExportMenu}
+                      disabled={isExportingSiswa || siswaList.length === 0}
+                      className="px-3 py-2 bg-cyan-950/80 hover:bg-cyan-900/90 disabled:opacity-50 disabled:cursor-not-allowed text-cyan-200 border border-cyan-500/40 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+                      title="Unduh Data Siswa ke Excel, PDF, atau CSV"
+                    >
+                      {isExportingSiswa ? (
+                        <Loader2 className="w-3.5 h-3.5 text-cyan-300 animate-spin" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5 text-cyan-300" />
+                      )}
+                      <span>
+                        Unduh Data
+                        {selectedSiswaIds.length > 0 ? ` (${selectedSiswaIds.length})` : ''}
+                      </span>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 text-cyan-300 transition-transform ${
+                          showSiswaExportMenu ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {showSiswaExportMenu && (
+                      <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-72 bg-[#141923] border border-slate-700/90 rounded-xl shadow-2xl p-2.5 z-50 text-left">
+                        <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-800 mb-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                            Unduh Data Siswa
+                          </span>
+                          <span className="text-[11px] font-bold text-cyan-300 bg-cyan-950/80 border border-cyan-700/50 px-2 py-0.5 rounded-md">
+                            {siswaExportTargetList.length} siswa
+                          </span>
+                        </div>
+
+                        {(selectedSiswaIds.length > 0 || isSiswaFiltered) && (
+                          <div className="mb-2.5 px-1">
+                            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">
+                              Cakupan Data
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {selectedSiswaIds.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSiswaExportScope('selected')}
+                                  className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
+                                    effectiveSiswaExportScope === 'selected'
+                                      ? 'bg-cyan-600/25 text-cyan-200 border-cyan-500/50'
+                                      : 'bg-slate-800/70 text-slate-400 border-slate-700 hover:text-slate-200'
+                                  }`}
+                                >
+                                  Terpilih ({selectedSiswaIds.length})
+                                </button>
+                              )}
+                              {isSiswaFiltered && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSiswaExportScope('filtered')}
+                                  className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
+                                    effectiveSiswaExportScope === 'filtered'
+                                      ? 'bg-cyan-600/25 text-cyan-200 border-cyan-500/50'
+                                      : 'bg-slate-800/70 text-slate-400 border-slate-700 hover:text-slate-200'
+                                  }`}
+                                >
+                                  Sesuai Filter ({filteredSiswa.length})
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setSiswaExportScope('all')}
+                                className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
+                                  effectiveSiswaExportScope === 'all'
+                                    ? 'bg-cyan-600/25 text-cyan-200 border-cyan-500/50'
+                                    : 'bg-slate-800/70 text-slate-400 border-slate-700 hover:text-slate-200'
+                                }`}
+                              >
+                                Semua ({siswaList.length})
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <button
+                            type="button"
+                            disabled={isExportingSiswa || siswaExportTargetList.length === 0}
+                            onClick={() => handleDownloadSiswa('xlsx')}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-950/60 border border-transparent hover:border-emerald-700/40 transition-all text-left disabled:opacity-50"
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-emerald-950/90 border border-emerald-700/50 flex items-center justify-center shrink-0">
+                              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-slate-100">Unduh Excel (.xlsx)</div>
+                              <div className="text-[10px] text-slate-400 truncate">
+                                Data lengkap + Sheet Rekap per Kelas
+                              </div>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isExportingSiswa || siswaExportTargetList.length === 0}
+                            onClick={() => handleDownloadSiswa('pdf')}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-rose-950/60 border border-transparent hover:border-rose-700/40 transition-all text-left disabled:opacity-50"
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-rose-950/90 border border-rose-700/50 flex items-center justify-center shrink-0">
+                              <FileDown className="w-4 h-4 text-rose-400" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-slate-100">Unduh PDF (A4)</div>
+                              <div className="text-[10px] text-slate-400 truncate">
+                                Tabel A4 Landscape rapi siap cetak
+                              </div>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isExportingSiswa || siswaExportTargetList.length === 0}
+                            onClick={() => handleDownloadSiswa('csv')}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-sky-950/60 border border-transparent hover:border-sky-700/40 transition-all text-left disabled:opacity-50"
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-sky-950/90 border border-sky-700/50 flex items-center justify-center shrink-0">
+                              <FileText className="w-4 h-4 text-sky-400" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-slate-100">Unduh CSV (.csv)</div>
+                              <div className="text-[10px] text-slate-400 truncate">
+                                Format teks UTF-8 untuk spreadsheet
+                              </div>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <button
                   onClick={() => handleDownloadTemplate(subTab as 'siswa' | 'guru' | 'staf')}
                   className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
@@ -1849,7 +2466,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
               }`}
             >
               <Plus className="w-4 h-4" />
-              Tambah {subTab === 'siswa' ? 'Siswa' : subTab === 'guru' ? 'Guru' : subTab === 'staf' ? 'Staf' : subTab === 'mapel' ? 'Mata Pelajaran' : subTab === 'ekskul' ? 'Ekskul' : 'Rombel'} Baru
+              Tambah {subTab === 'siswa' ? 'Siswa' : subTab === 'guru' ? 'Guru' : subTab === 'staf' ? 'Staf' : subTab === 'mapel' ? 'Mata Pelajaran' : subTab === 'ekskul' ? 'Ekskul' : 'Kelas'} Baru
             </button>
           </div>
         </div>
@@ -1878,20 +2495,27 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
             </div>
           </div>
 
-          <div className="bg-[#121212] p-4 rounded-xl border border-slate-800 flex items-center gap-3 shadow-md hover:border-indigo-500/30 transition-all">
-            <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20 shadow-inner">
+          <button
+            type="button"
+            onClick={() => {
+              setSubTab('rombel');
+              setSearch('');
+            }}
+            className="text-left bg-[#121212] p-4 rounded-xl border border-slate-800 flex items-center gap-3 shadow-md hover:border-indigo-500/50 hover:bg-indigo-950/10 transition-all cursor-pointer group"
+          >
+            <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20 shadow-inner group-hover:bg-indigo-500/20 transition-colors">
               <Layers className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rombongan Belajar</p>
               <p className="text-xl font-black text-white mt-0.5">
-                {new Set(siswaList.map(s => s.kelas)).size} <span className="text-[10px] font-normal text-slate-400">Rombel</span>
+                {activeRombelList.length} <span className="text-[10px] font-normal text-slate-400">Kelas / Rombel</span>
               </p>
-              <p className="text-[10px] text-indigo-300 mt-1 truncate">
-                Wali Kelas & Kurikulum Merdeka aktif
+              <p className="text-[10px] text-indigo-300 mt-1 truncate group-hover:text-indigo-200">
+                Kelola Data Kelas & Wali Kelas →
               </p>
             </div>
-          </div>
+          </button>
 
           <div className="bg-[#121212] p-4 rounded-xl border border-slate-800 flex items-center gap-3 shadow-md hover:border-emerald-500/30 transition-all">
             <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 shadow-inner">
@@ -2643,17 +3267,76 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
           </div>
         )}
 
-        {subTab === 'rombel' && (
+        {subTab === 'rombel' && (() => {
+          const totalEnrolledInRombels = siswaList.filter(s => activeRombelList.some(r => isStudentInRombel(s, r))).length;
+          const unassignedStudentsCount = Math.max(0, siswaList.length - totalEnrolledInRombels);
+          const count7 = activeRombelList.filter(r => r.tingkatKelas === 'Kelas 7').length;
+          const count8 = activeRombelList.filter(r => r.tingkatKelas === 'Kelas 8').length;
+          const count9 = activeRombelList.filter(r => r.tingkatKelas === 'Kelas 9').length;
+          const activeTahun = activeRombelList[0]?.tahunAjaran || '2026/2027';
+          const activeSem = activeRombelList[0]?.semester || 'Ganjil';
+
+          const openEditRombel = (rombel: RombelKelas) => {
+            setEditingId(rombel.id);
+            const currentStudents = getStudentsInRombel(rombel).map(s => s.id);
+            setSelectedSiswaIdsForRombel(currentStudents);
+            setFormRombel({
+              namaRombel: rombel.namaRombel,
+              tingkatKelas: rombel.tingkatKelas,
+              jurusanPeminatan: rombel.jurusanPeminatan || 'Umum',
+              waliKelasNama: rombel.waliKelasNama,
+              ruangan: rombel.ruangan,
+              kurikulum: rombel.kurikulum,
+              tahunAjaran: rombel.tahunAjaran,
+              semester: rombel.semester,
+              ketuaKelasNama: rombel.ketuaKelasNama || '',
+              kapasitas: rombel.kapasitas,
+              catatan: rombel.catatan || ''
+            });
+            setModalMode('edit');
+            setIsModalOpen(true);
+          };
+
+          return (
           <div className="p-5 space-y-6">
+            {/* Auto-Sync Banner if unmatched classes exist on Siswa */}
+            {unmatchedStudentClasses.length > 0 && (
+              <div className="bg-indigo-950/30 border border-indigo-500/30 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-indigo-500/20 text-indigo-300 rounded-lg border border-indigo-500/30 shrink-0">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div className="text-xs">
+                    <p className="font-bold text-indigo-200">
+                      Ditemukan {unmatchedStudentClasses.length} nama kelas pada Data Siswa yang belum terdaftar di Data Kelas
+                    </p>
+                    <p className="text-slate-400 mt-0.5">
+                      Kelas terdeteksi: <span className="text-slate-200 font-semibold">{unmatchedStudentClasses.slice(0, 6).join(', ')}{unmatchedStudentClasses.length > 6 ? `, +${unmatchedStudentClasses.length - 6} lainnya` : ''}</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSyncRombelFromSiswa}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-sm"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Sinkronkan {unmatchedStudentClasses.length} Kelas
+                </button>
+              </div>
+            )}
+
             {/* Rombel Statistics */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-[#181818] p-4 rounded-xl border border-slate-800 flex items-center gap-3">
                 <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20">
                   <Layers className="w-5 h-5" />
                 </div>
-                <div>
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Rombel</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Kelas / Rombel</p>
                   <p className="text-xl font-black text-white">{activeRombelList.length} <span className="text-xs font-normal text-slate-400">Kelas</span></p>
+                  <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                    Kls 7: <span className="text-indigo-300 font-bold">{count7}</span> • Kls 8: <span className="text-indigo-300 font-bold">{count8}</span> • Kls 9: <span className="text-indigo-300 font-bold">{count9}</span>
+                  </p>
                 </div>
               </div>
 
@@ -2662,9 +3345,12 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   <School className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Kuota / Kapasitas</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Kuota / Kapasitas</p>
                   <p className="text-xl font-black text-white">
-                    {activeRombelList.reduce((acc, r) => acc + r.kapasitas, 0)} <span className="text-xs font-normal text-slate-400">Kursi</span>
+                    {activeRombelList.reduce((acc, r) => acc + (r.kapasitas || 0), 0)} <span className="text-xs font-normal text-slate-400">Kursi</span>
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Rata-rata {activeRombelList.length ? Math.round(activeRombelList.reduce((acc, r) => acc + (r.kapasitas || 0), 0) / activeRombelList.length) : 0} siswa / kelas
                   </p>
                 </div>
               </div>
@@ -2674,9 +3360,12 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   <GraduationCap className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Siswa Terdaftar</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Siswa Terdaftar di Kelas</p>
                   <p className="text-xl font-black text-white">
-                    {siswaList.filter(s => activeRombelList.some(r => r.namaRombel.toLowerCase() === s.kelas.toLowerCase())).length} <span className="text-xs font-normal text-slate-400">Siswa</span>
+                    {totalEnrolledInRombels} <span className="text-xs font-normal text-slate-400">/ {siswaList.length} Siswa</span>
+                  </p>
+                  <p className={`text-[10px] mt-0.5 ${unassignedStudentsCount > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {unassignedStudentsCount > 0 ? `${unassignedStudentsCount} siswa belum masuk kelas` : 'Seluruh siswa sudah masuk kelas'}
                   </p>
                 </div>
               </div>
@@ -2686,30 +3375,36 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   <Award className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tahun Ajaran Active</p>
-                  <p className="text-sm font-bold text-white">2026/2027 <span className="text-xs text-amber-400 font-semibold">(Ganjil)</span></p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tahun Ajaran Aktif</p>
+                  <p className="text-sm font-bold text-white mt-0.5">{activeTahun} <span className="text-xs text-amber-400 font-semibold">({activeSem})</span></p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    {new Set(activeRombelList.map(r => r.waliKelasNama).filter(Boolean)).size} Wali Kelas ditugaskan
+                  </p>
                 </div>
               </div>
             </div>
 
-            {/* Rombel Grid Cards */}
+            {/* Rombel List: Empty / Grid Cards / Table View */}
             {filteredRombel.length === 0 ? (
               <div className="text-center py-12 bg-[#181818] rounded-xl border border-slate-800/80">
                 <Layers className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                <h4 className="text-base font-bold text-slate-300">Tidak ada Rombel / Kelas ditemukan</h4>
-                <p className="text-xs text-slate-500 mt-1">Coba ubah kata kunci pencarian atau buat Rombel baru.</p>
+                <h4 className="text-base font-bold text-slate-300">Tidak ada Kelas / Rombel ditemukan</h4>
+                <p className="text-xs text-slate-500 mt-1">Coba ubah kata kunci pencarian, filter tingkat, atau buat kelas baru.</p>
                 <button
                   onClick={handleOpenAdd}
                   className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all inline-flex items-center gap-2"
                 >
-                  <Plus className="w-4 h-4" /> Buat Rombel Baru
+                  <Plus className="w-4 h-4" /> Tambah Kelas Baru
                 </button>
               </div>
-            ) : (
+            ) : rombelViewMode === 'grid' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                 {filteredRombel.map(rombel => {
-                  const countSiswa = siswaList.filter(s => s.kelas.toLowerCase() === rombel.namaRombel.toLowerCase()).length;
-                  const percentage = Math.min(100, Math.round((countSiswa / rombel.kapasitas) * 100));
+                  const members = getStudentsInRombel(rombel);
+                  const countSiswa = members.length;
+                  const countL = members.filter(s => s.jenisKelamin === 'L').length;
+                  const countP = members.filter(s => s.jenisKelamin === 'P').length;
+                  const percentage = Math.min(100, Math.round((countSiswa / Math.max(1, rombel.kapasitas || 32)) * 100));
 
                   return (
                     <div 
@@ -2718,9 +3413,9 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                     >
                       <div className="space-y-3">
                         {/* Header Badge */}
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-lg font-black text-white group-hover:text-indigo-400 transition-colors">
                                 {rombel.namaRombel}
                               </span>
@@ -2728,54 +3423,57 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                                 {rombel.tingkatKelas}
                               </span>
                             </div>
-                            <span className="text-xs text-slate-400 font-medium">{rombel.jurusanPeminatan}</span>
+                            <span className="text-xs text-slate-400 font-medium">{rombel.jurusanPeminatan || 'Umum'}</span>
                           </div>
 
-                          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-[10px] font-bold">
+                          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-[10px] font-bold shrink-0">
                             {rombel.kurikulum}
                           </span>
                         </div>
 
                         {/* Details List */}
                         <div className="space-y-2 text-xs text-slate-300 bg-[#121212] p-3 rounded-xl border border-slate-800/60">
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500 font-semibold flex items-center gap-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-slate-500 font-semibold flex items-center gap-1.5 shrink-0">
                               <UserCheck className="w-3.5 h-3.5 text-blue-400" /> Wali Kelas:
                             </span>
-                            <span className="font-bold text-white text-right truncate max-w-[170px]" title={rombel.waliKelasNama}>
-                              {rombel.waliKelasNama}
+                            <span className="font-bold text-white text-right truncate max-w-[180px]" title={rombel.waliKelasNama}>
+                              {rombel.waliKelasNama || '-'}
                             </span>
                           </div>
 
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500 font-semibold flex items-center gap-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-slate-500 font-semibold flex items-center gap-1.5 shrink-0">
                               <MapPin className="w-3.5 h-3.5 text-amber-400" /> Ruangan:
                             </span>
-                            <span className="font-semibold text-slate-200">{rombel.ruangan}</span>
+                            <span className="font-semibold text-slate-200 truncate">{rombel.ruangan || '-'}</span>
                           </div>
 
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500 font-semibold flex items-center gap-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-slate-500 font-semibold flex items-center gap-1.5 shrink-0">
                               <Calendar className="w-3.5 h-3.5 text-emerald-400" /> Periode:
                             </span>
                             <span className="font-medium text-slate-300">{rombel.tahunAjaran} ({rombel.semester})</span>
                           </div>
 
                           {rombel.ketuaKelasNama && (
-                            <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
-                              <span className="text-slate-500 font-semibold flex items-center gap-1.5">
+                            <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
+                              <span className="text-slate-500 font-semibold flex items-center gap-1.5 shrink-0">
                                 <GraduationCap className="w-3.5 h-3.5 text-purple-400" /> Ketua Kelas:
                               </span>
-                              <span className="font-medium text-slate-300">{rombel.ketuaKelasNama}</span>
+                              <span className="font-medium text-slate-300 truncate">{rombel.ketuaKelasNama}</span>
                             </div>
                           )}
                         </div>
 
-                        {/* Kapasitas & Progress Bar */}
+                        {/* Kapasitas, Gender & Progress Bar */}
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="text-slate-400 font-semibold flex items-center gap-1">
-                              <Users className="w-3.5 h-3.5 text-indigo-400" /> Kuota Terisi:
+                            <span className="text-slate-400 font-semibold flex items-center gap-1.5">
+                              <Users className="w-3.5 h-3.5 text-indigo-400" />
+                              <span>{countL} L</span>
+                              <span className="text-slate-600">•</span>
+                              <span>{countP} P</span>
                             </span>
                             <span className="font-bold text-white">
                               {countSiswa} <span className="text-slate-500 font-normal">/ {rombel.kapasitas} Siswa</span>
@@ -2785,7 +3483,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                           <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
                             <div 
                               className={`h-full transition-all duration-500 ${
-                                percentage >= 90 ? 'bg-amber-500' : 'bg-indigo-500'
+                                percentage >= 100 ? 'bg-rose-500' : percentage >= 90 ? 'bg-amber-500' : 'bg-indigo-500'
                               }`}
                               style={{ width: `${percentage}%` }}
                             />
@@ -2796,7 +3494,11 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                       {/* Action Buttons */}
                       <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
                         <button
-                          onClick={() => setActiveRombelDetail(rombel)}
+                          onClick={() => {
+                            setDetailStudentSearch('');
+                            setStudentToAssign('');
+                            setActiveRombelDetail(rombel);
+                          }}
                           className="px-3 py-1.5 bg-indigo-600/15 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 flex-1 justify-center"
                         >
                           <Eye className="w-3.5 h-3.5" /> Lihat Siswa ({countSiswa})
@@ -2804,29 +3506,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={() => {
-                              setEditingId(rombel.id);
-                              const currentStudents = siswaList
-                                .filter(s => s.kelas.toLowerCase() === rombel.namaRombel.toLowerCase())
-                                .map(s => s.id);
-                              setSelectedSiswaIdsForRombel(currentStudents);
-                              setFormRombel({
-                                namaRombel: rombel.namaRombel,
-                                tingkatKelas: rombel.tingkatKelas,
-                                jurusanPeminatan: rombel.jurusanPeminatan,
-                                waliKelasNama: rombel.waliKelasNama,
-                                ruangan: rombel.ruangan,
-                                kurikulum: rombel.kurikulum,
-                                tahunAjaran: rombel.tahunAjaran,
-                                semester: rombel.semester,
-                                ketuaKelasNama: rombel.ketuaKelasNama || '',
-                                kapasitas: rombel.kapasitas,
-                                catatan: rombel.catatan || ''
-                              });
-                              setModalMode('edit');
-                              setIsModalOpen(true);
-                            }}
-                            title="Edit Data Rombel"
+                            onClick={() => openEditRombel(rombel)}
+                            title="Edit Data Kelas"
                             className="p-2 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors"
                           >
                             <Edit className="w-4 h-4" />
@@ -2834,7 +3515,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
                           <button
                             onClick={() => handleDelete(rombel.id, rombel.namaRombel, 'rombel')}
-                            title="Hapus Rombel"
+                            title="Hapus Kelas"
                             className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -2845,9 +3526,97 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   );
                 })}
               </div>
+            ) : (
+              <div className="overflow-x-auto bg-[#181818] rounded-xl border border-slate-800">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-[#121212] border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
+                    <tr>
+                      <th className="px-4 py-3">Nama Kelas</th>
+                      <th className="px-4 py-3">Tingkat</th>
+                      <th className="px-4 py-3">Wali Kelas</th>
+                      <th className="px-4 py-3">Ruangan</th>
+                      <th className="px-4 py-3 text-center">Siswa (L / P)</th>
+                      <th className="px-4 py-3 text-center">Kapasitas</th>
+                      <th className="px-4 py-3">Kurikulum</th>
+                      <th className="px-4 py-3 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/70">
+                    {filteredRombel.map(rombel => {
+                      const members = getStudentsInRombel(rombel);
+                      const countSiswa = members.length;
+                      const countL = members.filter(s => s.jenisKelamin === 'L').length;
+                      const countP = members.filter(s => s.jenisKelamin === 'P').length;
+                      const percentage = Math.min(100, Math.round((countSiswa / Math.max(1, rombel.kapasitas || 32)) * 100));
+
+                      return (
+                        <tr key={rombel.id} className="hover:bg-slate-800/35 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="font-bold text-white">{rombel.namaRombel}</div>
+                            <div className="text-[10px] text-slate-500">{rombel.jurusanPeminatan || 'Umum'} • {rombel.tahunAjaran} ({rombel.semester})</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold whitespace-nowrap">
+                              {rombel.tingkatKelas}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-slate-200">{rombel.waliKelasNama || '-'}</td>
+                          <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{rombel.ruangan || '-'}</td>
+                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                            <span className="font-bold text-white">{countSiswa}</span>
+                            <span className="text-[10px] text-slate-400 ml-1.5">({countL} L / {countP} P)</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col items-center gap-1 min-w-[90px]">
+                              <span className="text-[10px] font-mono text-slate-300">{countSiswa}/{rombel.kapasitas} ({percentage}%)</span>
+                              <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full ${percentage >= 100 ? 'bg-rose-500' : percentage >= 90 ? 'bg-amber-500' : 'bg-indigo-500'}`}
+                                  style={{ width: `${percentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{rombel.kurikulum}</td>
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={() => {
+                                  setDetailStudentSearch('');
+                                  setStudentToAssign('');
+                                  setActiveRombelDetail(rombel);
+                                }}
+                                title="Lihat & Kelola Siswa"
+                                className="px-2.5 py-1 bg-indigo-600/15 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg text-[11px] font-bold transition-all inline-flex items-center gap-1"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> Siswa
+                              </button>
+                              <button
+                                onClick={() => openEditRombel(rombel)}
+                                title="Edit Kelas"
+                                className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(rombel.id, rombel.namaRombel, 'rombel')}
+                                title="Hapus Kelas"
+                                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {subTab === 'mapel' && (
           <div className="p-5 space-y-6">
@@ -3291,7 +4060,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   ? 'Mata Pelajaran'
                   : subTab === 'ekskul'
                   ? 'Ekstrakurikuler'
-                  : 'Rombongan Belajar'}
+                  : 'Data Kelas / Rombel'}
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors">
                 <X className="w-5 h-5" />
@@ -4539,11 +5308,11 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                               const val = e.target.value;
                               if (val) {
                                 if (selectedSiswaIdsForRombel.length >= formRombel.kapasitas) {
-                                  alert(`Kapasitas maksimal rombel (${formRombel.kapasitas} siswa) sudah tercapai!`);
+                                  showToast(`Kapasitas maksimal kelas (${formRombel.kapasitas} siswa) sudah tercapai!`, 'warning');
                                   return;
                                 }
                                 setSelectedSiswaIdsForRombel(prev => [...prev, val]);
-                                setStudentSearchInput(''); // clear search input
+                                setStudentSearchInput('');
                               }
                             }}
                             className="w-full p-1.5 bg-[#121212] border border-slate-700 text-white rounded text-[11px] focus:outline-none focus:border-amber-500"
@@ -4551,21 +5320,22 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                             <option value="">-- Pilih & Tambahkan Siswa --</option>
                             {siswaList
                               .filter(s => {
-                                // Exclude students assigned to OTHER rombels
-                                const otherRombelNames = activeRombelList
-                                  .filter(r => r.id !== editingId)
-                                  .map(r => r.namaRombel.toLowerCase());
-                                const isSiswaInOtherRombel = s.kelas && s.kelas !== 'Belum Ada Kelas' && otherRombelNames.includes(s.kelas.toLowerCase());
+                                const otherRombels = activeRombelList.filter(r => r.id !== editingId);
+                                const isSiswaInOtherRombel = otherRombels.some(r => isStudentInRombel(s, r));
                                 return !isSiswaInOtherRombel && !selectedSiswaIdsForRombel.includes(s.id);
                               })
-                              .filter(s => 
-                                s.nama.toLowerCase().includes(studentSearchInput.toLowerCase()) ||
-                                s.nisn.includes(studentSearchInput) ||
-                                s.nis.includes(studentSearchInput)
-                              )
+                              .filter(s => {
+                                const q = studentSearchInput.trim().toLowerCase();
+                                if (!q) return true;
+                                return (
+                                  (s.nama || '').toLowerCase().includes(q) ||
+                                  (s.nisn || '').toLowerCase().includes(q) ||
+                                  (s.nis || '').toLowerCase().includes(q)
+                                );
+                              })
                               .map(s => (
                                 <option key={s.id} value={s.id}>
-                                  {s.nama} ({s.nisn || s.nis}) {s.kelas && s.kelas !== 'Belum Ada Kelas' ? `[${s.kelas}]` : '[Belum Ada Kelas]'}
+                                  {s.nama} ({s.nisn || s.nis || '-'}) {s.kelas && s.kelas !== 'Belum Ada Kelas' ? `[${s.kelas}]` : '[Belum Ada Kelas]'}
                                 </option>
                               ))
                             }
@@ -5229,7 +5999,24 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
       )}
 
       {/* ROMBEL MEMBER DETAIL MODAL */}
-      {activeRombelDetail && (
+      {activeRombelDetail && (() => {
+        const detailMembers = getStudentsInRombel(activeRombelDetail);
+        const detailCountL = detailMembers.filter(s => s.jenisKelamin === 'L').length;
+        const detailCountP = detailMembers.filter(s => s.jenisKelamin === 'P').length;
+        const assignableStudents = siswaList
+          .filter(s => !isStudentInRombel(s, activeRombelDetail))
+          .filter(s => {
+            const q = detailStudentSearch.trim().toLowerCase();
+            if (!q) return true;
+            return (
+              (s.nama || '').toLowerCase().includes(q) ||
+              (s.nisn || '').toLowerCase().includes(q) ||
+              (s.nis || '').toLowerCase().includes(q) ||
+              (s.kelas || '').toLowerCase().includes(q)
+            );
+          });
+
+        return (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#121212] rounded-2xl max-w-3xl w-full p-6 border border-slate-800 shadow-2xl space-y-5 max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
@@ -5238,11 +6025,14 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   <Layers className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="font-black text-white text-lg flex items-center gap-2">
-                    Detail Anggota Rombel: {activeRombelDetail.namaRombel}
+                  <h3 className="font-black text-white text-lg flex items-center gap-2 flex-wrap">
+                    Anggota Kelas: {activeRombelDetail.namaRombel}
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold">
+                      {activeRombelDetail.tingkatKelas}
+                    </span>
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Wali Kelas: <span className="text-indigo-300 font-semibold">{activeRombelDetail.waliKelasNama}</span> | Ruangan: {activeRombelDetail.ruangan}
+                    Wali Kelas: <span className="text-indigo-300 font-semibold">{activeRombelDetail.waliKelasNama}</span> • Ruangan: {activeRombelDetail.ruangan} • {detailCountL} L / {detailCountP} P
                   </p>
                 </div>
               </div>
@@ -5252,50 +6042,72 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
             </div>
 
             {/* Assign Student Form */}
-            <div className="bg-[#181818] p-4 rounded-xl border border-slate-800 space-y-2 shrink-0">
+            <div className="bg-[#181818] p-4 rounded-xl border border-slate-800 space-y-2.5 shrink-0">
               <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                <UserPlus className="w-4 h-4 text-emerald-400" /> Tambahkan Siswa ke Rombel Ini
+                <UserPlus className="w-4 h-4 text-emerald-400" /> Tambahkan atau Pindahkan Siswa ke Kelas Ini
               </label>
-              <div className="flex flex-col sm:flex-row gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                <input
+                  type="text"
+                  placeholder="Filter nama / NISN..."
+                  value={detailStudentSearch}
+                  onChange={e => setDetailStudentSearch(e.target.value)}
+                  className="sm:col-span-4 p-2 bg-[#121212] border border-slate-700 text-white rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
                 <select
                   value={studentToAssign}
                   onChange={e => setStudentToAssign(e.target.value)}
-                  className="flex-1 p-2 bg-[#121212] border border-slate-700 text-white rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="sm:col-span-5 p-2 bg-[#121212] border border-slate-700 text-white rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 >
-                  <option value="">-- Pilih Siswa yang belum masuk / belum ada rombel --</option>
-                  {siswaList
-                    .filter(s => !activeRombelList.some(r => r.namaRombel.toLowerCase() === (s.kelas || '').toLowerCase()))
-                    .map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.nama} (NISN: {s.nisn}) {s.kelas && s.kelas !== 'Belum Ada Kelas' ? `- Kelas: ${s.kelas}` : ''}
-                      </option>
-                    ))}
+                  <option value="">-- Pilih Siswa ({assignableStudents.length} tersedia) --</option>
+                  {assignableStudents.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.nama} ({s.nisn || s.nis || '-'}) {s.kelas && s.kelas !== 'Belum Ada Kelas' ? `[${s.kelas}]` : '[Belum Ada Kelas]'}
+                    </option>
+                  ))}
                 </select>
                 <button
+                  type="button"
                   onClick={() => {
                     if (studentToAssign) {
-                      setSiswaList(prev => prev.map(s => s.id === studentToAssign ? { ...s, kelas: activeRombelDetail.namaRombel } : s));
+                      if (detailMembers.length >= activeRombelDetail.kapasitas) {
+                        showToast(`Kapasitas kelas ${activeRombelDetail.namaRombel} (${activeRombelDetail.kapasitas} siswa) sudah penuh.`, 'warning');
+                        return;
+                      }
+                      const targetSiswa = siswaList.find(s => s.id === studentToAssign);
+                      setSiswaList(prev => prev.map(s => s.id === studentToAssign ? {
+                        ...s,
+                        kelas: activeRombelDetail.namaRombel,
+                        tingkatKelas: activeRombelDetail.tingkatKelas,
+                        rombel: activeRombelDetail.namaRombel
+                      } : s));
                       setStudentToAssign('');
+                      setDetailStudentSearch('');
+                      if (targetSiswa) {
+                        showToast(`${targetSiswa.nama} ditambahkan ke kelas ${activeRombelDetail.namaRombel}.`, 'success');
+                      }
                     }
                   }}
                   disabled={!studentToAssign}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 justify-center shrink-0 shadow-sm"
+                  className="sm:col-span-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 justify-center shrink-0 shadow-sm"
                 >
-                  <Plus className="w-4 h-4" /> Tambahkan ke Rombel
+                  <Plus className="w-4 h-4" /> Tambahkan
                 </button>
               </div>
             </div>
 
             {/* Enrolled Students Table */}
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Daftar Siswa Terdaftar ({siswaList.filter(s => s.kelas.toLowerCase() === activeRombelDetail.namaRombel.toLowerCase()).length} Siswa)
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  Daftar Siswa Terdaftar ({detailMembers.length} / {activeRombelDetail.kapasitas} Siswa)
+                </h4>
+              </div>
 
-              {siswaList.filter(s => s.kelas.toLowerCase() === activeRombelDetail.namaRombel.toLowerCase()).length === 0 ? (
+              {detailMembers.length === 0 ? (
                 <div className="text-center py-8 bg-[#181818] rounded-xl border border-slate-800">
                   <Users className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                  <p className="text-xs text-slate-400">Belum ada siswa yang dimasukkan ke kelas ini.</p>
+                  <p className="text-xs text-slate-400">Belum ada siswa yang terdaftar di kelas ini.</p>
                 </div>
               ) : (
                 <div className="bg-[#181818] rounded-xl border border-slate-800 overflow-hidden">
@@ -5310,19 +6122,18 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
-                      {siswaList
-                        .filter(s => s.kelas.toLowerCase() === activeRombelDetail.namaRombel.toLowerCase())
-                        .map(s => (
+                      {detailMembers.map(s => (
                           <tr key={s.id} className="hover:bg-slate-800/40 transition-colors">
                             <td className="px-4 py-2.5 font-bold text-white flex items-center gap-2.5">
                               <img
                                 src={s.fotoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'}
                                 alt={s.nama}
                                 className="w-7 h-7 rounded-full object-cover border border-slate-700"
+                                referrerPolicy="no-referrer"
                               />
                               {s.nama}
                             </td>
-                            <td className="px-4 py-2.5 font-mono text-slate-400 whitespace-nowrap">{s.nisn} / {s.nis}</td>
+                            <td className="px-4 py-2.5 font-mono text-slate-400 whitespace-nowrap">{s.nisn || '-'} / {s.nis || '-'}</td>
                             <td className="px-4 py-2.5 font-semibold text-slate-300">{s.jenisKelamin}</td>
                             <td className="px-4 py-2.5">
                               <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20">
@@ -5332,7 +6143,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                             <td className="px-4 py-2.5 text-right">
                               <button
                                 onClick={() => {
-                                  setSiswaList(prev => prev.map(item => item.id === s.id ? { ...item, kelas: 'Belum Ada Kelas' } : item));
+                                  setSiswaList(prev => prev.map(item => item.id === s.id ? { ...item, kelas: 'Belum Ada Kelas', rombel: '' } : item));
+                                  showToast(`${s.nama} dikeluarkan dari kelas ${activeRombelDetail.namaRombel}.`, 'success');
                                 }}
                                 className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-[10px] font-bold transition-all"
                               >
@@ -5357,7 +6169,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* EKSKUL MEMBERSHIP MANAGEMENT MODAL */}
       {activeEkskulMembersModal && (
@@ -6353,6 +7166,20 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* CEK DATA GANDA SISWA MODAL */}
+      <SiswaDuplicateModal
+        isOpen={showSiswaDuplicateModal}
+        onClose={() => setShowSiswaDuplicateModal(false)}
+        siswaList={siswaList}
+        summary={siswaDuplicateSummary}
+        onDeleteStudents={handleDeleteDuplicateStudents}
+        onMergeGroup={handleMergeDuplicateGroup}
+        onBulkAutoClean={handleBulkAutoCleanDuplicates}
+        onEditStudent={handleEditStudentFromDuplicate}
+        onSelectDuplicatesInTable={handleSelectDuplicatesInTable}
+        onNotify={showToast}
+      />
 
     </div>
   );

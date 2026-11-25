@@ -63,6 +63,7 @@ import {
 } from '../types/school';
 import { dbFetchCollection, dbSaveCollection, dbSaveItem } from '../lib/firebaseSync';
 import { DenahRuangUjian } from './cbt/DenahRuangUjian';
+import { DaftarPesertaKelas } from './cbt/DaftarPesertaKelas';
 import { DaftarPengawasUjian } from './cbt/DaftarPengawasUjian';
 import { BeritaAcaraUjian } from './cbt/BeritaAcaraUjian';
 import { KisiKisiSoal } from './cbt/KisiKisiSoal';
@@ -124,6 +125,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
       if (
         subTab === 'bank_soal' ||
         subTab === 'kisi_kisi' ||
+        subTab === 'daftar_peserta' ||
         subTab === 'ai_generator' ||
         subTab === 'pengaturan_cbt' ||
         subTab === 'daftar_pengawas' ||
@@ -2413,6 +2415,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
             {subTab === 'kisi_kisi' && 'Kisi-Kisi Soal'}
             {subTab === 'jadwal_kartu' && 'Jadwal & Kartu Ujian'}
             {subTab === 'denah_ruang' && 'Denah Ruang Ujian'}
+            {subTab === 'daftar_peserta' && 'Daftar Peserta per Kelas'}
             {subTab === 'daftar_pengawas' && 'Daftar Pengawas Ujian'}
             {subTab === 'berita_acara' && 'Berita Acara Ujian'}
             {subTab === 'simulasi_ujian' && 'Simulasi CBT Anti-Cheat'}
@@ -2444,6 +2447,19 @@ export const CbtView: React.FC<CbtViewProps> = ({
           jadwalUjianList={jadwalList}
           currentRole={currentRole}
           userEmail={userEmail}
+        />
+      )}
+
+      {/* SUBTAB DAFTAR PESERTA PER KELAS */}
+      {subTab === 'daftar_peserta' && currentRole !== 'siswa' && (
+        <DaftarPesertaKelas
+          siswaList={siswaList}
+          rombelList={rombelList}
+          schoolSettings={schoolSettings}
+          cbtSettings={cbtSettings}
+          currentRole={currentRole}
+          showToast={showToast}
+          onNavigateToDenah={() => setSubTab('denah_ruang')}
         />
       )}
 

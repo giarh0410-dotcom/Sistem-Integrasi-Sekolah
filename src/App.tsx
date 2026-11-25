@@ -916,6 +916,7 @@ export default function App() {
       if (
         cbtSubTab === 'bank_soal' ||
         cbtSubTab === 'kisi_kisi' ||
+        cbtSubTab === 'daftar_peserta' ||
         cbtSubTab === 'ai_generator' ||
         cbtSubTab === 'daftar_pengawas' ||
         cbtSubTab === 'berita_acara'

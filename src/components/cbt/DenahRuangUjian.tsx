@@ -26,7 +26,9 @@ import {
   Move,
   FileDown,
   Loader2,
-  CalendarDays
+  CalendarDays,
+  UserX,
+  FileSpreadsheet
 } from 'lucide-react';
 import { Siswa, Guru, RombelKelas, SchoolSettings, Role, CbtExamSettings, JadwalUjianItem } from '../../types/school';
 import { dbFetchCollection, dbSaveCollection } from '../../lib/firebaseSync';
@@ -37,6 +39,7 @@ import {
   abbreviateMapel
 } from './daftarSiswaRuangPdf';
 import { downloadDenahRuangPdf, DenahPdfOrientation } from './denahRuangPdf';
+import { exportSiswaToExcel, exportSiswaToCsv, exportSiswaToPdf } from '../../lib/exportSiswa';
 
 export interface DenahPosOffset {
   x: number;
@@ -480,18 +483,23 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
   });
 
   const [selectedRoomId, setSelectedRoomId] = useState<string>(() => rooms[0]?.id || 'denah-ruang-1');
-  const [viewMode, setViewMode] = useState<'detail' | 'roster' | 'overview'>('detail');
+  const [viewMode, setViewMode] = useState<'detail' | 'roster' | 'overview' | 'unseated'>('detail');
   const [showRosterInPoster, setShowRosterInPoster] = useState<boolean>(true);
   const [rosterScope, setRosterScope] = useState<'active' | 'all'>('active');
   const [rosterSearch, setRosterSearch] = useState('');
   const [rosterKelasFilter, setRosterKelasFilter] = useState('Semua');
   const [rosterStatusFilter, setRosterStatusFilter] = useState<'semua' | 'terisi' | 'kosong'>('semua');
+  const [unseatedSearch, setUnseatedSearch] = useState('');
+  const [unseatedKelasFilter, setUnseatedKelasFilter] = useState('Semua');
+  const [unseatedGenderFilter, setUnseatedGenderFilter] = useState<'Semua' | 'L' | 'P'>('Semua');
+  const [unseatedTargetRoomId, setUnseatedTargetRoomId] = useState<string>('auto');
   const [selectedAttendanceDay, setSelectedAttendanceDay] = useState<string>('all_days');
   const [searchQuery, setSearchQuery] = useState('');
   const [swapSourceSeat, setSwapSourceSeat] = useState<number | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isDownloadingRosterPdf, setIsDownloadingRosterPdf] = useState(false);
   const [isDownloadingDenahPdf, setIsDownloadingDenahPdf] = useState(false);
+  const [isExportingUnseated, setIsExportingUnseated] = useState(false);
   const [pdfOrientation, setPdfOrientation] = useState<DenahPdfOrientation>('auto');
 
   const examAttendanceDays = useMemo(
@@ -621,6 +629,62 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
       });
     });
     return { byId, byName };
+  }, [rooms]);
+
+  // Active students who have NOT been placed in any exam room seat yet
+  const unseatedStudents = useMemo(() => {
+    return siswaList
+      .filter(s => !s.status || s.status === 'Aktif')
+      .filter(s => {
+        if (seatedLookup.byId.has(s.id)) return false;
+        const nameKey = (s.nama || '').trim().toLowerCase();
+        if (nameKey && seatedLookup.byName.has(nameKey)) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const cmpKelas = (a.kelas || '').localeCompare(b.kelas || '', undefined, { numeric: true });
+        if (cmpKelas !== 0) return cmpKelas;
+        return (a.nama || '').localeCompare(b.nama || '');
+      });
+  }, [siswaList, seatedLookup]);
+
+  const unseatedByClass = useMemo(() => {
+    const counts = new Map<string, number>();
+    unseatedStudents.forEach(s => {
+      const k = (s.kelas || '').trim() || 'Belum Ada Kelas';
+      counts.set(k, (counts.get(k) || 0) + 1);
+    });
+    return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
+  }, [unseatedStudents]);
+
+  const filteredUnseatedStudents = useMemo(() => {
+    const q = unseatedSearch.trim().toLowerCase();
+    return unseatedStudents.filter(s => {
+      const kelasVal = (s.kelas || '').trim() || 'Belum Ada Kelas';
+      if (unseatedKelasFilter !== 'Semua' && kelasVal !== unseatedKelasFilter) return false;
+      if (unseatedGenderFilter !== 'Semua' && s.jenisKelamin !== unseatedGenderFilter) return false;
+      if (q) {
+        const hit =
+          (s.nama || '').toLowerCase().includes(q) ||
+          (s.nis || '').toLowerCase().includes(q) ||
+          (s.nisn || '').toLowerCase().includes(q) ||
+          kelasVal.toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }, [unseatedStudents, unseatedSearch, unseatedKelasFilter, unseatedGenderFilter]);
+
+  const emptySeatSlots = useMemo(() => {
+    const slots: Array<{ roomId: string; roomName: string; nomorKursi: number }> = [];
+    rooms.forEach(r => {
+      r.kursiList.forEach(k => {
+        if (!k.namaSiswa || !k.namaSiswa.trim()) {
+          slots.push({ roomId: r.id, roomName: r.namaRuang, nomorKursi: k.nomorKursi });
+        }
+      });
+    });
+    return slots;
   }, [rooms]);
 
   // Search matches across all rooms
@@ -1103,6 +1167,243 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
     setSeatManualNama(s.nama);
     setSeatManualKelas(s.kelas);
     setSeatManualNoPeserta(s.nis || s.nisn || '');
+  };
+
+  // Place 1 unseated student into an empty seat (or add 1 chair in target room if full)
+  const handlePlaceUnseatedStudent = (student: Siswa, preferredRoomId: string = unseatedTargetRoomId) => {
+    if (!canEdit) return;
+    const candidateRoomOrder: DenahRuangItem[] =
+      preferredRoomId !== 'auto'
+        ? [
+            ...rooms.filter(r => r.id === preferredRoomId),
+            ...rooms.filter(r => r.id !== preferredRoomId)
+          ]
+        : [
+            ...(activeRoom ? [activeRoom] : []),
+            ...rooms.filter(r => r.id !== activeRoom?.id)
+          ];
+
+    // 1. Check if preferred room (when specific) or any room (when auto) has an empty seat
+    const exactRoom = preferredRoomId !== 'auto'
+      ? rooms.find(r => r.id === preferredRoomId)
+      : undefined;
+
+    if (exactRoom) {
+      const emptySeat = exactRoom.kursiList.find(k => !k.namaSiswa || !k.namaSiswa.trim());
+      if (emptySeat) {
+        const updated = rooms.map(r =>
+          r.id !== exactRoom.id
+            ? r
+            : {
+                ...r,
+                kursiList: r.kursiList.map(k =>
+                  k.nomorKursi === emptySeat.nomorKursi
+                    ? {
+                        ...k,
+                        siswaId: student.id,
+                        namaSiswa: student.nama,
+                        kelasSiswa: student.kelas,
+                        nomorPeserta: student.nis || student.nisn || ''
+                      }
+                    : k
+                ),
+                updatedAt: new Date().toISOString()
+              }
+        );
+        persistRooms(updated);
+        showToast(
+          `${student.nama} ditempatkan di ${exactRoom.namaRuang} · Kursi #${String(emptySeat.nomorKursi).padStart(2, '0')}.`
+        );
+        return;
+      }
+
+      if (exactRoom.kursiList.length < 80) {
+        const perTable = exactRoom.kursiPerMeja || 4;
+        const materialized = materializeSeatLayout(exactRoom.kursiList, perTable);
+        const maxTableIdx = materialized.reduce((m, s) => Math.max(m, s.tableIndex), 1);
+        let chosenTable = maxTableIdx;
+        let chosenSlot = 0;
+
+        // Look for an existing table that still has a free slot first
+        let foundFreeSlot = false;
+        for (let t = 1; t <= maxTableIdx; t++) {
+          const used = new Set(materialized.filter(s => s.tableIndex === t).map(s => s.slotIndex));
+          for (let sl = 0; sl < perTable; sl++) {
+            if (!used.has(sl)) {
+              chosenTable = t;
+              chosenSlot = sl;
+              foundFreeSlot = true;
+              break;
+            }
+          }
+          if (foundFreeSlot) break;
+        }
+        if (!foundFreeSlot) {
+          chosenTable = maxTableIdx + 1;
+          chosenSlot = 0;
+        }
+
+        const nextTempNo = materialized.reduce((m, s) => Math.max(m, s.nomorKursi), 0) + 1;
+        const appended = [
+          ...materialized,
+          {
+            nomorKursi: nextTempNo,
+            siswaId: student.id,
+            namaSiswa: student.nama,
+            kelasSiswa: student.kelas,
+            nomorPeserta: student.nis || student.nisn || '',
+            tableIndex: chosenTable,
+            slotIndex: chosenSlot
+          }
+        ];
+        const updatedRoom = normalizeRoomSeatsAndOffsets(exactRoom, appended);
+        const updated = rooms.map(r => (r.id === exactRoom.id ? updatedRoom : r));
+        persistRooms(updated);
+        showToast(
+          `Kursi baru #${String(updatedRoom.kursiList.length).padStart(2, '0')} ditambahkan di ${exactRoom.namaRuang} untuk ${student.nama}.`
+        );
+        return;
+      }
+    }
+
+    // 2. Auto mode: find first empty seat across rooms
+    for (const r of candidateRoomOrder) {
+      const emptySeat = r.kursiList.find(k => !k.namaSiswa || !k.namaSiswa.trim());
+      if (emptySeat) {
+        const updated = rooms.map(rm =>
+          rm.id !== r.id
+            ? rm
+            : {
+                ...rm,
+                kursiList: rm.kursiList.map(k =>
+                  k.nomorKursi === emptySeat.nomorKursi
+                    ? {
+                        ...k,
+                        siswaId: student.id,
+                        namaSiswa: student.nama,
+                        kelasSiswa: student.kelas,
+                        nomorPeserta: student.nis || student.nisn || ''
+                      }
+                    : k
+                ),
+                updatedAt: new Date().toISOString()
+              }
+        );
+        persistRooms(updated);
+        showToast(
+          `${student.nama} ditempatkan di ${r.namaRuang} · Kursi #${String(emptySeat.nomorKursi).padStart(2, '0')}.`
+        );
+        return;
+      }
+    }
+
+    // 3. All rooms full in auto mode -> try expanding activeRoom or any room under 80 seats
+    const expandableRoom = candidateRoomOrder.find(r => r.kursiList.length < 80);
+    if (expandableRoom) {
+      handlePlaceUnseatedStudent(student, expandableRoom.id);
+      return;
+    }
+
+    showToast('Semua ruang sudah mencapai kapasitas maksimum (80 kursi). Silakan klik + Tambah Ruang baru.');
+  };
+
+  // Fill empty seats across rooms using the filtered unseated students list
+  const handleFillUnseatedIntoEmptySeats = () => {
+    if (!canEdit) return;
+    if (filteredUnseatedStudents.length === 0) {
+      showToast('Tidak ada siswa belum duduk yang dipilih.');
+      return;
+    }
+
+    const scopeRoomIds =
+      unseatedTargetRoomId !== 'auto' ? new Set([unseatedTargetRoomId]) : null;
+    const availableCount = rooms.reduce((sum, r) => {
+      if (scopeRoomIds && !scopeRoomIds.has(r.id)) return sum;
+      return sum + r.kursiList.filter(k => !k.namaSiswa || !k.namaSiswa.trim()).length;
+    }, 0);
+
+    if (availableCount === 0) {
+      showToast('Tidak ada kursi kosong tersedia. Tambahkan kursi atau buat ruang ujian baru terlebih dahulu.');
+      return;
+    }
+
+    let cursor = 0;
+    const queue = [...filteredUnseatedStudents];
+    const updated = rooms.map(r => {
+      if (scopeRoomIds && !scopeRoomIds.has(r.id)) return r;
+      let changed = false;
+      const nextSeats = r.kursiList.map(k => {
+        if ((!k.namaSiswa || !k.namaSiswa.trim()) && cursor < queue.length) {
+          const s = queue[cursor++];
+          changed = true;
+          return {
+            ...k,
+            siswaId: s.id,
+            namaSiswa: s.nama,
+            kelasSiswa: s.kelas,
+            nomorPeserta: s.nis || s.nisn || ''
+          };
+        }
+        return k;
+      });
+      return changed ? { ...r, kursiList: nextSeats, updatedAt: new Date().toISOString() } : r;
+    });
+
+    persistRooms(updated);
+    showToast(`Berhasil menempatkan ${cursor} siswa belum duduk ke kursi kosong yang tersedia.`);
+  };
+
+  const handleOpenAddRoomForUnseated = (suggestedSeats?: number) => {
+    const nextIdx = rooms.length + 1;
+    const needed = suggestedSeats ?? unseatedStudents.length;
+    const roundedTarget = Math.min(Math.max(Math.ceil(Math.max(needed, 4) / 4) * 4, 4), 80);
+    setIsAddingRoom(true);
+    setRoomForm({
+      namaRuang: `Ruang ${nextIdx}`,
+      pengawas: guruList[(nextIdx - 1) % Math.max(guruList.length, 1)]?.nama || `Pengawas Ruang ${nextIdx}`,
+      jumlahKursi: roundedTarget,
+      kursiPerMeja: 4,
+      judulUjian: activeRoom?.judulUjian || DEFAULT_JUDUL_UJIAN,
+      labelPintu: 'Pintu (di sebelah kiri)',
+      labelJendela: 'Jendela (samping kiri)',
+      ketentuanTambahan: activeRoom?.ketentuanTambahan || 'Jaga ketertiban dan ikuti arahan pengawas.'
+    });
+    setShowRoomModal(true);
+  };
+
+  const handleExportUnseated = async (format: 'xlsx' | 'csv' | 'pdf') => {
+    const list = filteredUnseatedStudents;
+    if (list.length === 0) {
+      showToast('Tidak ada daftar siswa belum duduk untuk diunduh.');
+      return;
+    }
+    const filterParts: string[] = ['Siswa Belum Mendapat Kursi Ujian'];
+    if (unseatedKelasFilter !== 'Semua') filterParts.push(`Kelas ${unseatedKelasFilter}`);
+    if (unseatedGenderFilter !== 'Semua') {
+      filterParts.push(unseatedGenderFilter === 'L' ? 'Laki-laki' : 'Perempuan');
+    }
+    if (unseatedSearch.trim()) filterParts.push(`Pencarian "${unseatedSearch.trim()}"`);
+
+    const schoolName = (schoolSettings?.namaSekolah || 'SMP ISLAM MODERN AL FAKHIR').toUpperCase();
+    const opts = {
+      filterLabel: filterParts.join(' · '),
+      fileNamePrefix: 'siswa_belum_duduk_ujian',
+      schoolName
+    };
+
+    setIsExportingUnseated(true);
+    try {
+      let fileName = '';
+      if (format === 'xlsx') fileName = await exportSiswaToExcel(list, opts);
+      else if (format === 'csv') fileName = exportSiswaToCsv(list, opts);
+      else fileName = exportSiswaToPdf(list, opts);
+      showToast(`Berhasil mengunduh ${fileName} (${list.length} siswa belum duduk).`);
+    } catch (err) {
+      console.error('Gagal mengunduh daftar siswa belum duduk:', err);
+      showToast('Gagal mengunduh daftar siswa belum duduk.');
+    } finally {
+      setIsExportingUnseated(false);
+    }
   };
 
   // Room Add / Edit Modal Handlers
@@ -1920,8 +2221,8 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
     setSwapSourceSeat(null);
     setActiveDrag(null);
 
-    const wasRosterMode = viewMode === 'roster';
-    if (wasRosterMode) {
+    const wasNonPosterMode = viewMode === 'roster' || viewMode === 'unseated';
+    if (wasNonPosterMode) {
       setViewMode('detail');
       await new Promise(resolve => setTimeout(resolve, 180));
     } else {
@@ -1935,7 +2236,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
         return;
       }
 
-      const effectiveMode = wasRosterMode ? 'detail' : viewMode;
+      const effectiveMode = wasNonPosterMode ? 'detail' : viewMode;
       const roomSlug = (activeRoom?.namaRuang || 'ruang')
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
@@ -2139,14 +2440,33 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
               <LayoutGrid className="w-5 h-5 text-sky-400" />
               <span>Denah Ruang & Penempatan Duduk Peserta Ujian</span>
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
-              Total {rooms.length} ruang ujian · {totalFilledAll} dari {totalCapacityAll} kursi terisi · Klik kursi biru mana saja untuk mengedit nama siswa
+            <p className="text-xs text-slate-400 mt-0.5 tabular-nums flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              <span>
+                Total {rooms.length} ruang ujian · {totalFilledAll} dari {totalCapacityAll} kursi terisi ·{' '}
+              </span>
+              {unseatedStudents.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setViewMode('unseated')}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold cursor-pointer transition-colors"
+                  title="Lihat daftar siswa yang belum mendapat kursi"
+                >
+                  <UserX className="w-3 h-3" />
+                  <span>{unseatedStudents.length} belum duduk</span>
+                </button>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold">
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>Semua siswa aktif sudah duduk</span>
+                </span>
+              )}
+              <span>· Klik kursi biru mana saja untuk mengedit nama siswa</span>
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {/* Mode Switcher */}
-            <div className="flex items-center bg-slate-900 border border-slate-700 rounded-xl p-1">
+            <div className="flex flex-wrap items-center bg-slate-900 border border-slate-700 rounded-xl p-1 gap-0.5">
               <button
                 type="button"
                 onClick={() => setViewMode('detail')}
@@ -2180,6 +2500,36 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
                 }`}
               >
                 Semua Ruang ({rooms.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('unseated')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                  viewMode === 'unseated'
+                    ? unseatedStudents.length > 0
+                      ? 'bg-amber-500 text-slate-950 shadow-sm'
+                      : 'bg-emerald-600 text-white shadow-sm'
+                    : unseatedStudents.length > 0
+                    ? 'text-amber-300 hover:bg-amber-500/15'
+                    : 'text-emerald-400 hover:text-emerald-300'
+                }`}
+                title="Lihat & tempatkan siswa aktif yang belum mendapat kursi ujian"
+              >
+                <UserX className="w-3.5 h-3.5" />
+                <span>Belum Duduk</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none tabular-nums ${
+                    viewMode === 'unseated'
+                      ? unseatedStudents.length > 0
+                        ? 'bg-slate-950 text-amber-300'
+                        : 'bg-white text-emerald-700'
+                      : unseatedStudents.length > 0
+                      ? 'bg-amber-500 text-slate-950'
+                      : 'bg-emerald-500/20 text-emerald-300'
+                  }`}
+                >
+                  {unseatedStudents.length}
+                </span>
               </button>
             </div>
 
@@ -2555,7 +2905,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
       {/* =====================================================================
           PRINTABLE POSTER AREA — FAITHFUL TO AL FAKHIR SEATING PLAN REFERENCE
          ===================================================================== */}
-      {viewMode !== 'roster' && (
+      {(viewMode === 'detail' || viewMode === 'overview') && (
       <div
         id="printable-denah-ruang"
         className="bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-300 p-4 sm:p-6 overflow-x-auto"
@@ -3575,6 +3925,340 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          BELUM DUDUK PANEL — DAFTAR SISWA AKTIF YANG BELUM MENDAPAT KURSI UJIAN
+         ===================================================================== */}
+      {viewMode === 'unseated' && (
+        <div className="bg-[#121212] rounded-2xl p-5 border border-slate-800 shadow-xl space-y-4 print:hidden">
+          {/* Header & Action Controls */}
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+            <div>
+              <h4 className="text-sm sm:text-base font-bold text-white flex items-center gap-2 flex-wrap">
+                <UserX className={`w-4 h-4 ${unseatedStudents.length > 0 ? 'text-amber-400' : 'text-emerald-400'}`} />
+                <span>Peserta Ujian Belum Mendapat Kursi (Belum Duduk)</span>
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-black tabular-nums border ${
+                    unseatedStudents.length > 0
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  }`}
+                >
+                  {unseatedStudents.length} Siswa
+                </span>
+              </h4>
+              <p className="text-xs text-slate-400 mt-1 tabular-nums">
+                Menampilkan <strong className="text-white">{filteredUnseatedStudents.length}</strong> dari{' '}
+                <strong className="text-amber-300">{unseatedStudents.length}</strong> siswa aktif yang belum duduk ·{' '}
+                Tersedia <strong className={emptySeatSlots.length > 0 ? 'text-emerald-400' : 'text-rose-400'}>{emptySeatSlots.length}</strong> kursi kosong di seluruh ruang
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {canEdit && unseatedStudents.length > 0 && (
+                <>
+                  <select
+                    value={unseatedTargetRoomId}
+                    onChange={e => setUnseatedTargetRoomId(e.target.value)}
+                    title="Pilih ruang tujuan penempatan"
+                    className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-200 focus:outline-none focus:border-sky-400 cursor-pointer"
+                  >
+                    <option value="auto">Ruang Tujuan: Otomatis (Semua Ruang)</option>
+                    {rooms.map(r => {
+                      const free = r.kursiList.filter(k => !k.namaSiswa || !k.namaSiswa.trim()).length;
+                      return (
+                        <option key={r.id} value={r.id}>
+                          {r.namaRuang} ({free} kosong / {r.jumlahKursi})
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  {emptySeatSlots.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleFillUnseatedIntoEmptySeats}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap transition-colors"
+                      title="Tempatkan siswa belum duduk ke kursi kosong yang tersedia tanpa menimpa kursi yang sudah terisi"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Isi Kursi Kosong ({Math.min(filteredUnseatedStudents.length, emptySeatSlots.length)})</span>
+                    </button>
+                  )}
+
+                  {unseatedStudents.length > emptySeatSlots.length && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAddRoomForUnseated(unseatedStudents.length - emptySeatSlots.length)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap transition-colors"
+                      title="Buat ruang ujian baru agar semua siswa belum duduk mendapat kursi"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Buat Ruang Baru ({unseatedStudents.length - emptySeatSlots.length} Kursi)</span>
+                    </button>
+                  )}
+                </>
+              )}
+
+              {unseatedStudents.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={isExportingUnseated || filteredUnseatedStudents.length === 0}
+                    onClick={() => handleExportUnseated('xlsx')}
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-950/70 hover:bg-emerald-900/80 disabled:opacity-50 text-emerald-200 border border-emerald-700/50 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                    title="Unduh daftar siswa belum duduk (Excel .xlsx)"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Excel</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isExportingUnseated || filteredUnseatedStudents.length === 0}
+                    onClick={() => handleExportUnseated('pdf')}
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-950/70 hover:bg-rose-900/80 disabled:opacity-50 text-rose-200 border border-rose-700/50 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                    title="Unduh daftar siswa belum duduk (PDF A4)"
+                  >
+                    <FileDown className="w-3.5 h-3.5 text-rose-400" />
+                    <span>PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isExportingUnseated || filteredUnseatedStudents.length === 0}
+                    onClick={() => handleExportUnseated('csv')}
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-slate-700 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                    title="Unduh daftar siswa belum duduk (CSV)"
+                  >
+                    <Download className="w-3.5 h-3.5 text-sky-400" />
+                    <span>CSV</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Capacity Alert Banner when rooms lack empty seats */}
+          {unseatedStudents.length > 0 && unseatedStudents.length > emptySeatSlots.length && (
+            <div className="p-3.5 rounded-xl bg-amber-950/35 border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5 text-xs text-amber-100">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-amber-300">Kapasitas kursi belum mencukupi:</span>{' '}
+                  Saat ini ada <strong className="text-white">{unseatedStudents.length} siswa</strong> belum duduk sedangkan kursi kosong hanya tersedia{' '}
+                  <strong className="text-white">{emptySeatSlots.length} kursi</strong> (kekurangan{' '}
+                  <strong className="text-rose-300">{unseatedStudents.length - emptySeatSlots.length} kursi</strong>).
+                  Anda bisa klik <strong className="text-blue-300">Buat Ruang Baru</strong> di kanan atas atau klik <strong className="text-emerald-300">+ Kursi &amp; Dudukkan</strong> pada setiap siswa.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Filters: Search, Kelas, Gender */}
+          {unseatedStudents.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+                <div className="relative flex-1">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={unseatedSearch}
+                    onChange={e => setUnseatedSearch(e.target.value)}
+                    placeholder="Cari nama siswa belum duduk, NIS, NISN, atau kelas..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                  />
+                  {unseatedSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setUnseatedSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <select
+                  value={unseatedKelasFilter}
+                  onChange={e => setUnseatedKelasFilter(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:outline-none focus:border-amber-400"
+                >
+                  <option value="Semua">Semua Kelas ({unseatedByClass.length})</option>
+                  {unseatedByClass.map(([cls, count]) => (
+                    <option key={cls} value={cls}>
+                      {cls} ({count})
+                    </option>
+                  ))}
+                </select>
+
+                <div className="flex items-center bg-slate-900 border border-slate-700 rounded-xl p-1 shrink-0">
+                  {(['Semua', 'L', 'P'] as const).map(g => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setUnseatedGenderFilter(g)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                        unseatedGenderFilter === g
+                          ? 'bg-amber-500 text-slate-950'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {g === 'Semua' ? 'Semua L/P' : g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Class Breakdown Pills */}
+              {unseatedByClass.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-400 mr-1">Per Kelas:</span>
+                  <button
+                    type="button"
+                    onClick={() => setUnseatedKelasFilter('Semua')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer tabular-nums ${
+                      unseatedKelasFilter === 'Semua'
+                        ? 'bg-amber-500 text-slate-950 border-amber-400'
+                        : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-amber-500/60'
+                    }`}
+                  >
+                    Semua ({unseatedStudents.length})
+                  </button>
+                  {unseatedByClass.map(([cls, count]) => (
+                    <button
+                      key={cls}
+                      type="button"
+                      onClick={() => setUnseatedKelasFilter(prev => (prev === cls ? 'Semua' : cls))}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer tabular-nums ${
+                        unseatedKelasFilter === cls
+                          ? 'bg-amber-500 text-slate-950 border-amber-400'
+                          : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-amber-500/60'
+                      }`}
+                    >
+                      {cls} ({count})
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Unseated Students Table or All-Seated Empty State */}
+          {unseatedStudents.length === 0 ? (
+            <div className="py-12 px-6 rounded-2xl bg-slate-950/60 border border-slate-800 flex flex-col items-center justify-center text-center">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/35 flex items-center justify-center text-emerald-400 mb-3">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <h5 className="text-base font-bold text-white">Semua Siswa Aktif Sudah Mendapat Kursi Ujian</h5>
+              <p className="text-xs text-slate-400 max-w-md mt-1">
+                Seluruh peserta didik aktif telah ditempatkan ke dalam ruang ujian. Anda dapat meninjau tata letak kursi di tab Denah atau Daftar Siswa.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-900/95 text-slate-300 uppercase text-[10px] font-extrabold border-b border-slate-800">
+                    <th className="px-3 py-2.5 w-12 text-center">No</th>
+                    <th className="px-3 py-2.5">Nama Lengkap Siswa</th>
+                    <th className="px-3 py-2.5">Kelas</th>
+                    <th className="px-3 py-2.5 w-14 text-center">L/P</th>
+                    <th className="px-3 py-2.5">NIS / NISN</th>
+                    <th className="px-3 py-2.5">Status</th>
+                    {canEdit && <th className="px-3 py-2.5 w-52 text-right">Penempatan</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80">
+                  {filteredUnseatedStudents.length === 0 ? (
+                    <tr>
+                      <td colSpan={canEdit ? 7 : 6} className="px-4 py-8 text-center text-slate-500 italic">
+                        Tidak ada siswa belum duduk yang cocok dengan filter pencarian.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredUnseatedStudents.map((s, idx) => {
+                      const selectedRoom =
+                        unseatedTargetRoomId !== 'auto'
+                          ? rooms.find(r => r.id === unseatedTargetRoomId)
+                          : undefined;
+                      const freeInTarget = selectedRoom
+                        ? selectedRoom.kursiList.find(k => !k.namaSiswa || !k.namaSiswa.trim())
+                        : emptySeatSlots[0];
+                      const hasEmptyAvailable = Boolean(freeInTarget);
+                      const canExpand = selectedRoom
+                        ? selectedRoom.jumlahKursi < 80
+                        : rooms.some(r => r.jumlahKursi < 80);
+
+                      return (
+                        <tr key={s.id} className="bg-slate-950/40 hover:bg-slate-900/80 transition-colors">
+                          <td className="px-3 py-2 text-center text-slate-500 font-semibold tabular-nums">
+                            {idx + 1}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="font-bold text-white">{s.nama}</div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="px-2 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/30 text-blue-300 font-bold text-[11px] whitespace-nowrap">
+                              {s.kelas || 'Belum Ada Kelas'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-center font-bold text-slate-300">
+                            {s.jenisKelamin || '-'}
+                          </td>
+                          <td className="px-3 py-2 text-slate-300 font-mono tabular-nums whitespace-nowrap">
+                            {s.nis || '-'}
+                            {s.nisn && s.nisn !== s.nis ? ` / ${s.nisn}` : ''}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/35 text-amber-300 text-[11px] font-bold whitespace-nowrap">
+                              <UserX className="w-3 h-3" />
+                              Belum Duduk
+                            </span>
+                          </td>
+                          {canEdit && (
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                disabled={!hasEmptyAvailable && !canExpand}
+                                onClick={() => handlePlaceUnseatedStudent(s)}
+                                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap ${
+                                  hasEmptyAvailable
+                                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                    : 'bg-sky-600 hover:bg-sky-500 text-white'
+                                }`}
+                                title={
+                                  hasEmptyAvailable
+                                    ? `Tempatkan ke kursi kosong (${
+                                        selectedRoom
+                                          ? `${selectedRoom.namaRuang} #${freeInTarget?.nomorKursi}`
+                                          : `${(freeInTarget as { roomName?: string })?.roomName || ''} #${freeInTarget?.nomorKursi}`
+                                      })`
+                                    : 'Tambahkan 1 kursi biru baru dan langsung dudukkan siswa ini'
+                                }
+                              >
+                                {hasEmptyAvailable ? (
+                                  <>
+                                    <Armchair className="w-3.5 h-3.5" />
+                                    <span>Dudukkan</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>+ Kursi &amp; Dudukkan</span>
+                                  </>
+                                )}
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

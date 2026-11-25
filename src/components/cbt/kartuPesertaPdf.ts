@@ -39,16 +39,45 @@ function getSortedJadwal(jadwalList: JadwalUjianItem[]): JadwalUjianItem[] {
   });
 }
 
-function formatTanggalDMY(tanggal?: string): string {
+const HARI_ID = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const HARI_SHORT_ID = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+
+function parseTanggalLocal(tanggal?: string): Date | null {
+  const tgl = (tanggal || '').trim();
+  if (!tgl) return null;
+  const isoMatch = tgl.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    const dt = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const dmyMatch = tgl.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (dmyMatch) {
+    const dt = new Date(Number(dmyMatch[3]), Number(dmyMatch[2]) - 1, Number(dmyMatch[1]));
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  return null;
+}
+
+function formatHariFromTanggal(tanggal?: string, short = false): string {
+  const dt = parseTanggalLocal(tanggal);
+  if (!dt) return '-';
+  return short ? HARI_SHORT_ID[dt.getDay()] : HARI_ID[dt.getDay()];
+}
+
+function formatTanggalDMY(tanggal?: string, omitYear = false): string {
   const tgl = (tanggal || '').trim();
   if (!tgl) return '-';
   const isoMatch = tgl.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
   if (isoMatch) {
-    return `${isoMatch[3].padStart(2, '0')}/${isoMatch[2].padStart(2, '0')}/${isoMatch[1]}`;
+    const d = isoMatch[3].padStart(2, '0');
+    const m = isoMatch[2].padStart(2, '0');
+    return omitYear ? `${d}/${m}` : `${d}/${m}/${isoMatch[1]}`;
   }
   const dmyMatch = tgl.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
   if (dmyMatch) {
-    return `${dmyMatch[1].padStart(2, '0')}/${dmyMatch[2].padStart(2, '0')}/${dmyMatch[3]}`;
+    const d = dmyMatch[1].padStart(2, '0');
+    const m = dmyMatch[2].padStart(2, '0');
+    return omitYear ? `${d}/${m}` : `${d}/${m}/${dmyMatch[3]}`;
   }
   return tgl;
 }
@@ -528,24 +557,27 @@ function drawSingleKartuOnPdf(params: {
   const availableTableH = Math.max(12, tableMaxBottom - ty);
 
   if (sortedJadwal.length === 0) {
-    const col1W = cw * 0.22;
-    const col2W = cw * 0.24;
-    const col3W = cw - col1W - col2W;
+    const col0W = cw * 0.135;
+    const col1W = cw * 0.18;
+    const col2W = cw * 0.205;
+    const col3W = cw - col0W - col1W - col2W;
     const headerRowH = 4.8;
 
     doc.setFillColor(226, 232, 240);
     doc.setDrawColor(100, 116, 139);
     doc.setLineWidth(0.22);
-    doc.rect(cx, ty, col1W, headerRowH, 'FD');
-    doc.rect(cx + col1W, ty, col2W, headerRowH, 'FD');
-    doc.rect(cx + col1W + col2W, ty, col3W, headerRowH, 'FD');
+    doc.rect(cx, ty, col0W, headerRowH, 'FD');
+    doc.rect(cx + col0W, ty, col1W, headerRowH, 'FD');
+    doc.rect(cx + col0W + col1W, ty, col2W, headerRowH, 'FD');
+    doc.rect(cx + col0W + col1W + col2W, ty, col3W, headerRowH, 'FD');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.6);
+    doc.setFontSize(6.5);
     doc.setTextColor(0, 0, 0);
-    doc.text('TANGGAL', cx + 1.2, ty + 3.3);
-    doc.text('WAKTU', cx + col1W + 1.2, ty + 3.3);
-    doc.text('MATA PELAJARAN', cx + col1W + col2W + 1.2, ty + 3.3);
+    doc.text('HARI', cx + 1.0, ty + 3.3);
+    doc.text('TANGGAL', cx + col0W + 1.0, ty + 3.3);
+    doc.text('WAKTU', cx + col0W + col1W + 1.0, ty + 3.3);
+    doc.text('MATA PELAJARAN', cx + col0W + col1W + col2W + 1.0, ty + 3.3);
     ty += headerRowH;
 
     doc.setFillColor(255, 255, 255);
@@ -559,12 +591,12 @@ function drawSingleKartuOnPdf(params: {
     const half = Math.ceil(sortedJadwal.length / 2);
     const colGap = 1.4;
     const subTableW = (cw - colGap) / 2;
-    const cDateW = subTableW * 0.50;
+    const cDateW = subTableW * 0.53;
     const cMapelW = subTableW - cDateW;
 
     const headerRowH = Math.min(4.0, Math.max(2.9, availableTableH / (half + 1.3)));
     const dataRowH = Math.min(4.0, Math.max(2.4, (availableTableH - headerRowH) / half));
-    const fontSize = dataRowH >= 3.2 ? 5.1 : dataRowH >= 2.7 ? 4.6 : 4.2;
+    const fontSize = dataRowH >= 3.2 ? 4.9 : dataRowH >= 2.7 ? 4.5 : 4.1;
     const textOffsetY = dataRowH * 0.69;
 
     const drawSubTable = (items: JadwalUjianItem[], startX: number) => {
@@ -580,8 +612,8 @@ function drawSingleKartuOnPdf(params: {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(fontSize);
       doc.setTextColor(0, 0, 0);
-      doc.text('TGL & WAKTU', startX + 0.7, rowY + headerRowH * 0.69);
-      doc.text('MATA PELAJARAN', startX + cDateW + 0.7, rowY + headerRowH * 0.69);
+      doc.text('HARI, TGL & WAKTU', startX + 0.6, rowY + headerRowH * 0.69);
+      doc.text('MATA PELAJARAN', startX + cDateW + 0.6, rowY + headerRowH * 0.69);
       rowY += headerRowH;
 
       for (const j of items) {
@@ -597,10 +629,10 @@ function drawSingleKartuOnPdf(params: {
         doc.text(
           fitTextSingleLine(
             doc,
-            `${formatTanggalDMY(j.tanggal)} ${formatJamRange(j.jamMulai, j.jamSelesai)}`,
-            cDateW - 1.2
+            `${formatHariFromTanggal(j.tanggal, true)}, ${formatTanggalDMY(j.tanggal, true)} ${formatJamRange(j.jamMulai, j.jamSelesai)}`,
+            cDateW - 1.0
           ),
-          startX + 0.6,
+          startX + 0.5,
           rowY + textOffsetY
         );
 
@@ -608,8 +640,8 @@ function drawSingleKartuOnPdf(params: {
         doc.setFontSize(fontSize);
         doc.setTextColor(0, 0, 0);
         doc.text(
-          fitTextSingleLine(doc, j.mataPelajaran || '-', cMapelW - 1.2),
-          startX + cDateW + 0.6,
+          fitTextSingleLine(doc, j.mataPelajaran || '-', cMapelW - 1.0),
+          startX + cDateW + 0.5,
           rowY + textOffsetY
         );
 
@@ -621,9 +653,10 @@ function drawSingleKartuOnPdf(params: {
     drawSubTable(sortedJadwal.slice(half), cx + subTableW + colGap);
   } else {
     // 1-column full table (1-8 roomy, 9-16 dynamically sized so all rows fit with zero cutoff)
-    const col1W = isCompactMode ? cw * 0.21 : cw * 0.22;
-    const col2W = isCompactMode ? cw * 0.23 : cw * 0.24;
-    const col3W = cw - col1W - col2W;
+    const col0W = cw * 0.135;
+    const col1W = cw * 0.18;
+    const col2W = cw * 0.205;
+    const col3W = cw - col0W - col1W - col2W;
 
     const headerRowH = isCompactMode
       ? Math.min(4.2, Math.max(3.3, availableTableH / (sortedJadwal.length + 1.2)))
@@ -633,8 +666,8 @@ function drawSingleKartuOnPdf(params: {
       ? Math.min(maxDataRowH, (availableTableH - headerRowH) / sortedJadwal.length)
       : Math.min(maxDataRowH, (availableTableH - headerRowH) / Math.max(1, sortedJadwal.length));
 
-    const headerFontSize = isCompactMode ? (dataRowH >= 3.6 ? 6.2 : 5.9) : 6.8;
-    const bodyFontSize = isCompactMode ? (dataRowH >= 3.6 ? 6.8 : 6.4) : 7.2;
+    const headerFontSize = isCompactMode ? (dataRowH >= 3.6 ? 6.0 : 5.7) : 6.6;
+    const bodyFontSize = isCompactMode ? (dataRowH >= 3.6 ? 6.6 : 6.2) : 7.0;
     const headerTextY = ty + headerRowH * 0.69;
     const rowTextOffset = dataRowH * 0.69;
 
@@ -642,38 +675,47 @@ function drawSingleKartuOnPdf(params: {
     doc.setFillColor(226, 232, 240);
     doc.setDrawColor(100, 116, 139);
     doc.setLineWidth(0.2);
-    doc.rect(cx, ty, col1W, headerRowH, 'FD');
-    doc.rect(cx + col1W, ty, col2W, headerRowH, 'FD');
-    doc.rect(cx + col1W + col2W, ty, col3W, headerRowH, 'FD');
+    doc.rect(cx, ty, col0W, headerRowH, 'FD');
+    doc.rect(cx + col0W, ty, col1W, headerRowH, 'FD');
+    doc.rect(cx + col0W + col1W, ty, col2W, headerRowH, 'FD');
+    doc.rect(cx + col0W + col1W + col2W, ty, col3W, headerRowH, 'FD');
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(headerFontSize);
     doc.setTextColor(0, 0, 0);
-    doc.text('TANGGAL', cx + 1, headerTextY);
-    doc.text('WAKTU', cx + col1W + 1, headerTextY);
-    doc.text('MATA PELAJARAN', cx + col1W + col2W + 1, headerTextY);
+    doc.text('HARI', cx + 0.85, headerTextY);
+    doc.text('TANGGAL', cx + col0W + 0.85, headerTextY);
+    doc.text('WAKTU', cx + col0W + col1W + 0.85, headerTextY);
+    doc.text('MATA PELAJARAN', cx + col0W + col1W + col2W + 0.85, headerTextY);
     ty += headerRowH;
 
     for (const j of sortedJadwal) {
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(100, 116, 139);
       doc.setLineWidth(0.2);
-      doc.rect(cx, ty, col1W, dataRowH, 'FD');
-      doc.rect(cx + col1W, ty, col2W, dataRowH, 'FD');
-      doc.rect(cx + col1W + col2W, ty, col3W, dataRowH, 'FD');
+      doc.rect(cx, ty, col0W, dataRowH, 'FD');
+      doc.rect(cx + col0W, ty, col1W, dataRowH, 'FD');
+      doc.rect(cx + col0W + col1W, ty, col2W, dataRowH, 'FD');
+      doc.rect(cx + col0W + col1W + col2W, ty, col3W, dataRowH, 'FD');
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(bodyFontSize);
       doc.setTextColor(0, 0, 0);
       doc.text(
-        fitTextSingleLine(doc, formatTanggalDMY(j.tanggal), col1W - 1.6),
-        cx + 0.9,
+        fitTextSingleLine(doc, formatHariFromTanggal(j.tanggal), col0W - 1.3),
+        cx + 0.75,
         ty + rowTextOffset
       );
 
       doc.text(
-        fitTextSingleLine(doc, formatJamRange(j.jamMulai, j.jamSelesai), col2W - 1.6),
-        cx + col1W + 0.9,
+        fitTextSingleLine(doc, formatTanggalDMY(j.tanggal), col1W - 1.3),
+        cx + col0W + 0.75,
+        ty + rowTextOffset
+      );
+
+      doc.text(
+        fitTextSingleLine(doc, formatJamRange(j.jamMulai, j.jamSelesai), col2W - 1.3),
+        cx + col0W + col1W + 0.75,
         ty + rowTextOffset
       );
 
@@ -681,8 +723,8 @@ function drawSingleKartuOnPdf(params: {
       doc.setFontSize(bodyFontSize);
       doc.setTextColor(0, 0, 0);
       doc.text(
-        fitTextSingleLine(doc, j.mataPelajaran || '-', col3W - 1.8),
-        cx + col1W + col2W + 0.9,
+        fitTextSingleLine(doc, j.mataPelajaran || '-', col3W - 1.5),
+        cx + col0W + col1W + col2W + 0.75,
         ty + rowTextOffset
       );
 

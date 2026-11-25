@@ -66,16 +66,45 @@ function getSortedJadwal(jadwalList: JadwalUjianItem[]): JadwalUjianItem[] {
   });
 }
 
-function formatTanggalDMY(tanggal?: string): string {
+const HARI_ID = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const HARI_SHORT_ID = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+
+function parseTanggalLocal(tanggal?: string): Date | null {
+  const tgl = (tanggal || '').trim();
+  if (!tgl) return null;
+  const isoMatch = tgl.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    const dt = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const dmyMatch = tgl.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (dmyMatch) {
+    const dt = new Date(Number(dmyMatch[3]), Number(dmyMatch[2]) - 1, Number(dmyMatch[1]));
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  return null;
+}
+
+function formatHariFromTanggal(tanggal?: string, short = false): string {
+  const dt = parseTanggalLocal(tanggal);
+  if (!dt) return '-';
+  return short ? HARI_SHORT_ID[dt.getDay()] : HARI_ID[dt.getDay()];
+}
+
+function formatTanggalDMY(tanggal?: string, omitYear = false): string {
   const tgl = (tanggal || '').trim();
   if (!tgl) return '-';
   const isoMatch = tgl.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
   if (isoMatch) {
-    return `${isoMatch[3].padStart(2, '0')}/${isoMatch[2].padStart(2, '0')}/${isoMatch[1]}`;
+    const d = isoMatch[3].padStart(2, '0');
+    const m = isoMatch[2].padStart(2, '0');
+    return omitYear ? `${d}/${m}` : `${d}/${m}/${isoMatch[1]}`;
   }
   const dmyMatch = tgl.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
   if (dmyMatch) {
-    return `${dmyMatch[1].padStart(2, '0')}/${dmyMatch[2].padStart(2, '0')}/${dmyMatch[3]}`;
+    const d = dmyMatch[1].padStart(2, '0');
+    const m = dmyMatch[2].padStart(2, '0');
+    return omitYear ? `${d}/${m}` : `${d}/${m}/${dmyMatch[3]}`;
   }
   return tgl;
 }
@@ -134,13 +163,14 @@ export function buildKartuA4PrintHtml(params: {
         <table class="schedule-table">
           <thead>
             <tr>
+              <th class="col-day">HARI</th>
               <th class="col-date">TANGGAL</th>
               <th class="col-time">WAKTU</th>
               <th class="col-mapel">MATA PELAJARAN</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td colspan="3" class="empty-row">Belum ada jadwal ujian terjadwal</td></tr>
+            <tr><td colspan="4" class="empty-row">Belum ada jadwal ujian terjadwal</td></tr>
           </tbody>
         </table>`;
     }
@@ -153,7 +183,7 @@ export function buildKartuA4PrintHtml(params: {
         <table class="schedule-table schedule-table-2col ${isUltraTwoCol ? 'ultra' : ''}">
           <thead>
             <tr>
-              <th class="col-date-2c">TGL &amp; WAKTU</th>
+              <th class="col-date-2c">HARI, TGL &amp; WAKTU</th>
               <th class="col-mapel-2c">MATA PELAJARAN</th>
             </tr>
           </thead>
@@ -162,7 +192,7 @@ export function buildKartuA4PrintHtml(params: {
               .map(
                 j => `
               <tr>
-                <td class="col-date-2c">${escapeHtml(`${formatTanggalDMY(j.tanggal)} ${formatJamRange(j.jamMulai, j.jamSelesai)}`)}</td>
+                <td class="col-date-2c">${escapeHtml(`${formatHariFromTanggal(j.tanggal, true)}, ${formatTanggalDMY(j.tanggal, true)} ${formatJamRange(j.jamMulai, j.jamSelesai)}`)}</td>
                 <td class="col-mapel-2c">${escapeHtml(j.mataPelajaran || '-')}</td>
               </tr>`
               )
@@ -177,6 +207,7 @@ export function buildKartuA4PrintHtml(params: {
       .map(
         j => `
           <tr>
+            <td class="col-day">${escapeHtml(formatHariFromTanggal(j.tanggal))}</td>
             <td class="col-date">${escapeHtml(formatTanggalDMY(j.tanggal))}</td>
             <td class="col-time">${escapeHtml(formatJamRange(j.jamMulai, j.jamSelesai))}</td>
             <td class="col-mapel">${escapeHtml(j.mataPelajaran || '-')}</td>
@@ -188,6 +219,7 @@ export function buildKartuA4PrintHtml(params: {
       <table class="schedule-table ${isCompactMode ? 'compact' : ''} ${isDenseMode ? 'dense' : ''}">
         <thead>
           <tr>
+            <th class="col-day">HARI</th>
             <th class="col-date">TANGGAL</th>
             <th class="col-time">WAKTU</th>
             <th class="col-mapel">MATA PELAJARAN</th>
@@ -600,22 +632,27 @@ export function buildKartuA4PrintHtml(params: {
       color: #000000;
       font-size: 6.8pt;
     }
+    .schedule-table .col-day {
+      width: 13.5%;
+      font-weight: 800;
+      color: #000000;
+    }
     .schedule-table .col-date {
-      width: 22%;
+      width: 18%;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
       color: #000000;
       letter-spacing: 0.1px;
     }
     .schedule-table .col-time {
-      width: 24%;
+      width: 20.5%;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
       color: #000000;
       letter-spacing: 0.1px;
     }
     .schedule-table .col-mapel {
-      width: 54%;
+      width: 48%;
       font-weight: 800;
       color: #000000;
     }
@@ -786,14 +823,17 @@ export function buildKartuA4PrintHtml(params: {
       padding: 0.48mm 0.8mm;
       line-height: 1.1;
     }
+    .schedule-table.compact .col-day {
+      width: 13.5%;
+    }
     .schedule-table.compact .col-date {
-      width: 21%;
+      width: 18%;
     }
     .schedule-table.compact .col-time {
-      width: 23%;
+      width: 20.5%;
     }
     .schedule-table.compact .col-mapel {
-      width: 56%;
+      width: 48%;
     }
     .schedule-table.dense {
       font-size: 6.35pt;
@@ -813,32 +853,32 @@ export function buildKartuA4PrintHtml(params: {
       align-items: start;
     }
     .schedule-table-2col {
-      font-size: 5.1pt;
+      font-size: 5pt;
     }
     .schedule-table-2col thead th {
-      font-size: 4.8pt;
-      padding: 0.36mm 0.45mm;
+      font-size: 4.7pt;
+      padding: 0.36mm 0.4mm;
     }
     .schedule-table-2col td {
-      padding: 0.34mm 0.45mm;
+      padding: 0.34mm 0.4mm;
       line-height: 1.06;
     }
     .schedule-table-2col.ultra {
-      font-size: 4.5pt;
+      font-size: 4.4pt;
     }
     .schedule-table-2col.ultra td,
     .schedule-table-2col.ultra thead th {
-      padding: 0.24mm 0.4mm;
+      padding: 0.24mm 0.35mm;
       line-height: 1.04;
     }
     .schedule-table-2col .col-date-2c {
-      width: 50%;
+      width: 53%;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
       color: #000000;
     }
     .schedule-table-2col .col-mapel-2c {
-      width: 50%;
+      width: 47%;
       font-weight: 800;
       color: #000000;
     }
@@ -1162,14 +1202,15 @@ export const KartuPesertaCard: React.FC<KartuPesertaCardProps> = ({
             <table className="w-full text-left text-[9.5px] border-collapse border border-slate-500 table-fixed text-black">
               <thead className="bg-slate-200 font-black uppercase text-black">
                 <tr>
-                  <th className="border border-slate-500 px-1 py-[2px] w-[22%]">Tanggal</th>
-                  <th className="border border-slate-500 px-1 py-[2px] w-[24%]">Waktu</th>
-                  <th className="border border-slate-500 px-1 py-[2px] w-[54%]">Mata Pelajaran</th>
+                  <th className="border border-slate-500 px-1 py-[2px] w-[13.5%]">Hari</th>
+                  <th className="border border-slate-500 px-1 py-[2px] w-[18%]">Tanggal</th>
+                  <th className="border border-slate-500 px-1 py-[2px] w-[20.5%]">Waktu</th>
+                  <th className="border border-slate-500 px-1 py-[2px] w-[48%]">Mata Pelajaran</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td colSpan={3} className="border border-slate-500 px-1 py-2 text-center text-black italic">
+                  <td colSpan={4} className="border border-slate-500 px-1 py-2 text-center text-black italic">
                     Belum ada jadwal ujian terjadwal
                   </td>
                 </tr>
@@ -1181,20 +1222,21 @@ export const KartuPesertaCard: React.FC<KartuPesertaCardProps> = ({
                 <table
                   key={colIdx}
                   className={`w-full text-left border-collapse border border-slate-500 table-fixed text-black ${
-                    isUltraTwoCol ? 'text-[6.2px] leading-[1.06]' : 'text-[6.8px] leading-[1.1]'
+                    isUltraTwoCol ? 'text-[6px] leading-[1.06]' : 'text-[6.5px] leading-[1.1]'
                   }`}
                 >
                   <thead className="bg-slate-200 font-black uppercase text-black">
                     <tr>
-                      <th className="border border-slate-500 px-0.5 py-[1px] w-[50%]">Tgl &amp; Waktu</th>
-                      <th className="border border-slate-500 px-0.5 py-[1px] w-[50%]">Mata Pelajaran</th>
+                      <th className="border border-slate-500 px-0.5 py-[1px] w-[53%]">Hari, Tgl &amp; Waktu</th>
+                      <th className="border border-slate-500 px-0.5 py-[1px] w-[47%]">Mata Pelajaran</th>
                     </tr>
                   </thead>
                   <tbody>
                     {colItems.map(j => (
                       <tr key={j.id}>
                         <td className="border border-slate-500 px-0.5 py-[1px] font-sans font-extrabold tabular-nums text-black truncate">
-                          {formatTanggalDMY(j.tanggal)} {formatJamRange(j.jamMulai, j.jamSelesai)}
+                          {formatHariFromTanggal(j.tanggal, true)}, {formatTanggalDMY(j.tanggal, true)}{' '}
+                          {formatJamRange(j.jamMulai, j.jamSelesai)}
                         </td>
                         <td className="border border-slate-500 px-0.5 py-[1px] font-extrabold text-black truncate">
                           {j.mataPelajaran}
@@ -1209,43 +1251,54 @@ export const KartuPesertaCard: React.FC<KartuPesertaCardProps> = ({
             <table
               className={`w-full text-left border-collapse border border-slate-500 table-fixed text-black ${
                 isDenseMode
-                  ? 'text-[8.5px] leading-[1.1]'
+                  ? 'text-[8.4px] leading-[1.1]'
                   : isCompactMode
-                  ? 'text-[9.2px] leading-[1.16]'
-                  : 'text-[10px] leading-[1.2]'
+                  ? 'text-[9.1px] leading-[1.16]'
+                  : 'text-[9.8px] leading-[1.2]'
               }`}
             >
               <thead className="bg-slate-200 font-black uppercase text-black">
                 <tr>
                   <th
-                    className={`border border-slate-500 ${
+                    className={`border border-slate-500 w-[13.5%] ${
                       isDenseMode
-                        ? 'px-1 py-[1px] w-[21%]'
+                        ? 'px-1 py-[1px]'
                         : isCompactMode
-                        ? 'px-1 py-[1.8px] w-[21%]'
-                        : 'px-1 py-[2.2px] w-[22%]'
+                        ? 'px-1 py-[1.8px]'
+                        : 'px-1 py-[2.2px]'
+                    }`}
+                  >
+                    Hari
+                  </th>
+                  <th
+                    className={`border border-slate-500 w-[18%] ${
+                      isDenseMode
+                        ? 'px-1 py-[1px]'
+                        : isCompactMode
+                        ? 'px-1 py-[1.8px]'
+                        : 'px-1 py-[2.2px]'
                     }`}
                   >
                     Tanggal
                   </th>
                   <th
-                    className={`border border-slate-500 ${
+                    className={`border border-slate-500 w-[20.5%] ${
                       isDenseMode
-                        ? 'px-1 py-[1px] w-[23%]'
+                        ? 'px-1 py-[1px]'
                         : isCompactMode
-                        ? 'px-1 py-[1.8px] w-[23%]'
-                        : 'px-1 py-[2.2px] w-[24%]'
+                        ? 'px-1 py-[1.8px]'
+                        : 'px-1 py-[2.2px]'
                     }`}
                   >
                     Waktu
                   </th>
                   <th
-                    className={`border border-slate-500 ${
+                    className={`border border-slate-500 w-[48%] ${
                       isDenseMode
-                        ? 'px-1 py-[1px] w-[56%]'
+                        ? 'px-1 py-[1px]'
                         : isCompactMode
-                        ? 'px-1 py-[1.8px] w-[56%]'
-                        : 'px-1 py-[2.2px] w-[54%]'
+                        ? 'px-1 py-[1.8px]'
+                        : 'px-1 py-[2.2px]'
                     }`}
                   >
                     Mata Pelajaran
@@ -1255,6 +1308,17 @@ export const KartuPesertaCard: React.FC<KartuPesertaCardProps> = ({
               <tbody>
                 {sortedJadwal.map(j => (
                   <tr key={j.id}>
+                    <td
+                      className={`border border-slate-500 font-extrabold text-black truncate ${
+                        isDenseMode
+                          ? 'px-1 py-[0.85px]'
+                          : isCompactMode
+                          ? 'px-1 py-[1.6px]'
+                          : 'px-1 py-[2.2px]'
+                      }`}
+                    >
+                      {formatHariFromTanggal(j.tanggal)}
+                    </td>
                     <td
                       className={`border border-slate-500 font-sans font-extrabold tabular-nums text-black tracking-[0.01em] truncate ${
                         isDenseMode

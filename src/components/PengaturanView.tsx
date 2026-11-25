@@ -44,6 +44,7 @@ import { SchoolSettings, Siswa, Guru, Staf, RombelKelas, MataPelajaranItem, Abse
 import { exportAllToGoogleSheets } from '../lib/googleDriveSync';
 import { googleSignIn, googleSignOut } from '../lib/firebase';
 import { getFonnteDeviceStatus, sendFonnteMessage, FonnteDeviceStatus } from '../lib/fonnte';
+import { safeSetStorageItem } from '../utils/safeStorage';
 
 interface PengaturanViewProps {
   schoolSettings: SchoolSettings;
@@ -1500,7 +1501,7 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
                       const userInput = window.prompt(`Ketik "${confirmText}" untuk mengkonfirmasi penghapusan seluruh data sistem secara permanen:`);
                       
                       if (userInput === confirmText) {
-                        localStorage.setItem('edu_system_reset', 'true');
+                        safeSetStorageItem('edu_system_reset', 'true');
                         alert('Sistem akan direset. Aplikasi akan memuat ulang untuk membersihkan database.');
                         window.location.reload();
                       }

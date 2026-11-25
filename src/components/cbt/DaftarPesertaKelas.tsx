@@ -23,6 +23,7 @@ import {
   Siswa
 } from '../../types/school';
 import { dbFetchCollection } from '../../lib/firebaseSync';
+import { safeSetStorageJson } from '../../utils/safeStorage';
 import {
   downloadDaftarPesertaKelasPdf,
   PesertaKelasPdfGroup
@@ -218,7 +219,7 @@ export const DaftarPesertaKelas: React.FC<DaftarPesertaKelasProps> = ({
           (a.namaRuang || '').localeCompare(b.namaRuang || '', undefined, { numeric: true })
         );
         setDenahRooms(sorted);
-        localStorage.setItem(DENAH_STORAGE_KEY, JSON.stringify(sorted));
+        safeSetStorageJson(DENAH_STORAGE_KEY, sorted);
         if (notify) {
           showToast(`Data ruang ujian disinkronkan (${sorted.length} ruang).`);
         }

@@ -1920,7 +1920,11 @@ export const KeuanganView: React.FC<KeuanganViewProps> = ({
     const storageKey = `invoice_seq_${currentYear}_${currentRomanMonth}`;
     let counter = Number(localStorage.getItem(storageKey) || "0");
     counter += 1;
-    localStorage.setItem(storageKey, String(counter));
+    try {
+      localStorage.setItem(storageKey, String(counter));
+    } catch {
+      // ignore storage quota errors for sequence counter
+    }
     
     const paddedSeq = String(counter).padStart(4, '0');
     return `${paddedSeq}/C-ALFAKHIR/${currentRomanMonth}/${currentYear}`;

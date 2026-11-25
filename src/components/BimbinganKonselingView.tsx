@@ -39,6 +39,7 @@ import {
   downloadRekapKonselingPdf,
   downloadBeritaAcaraKonselingPdf,
 } from '../lib/bkKonselingPdf';
+import { safeSetStorageJson } from '../utils/safeStorage';
 
 export type JenisBimbinganBK =
   | 'Akademik'
@@ -223,7 +224,7 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
       if (!Array.isArray(parsed)) return [];
       const cleaned = stripLegacySmaKonseling(parsed);
       if (cleaned.length !== parsed.length) {
-        localStorage.setItem(KONSELING_STORAGE_KEY, JSON.stringify(cleaned));
+        safeSetStorageJson(KONSELING_STORAGE_KEY, cleaned);
       }
       return cleaned;
     } catch {
@@ -239,7 +240,7 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
       if (!Array.isArray(parsed)) return [];
       const cleaned = stripLegacySmaAppointments(parsed);
       if (cleaned.length !== parsed.length) {
-        localStorage.setItem(APPOINTMENT_STORAGE_KEY, JSON.stringify(cleaned));
+        safeSetStorageJson(APPOINTMENT_STORAGE_KEY, cleaned);
       }
       return cleaned;
     } catch {
@@ -313,7 +314,7 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
             (b.tanggal || '').localeCompare(a.tanggal || '')
           );
           setKonselingList(cleaned);
-          localStorage.setItem(KONSELING_STORAGE_KEY, JSON.stringify(cleaned));
+          safeSetStorageJson(KONSELING_STORAGE_KEY, cleaned);
         }
 
         if (remoteApt && remoteApt.length > 0) {
@@ -321,7 +322,7 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
             (b.tanggal || '').localeCompare(a.tanggal || '')
           );
           setAppointmentList(cleanedApt);
-          localStorage.setItem(APPOINTMENT_STORAGE_KEY, JSON.stringify(cleanedApt));
+          safeSetStorageJson(APPOINTMENT_STORAGE_KEY, cleanedApt);
         }
       } catch (err) {
         console.warn('Sinkronisasi awal BK dari Firestore menggunakan cache lokal:', err);
@@ -440,7 +441,7 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
     deletedId?: string
   ) => {
     setKonselingList(updatedList);
-    localStorage.setItem(KONSELING_STORAGE_KEY, JSON.stringify(updatedList));
+    safeSetStorageJson(KONSELING_STORAGE_KEY, updatedList);
     try {
       if (deletedId) {
         await dbDeleteItem(KONSELING_COLLECTION, deletedId);
@@ -460,7 +461,7 @@ export const BimbinganKonselingView: React.FC<BimbinganKonselingViewProps> = ({
     deletedId?: string
   ) => {
     setAppointmentList(updatedList);
-    localStorage.setItem(APPOINTMENT_STORAGE_KEY, JSON.stringify(updatedList));
+    safeSetStorageJson(APPOINTMENT_STORAGE_KEY, updatedList);
     try {
       if (deletedId) {
         await dbDeleteItem(APPOINTMENT_COLLECTION, deletedId);

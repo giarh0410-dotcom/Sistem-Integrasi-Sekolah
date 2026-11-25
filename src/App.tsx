@@ -98,6 +98,7 @@ import {
   dbSaveCollection,
   dbClearCollection
 } from './lib/firebaseSync';
+import { safeSetStorageItem, safeSetStorageJson } from './utils/safeStorage';
 
 function getSavedData<T>(key: string, initial: T): T {
   try {
@@ -327,20 +328,18 @@ export default function App() {
       adminEmails: admins,
       logoUrl: saved && saved.logoUrl && !saved.logoUrl.includes('unsplash') ? saved.logoUrl : INITIAL_SCHOOL_SETTINGS.logoUrl,
     };
-    try {
-      localStorage.setItem('edu_schoolSettings', JSON.stringify(normalizedSettings));
-    } catch (e) {}
+    safeSetStorageJson('edu_schoolSettings', normalizedSettings);
     return normalizedSettings;
   });
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('edu_theme') as 'dark' | 'light') || 'light');
   const [colorTheme, setColorTheme] = useState<string>(() => localStorage.getItem('edu_colorTheme') || 'emerald');
 
   useEffect(() => {
-    localStorage.setItem('edu_theme', theme);
+    safeSetStorageItem('edu_theme', theme);
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem('edu_colorTheme', colorTheme);
+    safeSetStorageItem('edu_colorTheme', colorTheme);
   }, [colorTheme]);
 
   // Load database from Firestore upon user login
@@ -480,7 +479,7 @@ export default function App() {
           if (!admClearFlag) {
             await dbClearCollection('edu_administrasiList');
             setAdministrasiList([]);
-            localStorage.setItem('edu_clear_adm_v1', 'true');
+            safeSetStorageItem('edu_clear_adm_v1', 'true');
           } else if (administrasiData.length > 0) {
             setAdministrasiList(administrasiData);
           } else {
@@ -542,144 +541,144 @@ export default function App() {
 
   // Sync state to localStorage and Firestore on changes
   useEffect(() => {
-    localStorage.setItem('edu_theme', theme);
+    safeSetStorageItem('edu_theme', theme);
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem('edu_rombelList', JSON.stringify(rombelList));
+    safeSetStorageJson('edu_rombelList', rombelList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_rombelList', rombelList);
     }
   }, [rombelList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_siswaList', JSON.stringify(siswaList));
+    safeSetStorageJson('edu_siswaList', siswaList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_siswaList', siswaList);
     }
   }, [siswaList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_guruList', JSON.stringify(guruList));
+    safeSetStorageJson('edu_guruList', guruList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_guruList', guruList);
     }
   }, [guruList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_stafList', JSON.stringify(stafList));
+    safeSetStorageJson('edu_stafList', stafList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_stafList', stafList);
     }
   }, [stafList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_mapelList', JSON.stringify(mapelList));
+    safeSetStorageJson('edu_mapelList', mapelList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_mapelList', mapelList);
     }
   }, [mapelList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_ekskulList', JSON.stringify(ekskulList));
+    safeSetStorageJson('edu_ekskulList', ekskulList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_ekskulList', ekskulList);
     }
   }, [ekskulList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_absensiHarian', JSON.stringify(absensiHarian));
+    safeSetStorageJson('edu_absensiHarian', absensiHarian);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_absensiHarian', absensiHarian);
     }
   }, [absensiHarian, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_absensiKelasList', JSON.stringify(absensiKelasList));
+    safeSetStorageJson('edu_absensiKelasList', absensiKelasList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_absensiKelasList', absensiKelasList);
     }
   }, [absensiKelasList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_absensiGuruList', JSON.stringify(absensiGuruList));
+    safeSetStorageJson('edu_absensiGuruList', absensiGuruList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_absensiGuruList', absensiGuruList);
     }
   }, [absensiGuruList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_bankSoalList', JSON.stringify(bankSoalList));
+    safeSetStorageJson('edu_bankSoalList', bankSoalList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_bankSoalList', bankSoalList);
     }
   }, [bankSoalList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_ujianList', JSON.stringify(ujianList));
+    safeSetStorageJson('edu_ujianList', ujianList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_ujianList', ujianList);
     }
   }, [ujianList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_administrasiList', JSON.stringify(administrasiList));
+    safeSetStorageJson('edu_administrasiList', administrasiList);
     // We remove the automatic collection save here because AdministrasiGuruView
     // handles its own persistence via dbSaveCollection and dbDeleteItem
     // to avoid conflict with deletions.
   }, [administrasiList]);
 
   useEffect(() => {
-    localStorage.setItem('edu_tagihanList', JSON.stringify(tagihanList));
+    safeSetStorageJson('edu_tagihanList', tagihanList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_tagihanList', tagihanList);
     }
   }, [tagihanList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_transaksiList', JSON.stringify(transaksiList));
+    safeSetStorageJson('edu_transaksiList', transaksiList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_transaksiList', transaksiList);
     }
   }, [transaksiList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_tarifBiayaList', JSON.stringify(tarifBiayaList));
+    safeSetStorageJson('edu_tarifBiayaList', tarifBiayaList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_tarifBiayaList', tarifBiayaList);
     }
   }, [tarifBiayaList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_hasilUjianList', JSON.stringify(hasilUjianList));
+    safeSetStorageJson('edu_hasilUjianList', hasilUjianList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_hasilUjianList', hasilUjianList);
     }
   }, [hasilUjianList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_gajiList', JSON.stringify(gajiList));
+    safeSetStorageJson('edu_gajiList', gajiList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_gajiList', gajiList);
     }
   }, [gajiList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_raporList', JSON.stringify(raporList));
+    safeSetStorageJson('edu_raporList', raporList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_raporList', raporList);
     }
   }, [raporList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_raporTahfidzList', JSON.stringify(raporTahfidzList));
+    safeSetStorageJson('edu_raporTahfidzList', raporTahfidzList);
     if (isDbLoaded && isLoggedIn) {
       saveCollectionWithStatus('edu_raporTahfidzList', raporTahfidzList);
     }
   }, [raporTahfidzList, isDbLoaded, isLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('edu_schoolSettings', JSON.stringify(schoolSettings));
+    safeSetStorageJson('edu_schoolSettings', schoolSettings);
     if (isDbLoaded && isLoggedIn) {
       saveItemWithStatus('edu_schoolSettings', { id: 'current', ...schoolSettings });
     }
@@ -825,9 +824,9 @@ export default function App() {
 
   // Save auth details to localStorage for persistence
   useEffect(() => {
-    localStorage.setItem('edu_isLoggedIn', isLoggedIn ? 'true' : 'false');
-    localStorage.setItem('edu_currentRole', currentRole);
-    localStorage.setItem('edu_userEmail', userEmail || '');
+    safeSetStorageItem('edu_isLoggedIn', isLoggedIn ? 'true' : 'false');
+    safeSetStorageItem('edu_currentRole', currentRole);
+    safeSetStorageItem('edu_userEmail', userEmail || '');
   }, [isLoggedIn, currentRole, userEmail]);
 
   // Auto initialize Google OAuth listener

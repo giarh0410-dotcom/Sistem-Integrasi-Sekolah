@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { Siswa, Guru, RombelKelas, SchoolSettings, Role, CbtExamSettings, JadwalUjianItem } from '../../types/school';
 import { dbFetchCollection, dbSaveCollection } from '../../lib/firebaseSync';
+import { safeSetStorageJson } from '../../utils/safeStorage';
 import {
   downloadDaftarSiswaRuangPdf,
   DaftarSiswaPdfRoom,
@@ -575,7 +576,7 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
         if (mounted && Array.isArray(remote) && remote.length > 0) {
           const sorted = [...remote].sort((a, b) => a.namaRuang.localeCompare(b.namaRuang, undefined, { numeric: true }));
           setRooms(sorted);
-          localStorage.setItem('edu_denahRuangList', JSON.stringify(sorted));
+          safeSetStorageJson('edu_denahRuangList', sorted);
           setSelectedRoomId(prev => sorted.some(r => r.id === prev) ? prev : sorted[0].id);
         }
       } catch (err) {
@@ -590,12 +591,8 @@ export const DenahRuangUjian: React.FC<DenahRuangUjianProps> = ({
 
   const persistRooms = (nextRooms: DenahRuangItem[]) => {
     setRooms(nextRooms);
-    try {
-      localStorage.setItem('edu_denahRuangList', JSON.stringify(nextRooms));
-      dbSaveCollection('edu_denahRuangList', nextRooms).catch(console.error);
-    } catch (e) {
-      console.error(e);
-    }
+    safeSetStorageJson('edu_denahRuangList', nextRooms);
+    dbSaveCollection('edu_denahRuangList', nextRooms).catch(console.error);
   };
 
   const activeRoom = useMemo(() => {

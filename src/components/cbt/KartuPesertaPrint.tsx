@@ -295,7 +295,7 @@ export function buildKartuA4PrintHtml(params: {
 
                 <div class="schedule-section">
                   <div class="schedule-heading">
-                    <span>JADWAL SESI UJIAN TERJADWAL:</span>
+                    <span class="schedule-heading-title">JADWAL SESI UJIAN TERJADWAL:</span>
                     ${totalMapel > 0 ? `<span class="more-note">${totalMapel} Mapel</span>` : ''}
                   </div>
                   ${scheduleTableHtml}
@@ -595,9 +595,10 @@ export function buildKartuA4PrintHtml(params: {
       padding-top: 1.8mm;
     }
     .schedule-heading {
+      position: relative;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: center;
       font-size: 6.8pt;
       font-weight: 900;
       color: #000000;
@@ -605,7 +606,12 @@ export function buildKartuA4PrintHtml(params: {
       letter-spacing: 0.2px;
       margin-bottom: 1mm;
     }
+    .schedule-heading-title {
+      text-align: center;
+    }
     .more-note {
+      position: absolute;
+      right: 0;
       font-weight: 800;
       color: #000000;
       text-transform: none;
@@ -1183,16 +1189,16 @@ export const KartuPesertaCard: React.FC<KartuPesertaCardProps> = ({
 
         {/* Jadwal Sesi Ujian Terjadwal (Semua Mata Pelajaran) */}
         <div className={`flex-1 min-h-0 overflow-hidden ${isCompactMode ? 'pt-1' : 'pt-1.5'}`}>
-          <div className={`flex items-center justify-between ${isCompactMode ? 'mb-0.5' : 'mb-1'}`}>
+          <div className={`relative flex items-center justify-center ${isCompactMode ? 'mb-0.5' : 'mb-1'}`}>
             <span
-              className={`font-black text-black uppercase tracking-wider ${
+              className={`font-black text-black uppercase tracking-wider text-center ${
                 isCompactMode ? 'text-[8px]' : 'text-[8.8px]'
               }`}
             >
               Jadwal Sesi Ujian Terjadwal:
             </span>
             {totalMapel > 0 && (
-              <span className="text-[7.5px] font-extrabold text-black">
+              <span className="absolute right-0 text-[7.5px] font-extrabold text-black">
                 {totalMapel} Mapel
               </span>
             )}

@@ -62,6 +62,7 @@ import {
   SchoolSettings
 } from '../types/school';
 import { dbFetchCollection, dbSaveCollection, dbSaveItem } from '../lib/firebaseSync';
+import { safeSetStorageJson } from '../utils/safeStorage';
 import { DenahRuangUjian } from './cbt/DenahRuangUjian';
 import { DaftarPesertaKelas } from './cbt/DaftarPesertaKelas';
 import { DaftarPengawasUjian } from './cbt/DaftarPengawasUjian';
@@ -78,6 +79,11 @@ import {
 } from './cbt/KartuPesertaPrint';
 import { downloadKartuPesertaA4Pdf } from './cbt/kartuPesertaPdf';
 import { enhanceSignatureForDisplay } from './cbt/signatureUtils';
+import {
+  downloadBankSoalWordTemplate,
+  exportBankSoalToWord,
+  parseWordFileToSoalList
+} from './cbt/bankSoalWord';
 
 interface CbtViewProps {
   bankSoalList: BankSoal[];
@@ -179,7 +185,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
           const found = remote.find(r => r.id === 'default') || remote[0];
           const merged: CbtExamSettings = { ...buildDefaultCbtSettings(), ...found, id: 'default' };
           setCbtSettings(merged);
-          localStorage.setItem('edu_cbtSettings', JSON.stringify(merged));
+          safeSetStorageJson('edu_cbtSettings', merged);
         }
       } catch (err) {
         console.error('Gagal mengambil pengaturan CBT remote:', err);
@@ -191,12 +197,8 @@ export const CbtView: React.FC<CbtViewProps> = ({
   const saveCbtSettings = (next: CbtExamSettings) => {
     const payload: CbtExamSettings = { ...next, id: 'default' };
     setCbtSettings(payload);
-    try {
-      localStorage.setItem('edu_cbtSettings', JSON.stringify(payload));
-      dbSaveItem('edu_cbtSettings', payload).catch(console.error);
-    } catch (err) {
-      console.error('Gagal menyimpan pengaturan CBT:', err);
-    }
+    safeSetStorageJson('edu_cbtSettings', payload);
+    dbSaveItem('edu_cbtSettings', payload).catch(console.error);
   };
 
   // Compute dynamic lists of available classes, subjects, and teachers
@@ -315,7 +317,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
             kelasTarget: item.kelasTarget === 'X-IPA-1' ? 'VIII - Al Biruni' : item.kelasTarget
           }));
           setJadwalList(sanitized);
-          localStorage.setItem('edu_jadwalUjianList', JSON.stringify(sanitized));
+          safeSetStorageJson('edu_jadwalUjianList', sanitized);
         }
       } catch (err) {
         console.error('Gagal mengambil jadwal ujian remote:', err);
@@ -330,12 +332,8 @@ export const CbtView: React.FC<CbtViewProps> = ({
       kelasTarget: item.kelasTarget === 'X-IPA-1' ? 'VIII - Al Biruni' : item.kelasTarget
     }));
     setJadwalList(sanitized);
-    try {
-      localStorage.setItem('edu_jadwalUjianList', JSON.stringify(sanitized));
-      dbSaveCollection('edu_jadwalUjianList', sanitized).catch(console.error);
-    } catch (e) {
-      console.error(e);
-    }
+    safeSetStorageJson('edu_jadwalUjianList', sanitized);
+    dbSaveCollection('edu_jadwalUjianList', sanitized).catch(console.error);
   };
 
   // State Modal Tambah / Edit Sesi Ujian
@@ -1609,6 +1607,55 @@ export const CbtView: React.FC<CbtViewProps> = ({
     a.click();
   };
 
+  const handleDownloadWordTemplate = async () => {
+    try {
+      await downloadBankSoalWordTemplate(schoolSettings);
+      showToast('Template Bank Soal Word (.docx) berhasil diunduh!');
+    } catch (err) {
+      console.error('Gagal mengunduh template Word:', err);
+      showToast('Gagal membuat file Template Word (.docx).');
+    }
+  };
+
+  const handleExportActiveBankToWord = async () => {
+    if (!activeBank) return;
+    try {
+      await exportBankSoalToWord(activeBank, schoolSettings);
+      showToast(`Paket "${activeBank.judul}" berhasil diekspor ke Word (.docx)!`);
+    } catch (err) {
+      console.error('Gagal mengekspor Bank Soal ke Word:', err);
+      showToast('Gagal mengekspor Bank Soal ke format Word (.docx).');
+    }
+  };
+
+  const handleImportWordToActiveBank = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !activeBank) return;
+    try {
+      const imported = await parseWordFileToSoalList(file);
+      if (imported.length === 0) {
+        showToast('Tidak ada butir soal valid ditemukan di file Word (.docx). Pastikan format mengikuti Template Word.');
+        return;
+      }
+      setBankSoalList(prev =>
+        prev.map(b =>
+          b.id === activeBank.id
+            ? {
+                ...b,
+                daftarSoal: [...b.daftarSoal, ...imported],
+                jumlahSoal: b.daftarSoal.length + imported.length
+              }
+            : b
+        )
+      );
+      showToast(`${imported.length} soal dari "${file.name}" berhasil ditambahkan ke paket "${activeBank.judul}"!`);
+    } catch (err) {
+      console.error('Gagal mengimpor file Word:', err);
+      showToast('Gagal membaca file Word (.docx). Pastikan file berformat .docx yang valid.');
+    }
+  };
+
   // --- Simulasi Ujian Student State ---
   const [isExamStarted, setIsExamStarted] = useState(false);
   const [selectedExamBank, setSelectedExamBank] = useState<BankSoal | null>(null);
@@ -2030,10 +2077,31 @@ export const CbtView: React.FC<CbtViewProps> = ({
     setShowAddBankModal(true);
   };
 
-  const handleImportJsonForBank = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportJsonForBank = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     setBankFormError('');
+
+    const isWordDocx =
+      file.name.toLowerCase().endsWith('.docx') ||
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+    if (isWordDocx) {
+      try {
+        const normalized = await parseWordFileToSoalList(file);
+        if (normalized.length === 0) {
+          setBankFormError('Tidak ada soal valid ditemukan dalam file Word (.docx). Gunakan Template Word sebagai acuan.');
+          return;
+        }
+        setBankImportedSoal(normalized);
+        setBankImportFileName(`${file.name} (${normalized.length} soal)`);
+      } catch {
+        setBankFormError('Format file Word (.docx) tidak valid atau rusak. Pastikan Anda menggunakan file .docx dari Template Word.');
+      }
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -2737,15 +2805,27 @@ export const CbtView: React.FC<CbtViewProps> = ({
           
           {/* Left: Bank List */}
           <div className="bg-[#121212] text-slate-100 rounded-2xl p-5 border border-slate-800 shadow-xl space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <h3 className="font-bold text-slate-100 text-xs uppercase tracking-wider">Daftar Paket Bank Soal</h3>
-              <button 
-                type="button"
-                onClick={handleDownloadTemplate}
-                className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" /> Template JSON
-              </button>
+            <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2.5 flex-wrap">
+              <h3 className="font-bold text-slate-100 text-xs uppercase tracking-wider whitespace-nowrap">Daftar Paket Bank Soal</h3>
+              <div className="flex items-center gap-2 shrink-0">
+                <button 
+                  type="button"
+                  onClick={handleDownloadWordTemplate}
+                  className="text-[11px] text-sky-400 hover:text-sky-300 font-bold hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+                  title="Unduh Template Bank Soal format Microsoft Word (.docx)"
+                >
+                  <FileText className="w-3.5 h-3.5" /> Template Word
+                </button>
+                <span className="text-slate-600 text-xs" aria-hidden="true">·</span>
+                <button 
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+                  title="Unduh Template Bank Soal format JSON"
+                >
+                  <Download className="w-3.5 h-3.5" /> JSON
+                </button>
+              </div>
             </div>
 
             {/* Tombol Tambah Paket Bank Soal */}
@@ -2876,8 +2956,30 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
+                      type="button"
+                      onClick={handleExportActiveBankToWord}
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                      title="Unduh paket bank soal ini dalam format Microsoft Word (.docx)"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Unduh Word</span>
+                    </button>
+                    <label
+                      className="px-3 py-2 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                      title="Import butir soal dari Template Word (.docx) ke paket ini"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span>Import Word</span>
+                      <input
+                        type="file"
+                        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={handleImportWordToActiveBank}
+                        className="hidden"
+                      />
+                    </label>
+                    <button
                       onClick={handleOpenAiModalForActiveBank}
-                      className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-indigo-500/20 cursor-pointer"
+                      className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-indigo-500/20 cursor-pointer whitespace-nowrap shrink-0"
                       title={`Buat soal baru dengan AI khusus mata pelajaran ${activeBank.mataPelajaran}`}
                     >
                       <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
@@ -2901,7 +3003,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                         setNewVideoUrl('');
                         setShowAddSoalModal(true);
                       }}
-                      className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap shrink-0"
                     >
                       <Plus className="w-4 h-4" /> Tambah Soal Manual
                     </button>
@@ -5940,31 +6042,46 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   </div>
                 </div>
 
-                {/* Optional JSON Question Import */}
+                {/* Optional Word / JSON Question Import */}
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-dashed border-slate-300 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
-                      <FileJson className="w-4 h-4 text-emerald-600" />
-                      <span>Import Soal dari File JSON (Opsional)</span>
+                      <FileText className="w-4 h-4 text-sky-600" />
+                      <span>Import Soal dari Word (.docx) atau JSON (Opsional)</span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={handleDownloadTemplate}
-                      className="text-[11px] font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <Download className="w-3 h-3" /> Unduh Template
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleDownloadWordTemplate}
+                        className="text-[11px] font-bold text-sky-700 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <FileText className="w-3 h-3" /> Template Word
+                      </button>
+                      <span className="text-slate-300 text-xs" aria-hidden="true">·</span>
+                      <button
+                        type="button"
+                        onClick={handleDownloadTemplate}
+                        className="text-[11px] font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Download className="w-3 h-3" /> JSON
+                      </button>
+                    </div>
                   </div>
                   <p className="text-[11px] text-slate-500">
                     {editingBankId
-                      ? 'Jika Anda mengunggah file JSON, soal di dalamnya akan ditambahkan ke paket ini.'
-                      : 'Biarkan kosong jika ingin mengisi butir soal nanti dengan tombol "Tambah Soal AI" atau "Tambah Soal Manual".'}
+                      ? 'Jika Anda mengunggah file Word (.docx) atau JSON, soal di dalamnya akan ditambahkan ke paket ini.'
+                      : 'Unduh Template Word (.docx) untuk mengisi soal di Microsoft Word, atau biarkan kosong untuk mengisi nanti via AI / Manual.'}
                   </p>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <label className="px-3 py-1.5 bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-300 rounded-xl text-[11px] font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all">
-                      <Upload className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>{bankImportFileName ? 'Ganti File JSON' : 'Pilih File JSON'}</span>
-                      <input type="file" accept=".json,application/json" onChange={handleImportJsonForBank} className="hidden" />
+                    <label className="px-3 py-1.5 bg-white hover:bg-sky-50 text-slate-700 hover:text-sky-800 border border-slate-300 rounded-xl text-[11px] font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all">
+                      <Upload className="w-3.5 h-3.5 text-sky-600" />
+                      <span>{bankImportFileName ? 'Ganti File Word / JSON' : 'Pilih File Word (.docx) / JSON'}</span>
+                      <input
+                        type="file"
+                        accept=".docx,.json,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/json"
+                        onChange={handleImportJsonForBank}
+                        className="hidden"
+                      />
                     </label>
                     {bankImportFileName && (
                       <div className="flex items-center gap-1.5 bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg text-[11px] font-bold">
@@ -5977,7 +6094,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                             setBankImportFileName('');
                           }}
                           className="ml-1 text-emerald-900 hover:text-rose-600 font-black cursor-pointer"
-                          title="Batalkan file JSON"
+                          title="Batalkan file import"
                         >
                           ×
                         </button>

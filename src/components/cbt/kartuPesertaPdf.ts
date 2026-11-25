@@ -544,7 +544,7 @@ function drawSingleKartuOnPdf(params: {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(isCompactMode ? 6.2 : 6.8);
   doc.setTextColor(0, 0, 0);
-  doc.text('JADWAL SESI UJIAN TERJADWAL:', cx, ty);
+  doc.text('JADWAL SESI UJIAN TERJADWAL:', cx + cw / 2, ty, { align: 'center' });
 
   if (sortedJadwal.length > 0) {
     doc.setFont('helvetica', 'bold');

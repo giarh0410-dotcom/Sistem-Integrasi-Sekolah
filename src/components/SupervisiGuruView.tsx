@@ -23,6 +23,7 @@ import {
   Download
 } from 'lucide-react';
 import { Guru, SchoolSettings } from '../types/school';
+import { safeSetStorageJson } from '../utils/safeStorage';
 
 export interface SupervisiRecord {
   id: string;
@@ -189,7 +190,7 @@ export const SupervisiGuruView: React.FC<SupervisiGuruViewProps> = ({
 
   const saveToStorage = (list: SupervisiRecord[]) => {
     setSupervisiList(list);
-    localStorage.setItem('edu_supervisi_list', JSON.stringify(list));
+    safeSetStorageJson('edu_supervisi_list', list);
   };
 
   const handleOpenAdd = () => {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, Trash2, ChevronLeft, ChevronRight, CalendarDays, Info } from 'lucide-react';
+import { safeSetStorageJson } from '../../utils/safeStorage';
 
 interface KalenderEventItem {
   id: string;
@@ -11,8 +12,12 @@ interface KalenderEventItem {
 
 export const KalenderPendidikan: React.FC = () => {
   const [events, setEvents] = useState<KalenderEventItem[]>(() => {
-    const saved = localStorage.getItem('edu_kalenderList');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('edu_kalenderList');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
   // Current viewed month & year
@@ -34,7 +39,7 @@ export const KalenderPendidikan: React.FC = () => {
   });
 
   useEffect(() => {
-    localStorage.setItem('edu_kalenderList', JSON.stringify(events));
+    safeSetStorageJson('edu_kalenderList', events);
   }, [events]);
 
   const toLocalISOString = (d: Date) => {

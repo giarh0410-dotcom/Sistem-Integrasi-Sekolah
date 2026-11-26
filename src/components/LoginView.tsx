@@ -18,6 +18,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Role, SchoolSettings, Guru, Staf, Siswa } from '../types/school';
+import { dbFetchCollection } from '../lib/firebaseSync';
 
 interface LoginViewProps {
   onLoginSuccess: (email: string, token: string, role: Role) => void;
@@ -26,6 +27,12 @@ interface LoginViewProps {
   guruList?: Guru[];
   stafList?: Staf[];
   siswaList?: Siswa[];
+  onSyncAccountLists?: (synced: {
+    guru?: Guru[];
+    staf?: Staf[];
+    siswa?: Siswa[];
+    settings?: SchoolSettings;
+  }) => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({
@@ -34,7 +41,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
   schoolSettings,
   guruList = [],
   stafList = [],
-  siswaList = []
+  siswaList = [],
+  onSyncAccountLists
 }) => {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -88,7 +96,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
   };
 
   // Handle Manual Login Form Submit
-  const handleManualLogin = (e: React.FormEvent) => {
+  const handleManualLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const inputIdOrEmail = emailInput.trim().toLowerCase();
     const password = passwordInput.trim();
@@ -105,9 +113,22 @@ export const LoginView: React.FC<LoginViewProps> = ({
     setLoading(true);
     setErrorMessage(null);
 
-    setTimeout(() => {
+    const norm = (val?: string | number | null) => String(val ?? '').trim().toLowerCase();
+    const normPass = (val?: string | number | null) => String(val ?? '').trim();
+
+    type AuthAttemptResult =
+      | { status: 'success' }
+      | { status: 'wrong_password'; message: string }
+      | { status: 'not_found' };
+
+    const attemptAuth = (
+      currentGuruList: Guru[],
+      currentStafList: Staf[],
+      currentSiswaList: Siswa[],
+      currentSettings: SchoolSettings
+    ): AuthAttemptResult => {
       // A. Check Kepala Sekolah
-      const isKepsekUser = 
+      const isKepsekUser =
         inputIdOrEmail === 'kepsek' ||
         inputIdOrEmail === 'kepala.sekolah' ||
         inputIdOrEmail === 'kepala_sekolah' ||
@@ -115,144 +136,171 @@ export const LoginView: React.FC<LoginViewProps> = ({
         inputIdOrEmail === '197501152000031001' ||
         inputIdOrEmail === 'kepsek@sekolah.sch.id' ||
         inputIdOrEmail === 'kepala.sekolah@sekolah.sch.id' ||
-        (schoolSettings.nipKepalaSekolah && inputIdOrEmail === schoolSettings.nipKepalaSekolah.toLowerCase().trim()) ||
-        (schoolSettings.kepalaSekolah && inputIdOrEmail === schoolSettings.kepalaSekolah.toLowerCase().trim());
+        (currentSettings.nipKepalaSekolah && inputIdOrEmail === norm(currentSettings.nipKepalaSekolah)) ||
+        (currentSettings.kepalaSekolah && inputIdOrEmail === norm(currentSettings.kepalaSekolah));
 
       if (isKepsekUser) {
-        const isValidKepsekPassword = 
+        const isValidKepsekPassword =
           password === 'kepsek' ||
           password === 'kepsek123' ||
-          password === 'password' || 
-          password === 'password123' || 
+          password === 'password' ||
+          password === 'password123' ||
           password === 'admin123' ||
           password === '123456';
 
         if (!isValidKepsekPassword) {
-          setErrorMessage('Kata sandi salah untuk akun Kepala Sekolah ini.');
-          setLoading(false);
-          return;
+          return { status: 'wrong_password', message: 'Kata sandi salah untuk akun Kepala Sekolah ini.' };
         }
 
         onLoginSuccess('kepala.sekolah@sekolah.sch.id', 'gmail_oauth_token_active', 'kepsek');
-        setLoading(false);
-        return;
+        return { status: 'success' };
       }
 
       // B. Check Admin
-      const adminEmails = (schoolSettings.adminEmails || []).map(e => e.toLowerCase());
-      const isAdminUser = 
+      const adminEmails = (currentSettings.adminEmails || []).map(e => norm(e));
+      const isAdminUser =
         inputIdOrEmail === 'admin' ||
         inputIdOrEmail === 'giarh0410' ||
         inputIdOrEmail === 'giarh0410@gmail.com' ||
         adminEmails.includes(inputIdOrEmail) ||
         inputIdOrEmail.includes('giarh0410');
 
-      // C. Check Staf
-      const foundStaf = stafList.find(st => 
-        (st.username && st.username.toLowerCase() === inputIdOrEmail) ||
-        (st.email && st.email.toLowerCase() === inputIdOrEmail)
-      );
-
-      // D. Check Guru
-      const foundGuru = guruList.find(g => 
-        (g.username && g.username.toLowerCase() === inputIdOrEmail) ||
-        (g.email && g.email.toLowerCase() === inputIdOrEmail)
-      );
-
-      // E. Check Siswa
-      const foundSiswa = siswaList.find(s => 
-        (s.username && s.username.toLowerCase() === inputIdOrEmail) ||
-        (s.email && s.email.toLowerCase() === inputIdOrEmail) ||
-        (s.nis && s.nis.toLowerCase() === inputIdOrEmail) ||
-        (s.nisn && s.nisn.toLowerCase() === inputIdOrEmail)
-      );
-
       if (isAdminUser) {
-        const isValidAdminPassword = 
+        const isValidAdminPassword =
           password === 'admin' ||
-          password === 'admin123' || 
-          password === 'password' || 
-          password === 'password123' || 
+          password === 'admin123' ||
+          password === 'password' ||
+          password === 'password123' ||
           password === '123456';
 
         if (!isValidAdminPassword) {
-          setErrorMessage('Kata sandi salah untuk akun Admin Sekolah ini.');
-          setLoading(false);
-          return;
+          return { status: 'wrong_password', message: 'Kata sandi salah untuk akun Admin Sekolah ini.' };
         }
 
         onLoginSuccess('giarh0410@gmail.com', 'gmail_oauth_token_active', 'admin');
-        setLoading(false);
-        return;
+        return { status: 'success' };
       }
 
-      if (foundStaf) {
-        const expectedPassword = foundStaf.password || 'password';
-        if (password !== expectedPassword && password !== inputIdOrEmail) {
-          setErrorMessage('Kata sandi salah untuk akun Staf TU / Keuangan ini.');
-          setLoading(false);
-          return;
+      const matchesExact = (fields: Array<string | undefined | null>) =>
+        fields.some(f => norm(f) !== '' && norm(f) === inputIdOrEmail);
+
+      const matchesEmailPrefix = (email?: string) => {
+        const eNorm = norm(email);
+        if (!eNorm.includes('@')) return false;
+        return eNorm.split('@')[0] === inputIdOrEmail;
+      };
+
+      const matchesFirstNameIfUnset = (nama?: string, username?: string) => {
+        if (norm(username) !== '') return false;
+        const firstWord = norm(nama).split(/\s+/)[0];
+        return Boolean(firstWord && firstWord === inputIdOrEmail);
+      };
+
+      let wrongPasswordMsg: string | null = null;
+
+      // C. Check Staf
+      const stafCandidates = currentStafList.filter(
+        st =>
+          matchesExact([st.username, st.email, st.nip, st.nik]) ||
+          matchesEmailPrefix(st.email) ||
+          matchesFirstNameIfUnset(st.nama, st.username)
+      );
+      if (stafCandidates.length > 0) {
+        const validStaf = stafCandidates.find(st => {
+          const expected = normPass(st.password) || 'password';
+          return password === expected || password === inputIdOrEmail;
+        });
+        if (validStaf) {
+          onLoginSuccess(validStaf.email || `${validStaf.username || 'staf'}@staf.sch.id`, 'gmail_oauth_token_active', 'staf');
+          return { status: 'success' };
         }
-        onLoginSuccess(foundStaf.email || `${foundStaf.username || 'staf'}@staf.sch.id`, 'gmail_oauth_token_active', 'staf');
-        setLoading(false);
-        return;
+        wrongPasswordMsg = 'Kata sandi salah untuk akun Staf TU / Keuangan ini.';
       }
 
-      if (foundGuru) {
-        const expectedPassword = foundGuru.password || 'password123';
-        if (password !== expectedPassword && password !== inputIdOrEmail) {
-          setErrorMessage('Kata sandi salah untuk akun Guru ini.');
-          setLoading(false);
-          return;
+      // D. Check Guru
+      const guruCandidates = currentGuruList.filter(
+        g =>
+          matchesExact([g.username, g.email, g.nip, g.nik]) ||
+          matchesEmailPrefix(g.email) ||
+          matchesFirstNameIfUnset(g.nama, g.username)
+      );
+      if (guruCandidates.length > 0) {
+        const validGuru = guruCandidates.find(g => {
+          const expected = normPass(g.password) || 'password123';
+          return password === expected || password === inputIdOrEmail;
+        });
+        if (validGuru) {
+          const isBkGuru =
+            norm(validGuru.jabatan).includes('bk') ||
+            norm(validGuru.jabatan).includes('bimbingan') ||
+            norm(validGuru.jabatan).includes('konseling');
+          onLoginSuccess(
+            validGuru.email || `${validGuru.username || 'guru'}@guru.sch.id`,
+            'gmail_oauth_token_active',
+            isBkGuru ? 'guru_bk' : 'guru'
+          );
+          return { status: 'success' };
         }
-        onLoginSuccess(foundGuru.email || `${foundGuru.username || 'guru'}@guru.sch.id`, 'gmail_oauth_token_active', 'guru');
-        setLoading(false);
-        return;
+        if (!wrongPasswordMsg) wrongPasswordMsg = 'Kata sandi salah untuk akun Guru ini.';
       }
 
-      if (foundSiswa) {
-        const expectedPassword = foundSiswa.password || 'password123';
-        if (password !== expectedPassword && password !== 'password' && password !== 'password123' && password !== '123456' && password !== inputIdOrEmail) {
-          setErrorMessage('Kata sandi salah untuk akun Siswa ini.');
-          setLoading(false);
-          return;
+      // E. Check Siswa
+      const siswaCandidates = currentSiswaList.filter(
+        s =>
+          matchesExact([s.username, s.email, s.nis, s.nisn]) ||
+          matchesEmailPrefix(s.email) ||
+          matchesFirstNameIfUnset(s.nama, s.username)
+      );
+      if (siswaCandidates.length > 0) {
+        const validSiswa = siswaCandidates.find(s => {
+          const expected = normPass(s.password) || 'password123';
+          return (
+            password === expected ||
+            password === 'password' ||
+            password === 'password123' ||
+            password === '123456' ||
+            password === inputIdOrEmail
+          );
+        });
+        if (validSiswa) {
+          onLoginSuccess(validSiswa.email || `${validSiswa.nis || validSiswa.id}@siswa.sch.id`, 'gmail_oauth_token_active', 'siswa');
+          return { status: 'success' };
         }
-        onLoginSuccess(foundSiswa.email || `${foundSiswa.nis || foundSiswa.id}@siswa.sch.id`, 'gmail_oauth_token_active', 'siswa');
-        setLoading(false);
-        return;
+        if (!wrongPasswordMsg) wrongPasswordMsg = 'Kata sandi salah untuk akun Siswa ini.';
+      }
+
+      if (wrongPasswordMsg) {
+        return { status: 'wrong_password', message: wrongPasswordMsg };
       }
 
       // Hardcoded Fallbacks for demo accounts when database lists are empty
       if (inputIdOrEmail === 'budi') {
         onLoginSuccess('budi@guru.sch.id', 'gmail_oauth_token_active', 'guru');
-        setLoading(false);
-        return;
+        return { status: 'success' };
       }
       if (inputIdOrEmail === 'nurhidayati' || inputIdOrEmail === 'keuangan' || inputIdOrEmail === 'tatausaha') {
         onLoginSuccess('keuangan@staf.sch.id', 'gmail_oauth_token_active', 'staf');
-        setLoading(false);
-        return;
+        return { status: 'success' };
       }
 
-      // Fallback for demo student names (e.g. 'bayu', 'bilal', 'siswa', 'cbt', etc.) when testing login
+      // Fallback for demo student names when testing login
       if (
-        inputIdOrEmail === 'bayu' || 
-        inputIdOrEmail === 'bilal' || 
-        inputIdOrEmail === 'siswa' || 
+        inputIdOrEmail === 'bayu' ||
+        inputIdOrEmail === 'bilal' ||
+        inputIdOrEmail === 'siswa' ||
         inputIdOrEmail === 'cbt' ||
         inputIdOrEmail === 'ujian' ||
-        inputIdOrEmail.startsWith('siswa') || 
+        inputIdOrEmail.startsWith('siswa') ||
         inputIdOrEmail.startsWith('cbt') ||
-        inputIdOrEmail.startsWith('bayu') || 
+        inputIdOrEmail.startsWith('bayu') ||
         inputIdOrEmail.startsWith('bilal')
       ) {
-        onLoginSuccess(`alia.syahira@siswa.sch.id`, 'gmail_oauth_token_active', 'siswa');
-        setLoading(false);
-        return;
+        onLoginSuccess('alia.syahira@siswa.sch.id', 'gmail_oauth_token_active', 'siswa');
+        return { status: 'success' };
       }
 
       // Check Petugas Absensi
-      const isPetugasAbsensi = 
+      const isPetugasAbsensi =
         inputIdOrEmail === 'petugas' ||
         inputIdOrEmail === 'petugas_absensi' ||
         inputIdOrEmail === 'petugas.absensi' ||
@@ -260,7 +308,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         inputIdOrEmail === 'petugas.absensi@sekolah.sch.id';
 
       if (isPetugasAbsensi) {
-        const isValidPetugasPassword = 
+        const isValidPetugasPassword =
           password === 'petugas' ||
           password === 'petugas123' ||
           password === 'password' ||
@@ -268,29 +316,25 @@ export const LoginView: React.FC<LoginViewProps> = ({
           password === '123456';
 
         if (!isValidPetugasPassword) {
-          setErrorMessage('Kata sandi salah untuk akun Petugas Absensi ini.');
-          setLoading(false);
-          return;
+          return { status: 'wrong_password', message: 'Kata sandi salah untuk akun Petugas Absensi ini.' };
         }
 
         onLoginSuccess('petugas.absensi@sekolah.sch.id', 'gmail_oauth_token_active', 'petugas_absensi');
-        setLoading(false);
-        return;
+        return { status: 'success' };
       }
 
       // Check Guru BK
-      const isGuruBk = 
+      const isGuruBk =
         inputIdOrEmail === 'bk' ||
         inputIdOrEmail === 'guru_bk' ||
         inputIdOrEmail === 'bimbingan' ||
         inputIdOrEmail === 'konseling' ||
         inputIdOrEmail === 'guru.bk' ||
         inputIdOrEmail === 'bk@sekolah.sch.id' ||
-        inputIdOrEmail === 'bimbingan.konseling@sekolah.sch.id' ||
-        guruList.some(g => (g.jabatan && (g.jabatan.toLowerCase().includes('bk') || g.jabatan.toLowerCase().includes('bimbingan') || g.jabatan.toLowerCase().includes('konseling'))) && (g.username?.toLowerCase() === inputIdOrEmail || g.email?.toLowerCase() === inputIdOrEmail));
+        inputIdOrEmail === 'bimbingan.konseling@sekolah.sch.id';
 
       if (isGuruBk) {
-        const isValidBkPassword = 
+        const isValidBkPassword =
           password === 'bk' ||
           password === 'bk123' ||
           password === 'password' ||
@@ -298,25 +342,69 @@ export const LoginView: React.FC<LoginViewProps> = ({
           password === '123456';
 
         if (!isValidBkPassword) {
-          setErrorMessage('Kata sandi salah untuk akun Guru Bimbingan Konseling ini.');
-          setLoading(false);
-          return;
+          return { status: 'wrong_password', message: 'Kata sandi salah untuk akun Guru Bimbingan Konseling ini.' };
         }
 
         onLoginSuccess('bimbingan.konseling@sekolah.sch.id', 'gmail_oauth_token_active', 'guru_bk');
-        setLoading(false);
-        return;
+        return { status: 'success' };
       }
 
       if (inputIdOrEmail.includes('@')) {
         onLoginSuccess(emailInput.trim(), 'gmail_oauth_token_active', selectedRole);
+        return { status: 'success' };
+      }
+
+      return { status: 'not_found' };
+    };
+
+    try {
+      // First attempt using current in-memory lists
+      const localAttempt = attemptAuth(guruList, stafList, siswaList, schoolSettings);
+      if (localAttempt.status === 'success') {
+        setLoading(false);
+        return;
+      }
+
+      // Always verify against freshest Firestore records before rejecting
+      const [remoteGuru, remoteStaf, remoteSiswa, remoteSettings] = await Promise.all([
+        dbFetchCollection<Guru>('edu_guruList').catch(() => [] as Guru[]),
+        dbFetchCollection<Staf>('edu_stafList').catch(() => [] as Staf[]),
+        dbFetchCollection<Siswa>('edu_siswaList').catch(() => [] as Siswa[]),
+        dbFetchCollection<SchoolSettings>('edu_schoolSettings').catch(() => [] as SchoolSettings[])
+      ]);
+
+      const mergedGuru = remoteGuru.length > 0 ? remoteGuru : guruList;
+      const mergedStaf = remoteStaf.length > 0 ? remoteStaf : stafList;
+      const mergedSiswa = remoteSiswa.length > 0 ? remoteSiswa : siswaList;
+      const mergedSettings = remoteSettings.find(s => s.namaSekolah) || schoolSettings;
+
+      if (onSyncAccountLists) {
+        onSyncAccountLists({
+          guru: remoteGuru.length > 0 ? remoteGuru : undefined,
+          staf: remoteStaf.length > 0 ? remoteStaf : undefined,
+          siswa: remoteSiswa.length > 0 ? remoteSiswa : undefined,
+          settings: remoteSettings.find(s => s.namaSekolah)
+        });
+      }
+
+      const remoteAttempt = attemptAuth(mergedGuru, mergedStaf, mergedSiswa, mergedSettings);
+      if (remoteAttempt.status === 'success') {
+        setLoading(false);
+        return;
+      }
+
+      if (remoteAttempt.status === 'wrong_password') {
+        setErrorMessage(remoteAttempt.message);
         setLoading(false);
         return;
       }
 
       setErrorMessage('Akses Ditolak: Akun dengan Username/Email tersebut tidak ditemukan di database.');
+    } catch {
+      setErrorMessage('Gagal memverifikasi akun ke database. Silakan coba lagi.');
+    } finally {
       setLoading(false);
-    }, 400);
+    }
   };
 
   return (
@@ -420,7 +508,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
                   placeholder="Masukkan username atau email"
-                  className="w-full bg-slate-950/45 hover:bg-slate-950/55 border border-white/25 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-400 shadow-[inset_0_2px_6px_rgba(0,0,0,0.45),0_1px_0_rgba(255,255,255,0.16)] focus:outline-none focus:border-sky-300/80 focus:bg-slate-950/60 focus:ring-2 focus:ring-sky-400/35 transition-all duration-150"
+                  className="login-glass-input w-full bg-slate-950/45 hover:bg-slate-950/55 border border-white/25 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-400 shadow-[inset_0_2px_6px_rgba(0,0,0,0.45),0_1px_0_rgba(255,255,255,0.16)] focus:outline-none focus:border-sky-300/80 focus:bg-slate-950/60 focus:ring-2 focus:ring-sky-400/35 transition-all duration-150"
                 />
               </div>
             </div>
@@ -438,7 +526,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full bg-slate-950/45 hover:bg-slate-950/55 border border-white/25 rounded-2xl pl-10 pr-11 py-3 text-sm text-white placeholder-slate-400 shadow-[inset_0_2px_6px_rgba(0,0,0,0.45),0_1px_0_rgba(255,255,255,0.16)] focus:outline-none focus:border-sky-300/80 focus:bg-slate-950/60 focus:ring-2 focus:ring-sky-400/35 transition-all duration-150"
+                  className="login-glass-input w-full bg-slate-950/45 hover:bg-slate-950/55 border border-white/25 rounded-2xl pl-10 pr-11 py-3 text-sm text-white placeholder-slate-400 shadow-[inset_0_2px_6px_rgba(0,0,0,0.45),0_1px_0_rgba(255,255,255,0.16)] focus:outline-none focus:border-sky-300/80 focus:bg-slate-950/60 focus:ring-2 focus:ring-sky-400/35 transition-all duration-150"
                 />
                 <button
                   type="button"

@@ -9,6 +9,16 @@
   }
 }
 
+.login-glass-input:-webkit-autofill,
+.login-glass-input:-webkit-autofill:hover,
+.login-glass-input:-webkit-autofill:focus,
+.login-glass-input:-webkit-autofill:active {
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff !important;
+  box-shadow: inset 0 0 0 1000px rgba(8, 15, 34, 0.92), inset 0 2px 6px rgba(0, 0, 0, 0.45) !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
 @keyframes glossy-sheen {
   0% {
     transform: translateX(-140%) skewX(-22deg);

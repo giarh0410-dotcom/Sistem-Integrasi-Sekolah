@@ -342,6 +342,42 @@ export default function App() {
     safeSetStorageItem('edu_colorTheme', colorTheme);
   }, [colorTheme]);
 
+  // Preload account lists & school identity from Firestore before login so users on new devices/sessions can authenticate
+  useEffect(() => {
+    if (isLoggedIn) return;
+    let active = true;
+    const preloadPublicAuthData = async () => {
+      try {
+        await validateFirestoreConnection();
+        const isSystemReset = localStorage.getItem('edu_system_reset') === 'true';
+        const isSiswaForceCleared = localStorage.getItem('edu_siswa_force_clear') === 'true' || isSystemReset;
+        if (isSystemReset) return;
+
+        const [guruData, stafData, siswaData, settingsData] = await Promise.all([
+          dbFetchCollection<Guru>('edu_guruList').catch(() => []),
+          dbFetchCollection<Staf>('edu_stafList').catch(() => []),
+          isSiswaForceCleared ? Promise.resolve([] as Siswa[]) : dbFetchCollection<Siswa>('edu_siswaList').catch(() => []),
+          dbFetchCollection<SchoolSettings>('edu_schoolSettings').catch(() => [])
+        ]);
+
+        if (!active) return;
+        if (guruData.length > 0) setGuruList(guruData);
+        if (stafData.length > 0) setStafList(stafData);
+        if (!isSiswaForceCleared && siswaData.length > 0) setSiswaList(siswaData);
+        if (settingsData.length > 0) {
+          const foundSetting = settingsData.find(s => s.namaSekolah);
+          if (foundSetting) setSchoolSettings(prev => ({ ...prev, ...foundSetting }));
+        }
+      } catch {
+        // Fallback silently to localStorage/initial lists
+      }
+    };
+    preloadPublicAuthData();
+    return () => {
+      active = false;
+    };
+  }, [isLoggedIn]);
+
   // Load database from Firestore upon user login
   useEffect(() => {
     if (isLoggedIn) {
@@ -973,6 +1009,12 @@ export default function App() {
         guruList={guruList}
         stafList={stafList}
         siswaList={siswaList}
+        onSyncAccountLists={({ guru, staf, siswa, settings }) => {
+          if (guru && guru.length > 0) setGuruList(guru);
+          if (staf && staf.length > 0) setStafList(staf);
+          if (siswa && siswa.length > 0) setSiswaList(siswa);
+          if (settings) setSchoolSettings(prev => ({ ...prev, ...settings }));
+        }}
       />
     );
   }

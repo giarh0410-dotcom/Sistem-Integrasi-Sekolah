@@ -41,7 +41,9 @@ import {
   Volume2,
   VolumeX,
   Search,
-  Filter
+  Filter,
+  ListOrdered,
+  ClipboardCheck
 } from 'lucide-react';
 import { 
   BankSoal, 
@@ -70,6 +72,8 @@ import { BeritaAcaraUjian } from './cbt/BeritaAcaraUjian';
 import { KisiKisiSoal } from './cbt/KisiKisiSoal';
 import { JadwalUjianSection } from './cbt/JadwalUjianSection';
 import { PengaturanCbtSection } from './cbt/PengaturanCbtSection';
+import { KoreksiSoalCbt } from './cbt/KoreksiSoalCbt';
+import { NilaiCbtSection, NilaiCbtMode } from './cbt/NilaiCbtSection';
 import {
   KartuPesertaCard,
   KartuPesertaBatchModal,
@@ -81,8 +85,12 @@ import { downloadKartuPesertaA4Pdf } from './cbt/kartuPesertaPdf';
 import { enhanceSignatureForDisplay } from './cbt/signatureUtils';
 import {
   downloadBankSoalWordTemplate,
+  downloadBankSoalExcelTemplate,
   exportBankSoalToWord,
-  parseWordFileToSoalList
+  isSoalListSortedByTipeOrder,
+  parsePlainTextToSoalList,
+  parseSoalImportFile,
+  sortSoalByTipeOrder
 } from './cbt/bankSoalWord';
 
 interface CbtViewProps {
@@ -103,6 +111,63 @@ interface CbtViewProps {
   setSubTab?: (subTab: CbtSubTab) => void;
   schoolSettings?: SchoolSettings;
 }
+
+async function compressImageToDataUrl(
+  file: File,
+  maxDimension = 960,
+  quality = 0.82
+): Promise<{ dataUrl: string; base64: string; mimeType: string }> {
+  const rawDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
+    reader.readAsDataURL(file);
+  });
+
+  if (file.type === 'image/svg+xml') {
+    const base64Part = rawDataUrl.split(',')[1] || '';
+    return { dataUrl: rawDataUrl, base64: base64Part, mimeType: 'image/svg+xml' };
+  }
+
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDimension || height > maxDimension) {
+        if (width >= height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, width);
+      canvas.height = Math.max(1, height);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        const base64Part = rawDataUrl.split(',')[1] || '';
+        resolve({ dataUrl: rawDataUrl, base64: base64Part, mimeType: file.type || 'image/jpeg' });
+        return;
+      }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const mimeType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+      const compressedDataUrl = canvas.toDataURL(mimeType, mimeType === 'image/png' ? undefined : quality);
+      const base64Part = compressedDataUrl.split(',')[1] || '';
+      resolve({ dataUrl: compressedDataUrl, base64: base64Part, mimeType });
+    };
+    img.onerror = () => {
+      const base64Part = rawDataUrl.split(',')[1] || '';
+      resolve({ dataUrl: rawDataUrl, base64: base64Part, mimeType: file.type || 'image/jpeg' });
+    };
+    img.src = rawDataUrl;
+  });
+}
+
+type AiReviewSoal = SoalCBT & { deskripsiGambar?: string };
 
 export const CbtView: React.FC<CbtViewProps> = ({
   bankSoalList,
@@ -135,7 +200,11 @@ export const CbtView: React.FC<CbtViewProps> = ({
         subTab === 'ai_generator' ||
         subTab === 'pengaturan_cbt' ||
         subTab === 'daftar_pengawas' ||
-        subTab === 'berita_acara'
+        subTab === 'berita_acara' ||
+        subTab === 'koreksi_soal' ||
+        subTab === 'input_nilai' ||
+        subTab === 'rekap_nilai' ||
+        subTab === 'analisis_nilai'
       ) {
         setSubTab('simulasi_ujian');
       }
@@ -365,6 +434,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
   const [formError, setFormError] = useState('');
   const [toastNotification, setToastNotification] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [customKelasInput, setCustomKelasInput] = useState('');
 
   // Helper untuk multi-select Kelas Target (membersihkan kelas usang seperti X-IPA-1 jika ada)
@@ -443,7 +513,8 @@ export const CbtView: React.FC<CbtViewProps> = ({
     setCustomKelasInput('');
   };
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToastType(type);
     setToastNotification(msg);
     setTimeout(() => {
       setToastNotification(null);
@@ -788,6 +859,95 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
   const activeBank = bankSoalList.find(b => b.id === selectedBankId) || bankSoalList[0];
 
+  // Auto-keep Bank Soal items in canonical sequence: PG -> Ganda Kompleks -> Isian Singkat -> Esai
+  useEffect(() => {
+    if (bankSoalList.length === 0) return;
+    const hasUnsorted = bankSoalList.some(b => !isSoalListSortedByTipeOrder(b.daftarSoal || []));
+    if (!hasUnsorted) return;
+    setBankSoalList(prev =>
+      prev.map(b =>
+        isSoalListSortedByTipeOrder(b.daftarSoal || [])
+          ? b
+          : {
+              ...b,
+              daftarSoal: sortSoalByTipeOrder(b.daftarSoal || [])
+            }
+      )
+    );
+  }, [bankSoalList]);
+
+  const handleSortActiveBankSoal = () => {
+    if (!activeBank) return;
+    setBankSoalList(prev =>
+      prev.map(b =>
+        b.id === activeBank.id
+          ? {
+              ...b,
+              daftarSoal: sortSoalByTipeOrder(b.daftarSoal || [])
+            }
+          : b
+      )
+    );
+    showToast('Urutan soal disusun: PG → Ganda Kompleks → Isian Singkat → Esai.');
+  };
+
+  // --- Pilih & Hapus Massal Soal dalam Paket Bank Soal ---
+  const [selectedSoalIds, setSelectedSoalIds] = useState<string[]>([]);
+  const [bulkDeleteConfirmMode, setBulkDeleteConfirmMode] = useState<'selected' | 'all' | null>(null);
+
+  useEffect(() => {
+    setSelectedSoalIds([]);
+  }, [selectedBankId]);
+
+  const handleToggleSelectSoal = (soalId: string) => {
+    setSelectedSoalIds(prev =>
+      prev.includes(soalId) ? prev.filter(id => id !== soalId) : [...prev, soalId]
+    );
+  };
+
+  const handleToggleSelectAllSoal = () => {
+    if (!activeBank) return;
+    const allIds = (activeBank.daftarSoal || []).map(s => s.id);
+    const allSelected = allIds.length > 0 && allIds.every(id => selectedSoalIds.includes(id));
+    setSelectedSoalIds(allSelected ? [] : allIds);
+  };
+
+  const handleConfirmBulkDeleteSoal = () => {
+    if (!activeBank || !bulkDeleteConfirmMode) return;
+    const activeIds = new Set((activeBank.daftarSoal || []).map(s => s.id));
+    const selectedSet = new Set(selectedSoalIds.filter(id => activeIds.has(id)));
+    const deleteCount =
+      bulkDeleteConfirmMode === 'all' ? activeBank.daftarSoal.length : selectedSet.size;
+
+    if (deleteCount === 0) {
+      setBulkDeleteConfirmMode(null);
+      return;
+    }
+
+    setBankSoalList(prev =>
+      prev.map(b => {
+        if (b.id !== activeBank.id) return b;
+        const remaining =
+          bulkDeleteConfirmMode === 'all'
+            ? []
+            : b.daftarSoal.filter(s => !selectedSet.has(s.id));
+        return {
+          ...b,
+          daftarSoal: remaining,
+          jumlahSoal: remaining.length
+        };
+      })
+    );
+
+    setSelectedSoalIds([]);
+    setBulkDeleteConfirmMode(null);
+    showToast(
+      bulkDeleteConfirmMode === 'all'
+        ? `Semua ${deleteCount} soal dalam paket "${activeBank.judul}" berhasil dihapus.`
+        : `${deleteCount} soal terpilih berhasil dihapus dari paket "${activeBank.judul}".`
+    );
+  };
+
   // --- Tambah / Edit Paket Bank Soal State ---
   const [showAddBankModal, setShowAddBankModal] = useState(false);
   const [editingBankId, setEditingBankId] = useState<string | null>(null);
@@ -893,6 +1053,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
         } else {
           updatedDaftarSoal.push(payloadSoal);
         }
+        updatedDaftarSoal = sortSoalByTipeOrder(updatedDaftarSoal);
         return {
           ...b,
           daftarSoal: updatedDaftarSoal,
@@ -908,7 +1069,8 @@ export const CbtView: React.FC<CbtViewProps> = ({
     setNewImageUrl('');
     setNewVideoUrl('');
     setNewPembahasan('');
-    alert(editingSoalId ? 'Soal berhasil diperbarui!' : 'Soal baru berhasil ditambahkan ke Bank Soal!');
+    setInBankAiToast(editingSoalId ? 'Soal berhasil diperbarui!' : 'Soal baru berhasil ditambahkan ke Bank Soal!');
+    setTimeout(() => setInBankAiToast(null), 3500);
   };
 
   // --- In-Bank AI Question Generator State & Handlers ---
@@ -921,9 +1083,22 @@ export const CbtView: React.FC<CbtViewProps> = ({
   const [inBankAiKesulitan, setInBankAiKesulitan] = useState('Sedang (C3: Aplikasi Konsep)');
   const [inBankAiInstruksi, setInBankAiInstruksi] = useState('');
   const [inBankAiBobot, setInBankAiBobot] = useState(10);
+  const [inBankAiImageMode, setInBankAiImageMode] = useState<'tidak' | 'campuran' | 'semua'>('tidak');
+  const [inBankAiImageCount, setInBankAiImageCount] = useState(3);
+  const [inBankAiStimulusImage, setInBankAiStimulusImage] = useState<{
+    dataUrl: string;
+    base64: string;
+    mimeType: string;
+    name: string;
+  } | null>(null);
+  const [inBankAiAttachStimulus, setInBankAiAttachStimulus] = useState(true);
   const [inBankAiLoading, setInBankAiLoading] = useState(false);
-  const [inBankAiGeneratedList, setInBankAiGeneratedList] = useState<SoalCBT[]>([]);
+  const [inBankAiError, setInBankAiError] = useState<string | null>(null);
+  const [inBankAiGeneratedList, setInBankAiGeneratedList] = useState<AiReviewSoal[]>([]);
   const [inBankAiSelectedIndices, setInBankAiSelectedIndices] = useState<number[]>([]);
+  const [inBankAiGeneratingImgIdx, setInBankAiGeneratingImgIdx] = useState<number | null>(null);
+  const [inBankAiUrlInputIdx, setInBankAiUrlInputIdx] = useState<number | null>(null);
+  const [inBankAiUrlDraft, setInBankAiUrlDraft] = useState('');
   const [inBankAiToast, setInBankAiToast] = useState<string | null>(null);
 
   // Mapping Topik Kurikulum Merdeka Lengkap Berdasarkan Mata Pelajaran
@@ -1361,7 +1536,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
     }
 
     setInBankAiMapel(detectedMapel);
-    setInBankAiKelas(activeBank.kelas || 'X-IPA-1');
+    setInBankAiKelas(activeBank.kelas || availableKelasList[0] || 'Semua Kelas');
     
     // Ambil topik spesifik yang relevan dengan mata pelajaran tersebut
     const suggestions = getSubjectTopicSuggestions(detectedMapel);
@@ -1373,8 +1548,16 @@ export const CbtView: React.FC<CbtViewProps> = ({
     setInBankAiKesulitan('Sedang (C3: Aplikasi Konsep)');
     setInBankAiInstruksi('');
     setInBankAiBobot(10);
+    setInBankAiImageMode('tidak');
+    setInBankAiImageCount(3);
+    setInBankAiStimulusImage(null);
+    setInBankAiAttachStimulus(true);
+    setInBankAiError(null);
     setInBankAiGeneratedList([]);
     setInBankAiSelectedIndices([]);
+    setInBankAiGeneratingImgIdx(null);
+    setInBankAiUrlInputIdx(null);
+    setInBankAiUrlDraft('');
     setShowAiModalInBank(true);
   };
 
@@ -1388,9 +1571,25 @@ export const CbtView: React.FC<CbtViewProps> = ({
     });
   };
 
+  const handleUploadInBankStimulus = async (file?: File | null) => {
+    if (!file) return;
+    setInBankAiError(null);
+    try {
+      const compressed = await compressImageToDataUrl(file);
+      setInBankAiStimulusImage({
+        ...compressed,
+        name: file.name
+      });
+      setInBankAiAttachStimulus(true);
+    } catch {
+      setInBankAiError('Gagal memproses file gambar stimulus. Gunakan format PNG, JPG, WebP, atau SVG.');
+    }
+  };
+
   const handleGenerateInBankAi = async () => {
+    setInBankAiError(null);
     if (!inBankAiTopik.trim()) {
-      alert('Harap ketikkan atau pilih topik materi soal terlebih dahulu!');
+      setInBankAiError('Harap ketikkan atau pilih topik materi soal terlebih dahulu.');
       return;
     }
     setInBankAiLoading(true);
@@ -1408,51 +1607,132 @@ export const CbtView: React.FC<CbtViewProps> = ({
           tipeSoal: inBankAiTipeSoal,
           tingkatKesulitan: inBankAiKesulitan,
           instruksiTambahan: inBankAiInstruksi,
-          bobotPerSoal: inBankAiBobot
+          bobotPerSoal: inBankAiBobot,
+          sertakanGambar: inBankAiImageMode,
+          jumlahBergambar:
+            inBankAiImageMode === 'campuran'
+              ? Math.min(Math.max(inBankAiImageCount, 1), inBankAiJumlah)
+              : undefined,
+          stimulusImage: inBankAiStimulusImage
+            ? {
+                data: inBankAiStimulusImage.base64,
+                mimeType: inBankAiStimulusImage.mimeType
+              }
+            : undefined,
+          terapkanGambarStimulus: inBankAiAttachStimulus
         })
       });
       const data = await res.json();
-      if (data.success && Array.isArray(data.soalList) && data.soalList.length > 0) {
-        const formatted: SoalCBT[] = data.soalList.map((item: any, idx: number) => ({
-          id: `soal-ai-${Date.now()}-${idx}`,
-          tipe: item.tipe || 'pg',
-          pertanyaan: item.pertanyaan || '',
-          opsi: item.opsi && Array.isArray(item.opsi) && item.opsi.length >= 2 ? item.opsi : (
-            (item.tipe === 'pg' || item.tipe === 'multiple_choice') ? [
-              { id: 'A', teks: 'Pilihan A' },
-              { id: 'B', teks: 'Pilihan B' },
-              { id: 'C', teks: 'Pilihan C' },
-              { id: 'D', teks: 'Pilihan D' }
-            ] : undefined
-          ),
-          kunciJawaban: item.kunciJawaban || (item.tipe === 'multiple_choice' ? ['A', 'C'] : 'A'),
-          pembahasan: item.pembahasan || '',
-          bobot: Number(item.bobot) || inBankAiBobot
-        }));
-        setInBankAiGeneratedList(formatted);
-        setInBankAiSelectedIndices(formatted.map((_, i) => i));
+      if (res.ok && data.success && Array.isArray(data.soalList) && data.soalList.length > 0) {
+        const formatted: AiReviewSoal[] = data.soalList.map((item: any, idx: number) => {
+          const attachedStimulus =
+            !item.imageUrl && item.usesStimulusImage && inBankAiStimulusImage && inBankAiAttachStimulus
+              ? inBankAiStimulusImage.dataUrl
+              : undefined;
+          return {
+            id: `soal-ai-${Date.now()}-${idx}`,
+            tipe: item.tipe || 'pg',
+            pertanyaan: item.pertanyaan || '',
+            opsi: item.opsi && Array.isArray(item.opsi) && item.opsi.length >= 2 ? item.opsi : (
+              (item.tipe === 'pg' || item.tipe === 'multiple_choice') ? [
+                { id: 'A', teks: 'Pilihan A' },
+                { id: 'B', teks: 'Pilihan B' },
+                { id: 'C', teks: 'Pilihan C' },
+                { id: 'D', teks: 'Pilihan D' }
+              ] : undefined
+            ),
+            kunciJawaban: item.kunciJawaban || (item.tipe === 'multiple_choice' ? ['A', 'C'] : 'A'),
+            pembahasan: item.pembahasan || '',
+            bobot: Number(item.bobot) || inBankAiBobot,
+            imageUrl: item.imageUrl || attachedStimulus,
+            deskripsiGambar: item.deskripsiGambar || (attachedStimulus ? `Lampiran: ${inBankAiStimulusImage?.name}` : undefined)
+          };
+        });
+        const orderedFormatted = sortSoalByTipeOrder(formatted);
+        setInBankAiGeneratedList(orderedFormatted);
+        setInBankAiSelectedIndices(orderedFormatted.map((_, i) => i));
       } else {
-        alert('Gagal menghasilkan soal dari AI. Silakan coba kembali.');
+        setInBankAiError(data?.message || 'Gagal menghasilkan soal dari Gemini AI. Silakan periksa parameter dan coba kembali.');
       }
     } catch (err: any) {
-      console.error('Error generating AI questions:', err);
-      alert('Terjadi kesalahan saat menghubungi API Gemini AI.');
+      setInBankAiError(err?.message || 'Terjadi kesalahan koneksi saat menghubungi layanan Gemini AI.');
     } finally {
       setInBankAiLoading(false);
     }
   };
 
+  const handleGenerateIllustrationForReviewItem = async (idx: number) => {
+    const targetSoal = inBankAiGeneratedList[idx];
+    if (!targetSoal) return;
+    setInBankAiError(null);
+    setInBankAiGeneratingImgIdx(idx);
+    try {
+      const res = await fetch('/api/ai/generate-question-illustration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pertanyaan: targetSoal.pertanyaan,
+          mataPelajaran: inBankAiMapel,
+          topik: inBankAiTopik
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.imageUrl) {
+        setInBankAiError(data?.message || `Gagal membuat ilustrasi AI untuk Butir Soal #${idx + 1}.`);
+        return;
+      }
+      setInBankAiGeneratedList(prev =>
+        prev.map((s, i) =>
+          i === idx
+            ? {
+                ...s,
+                imageUrl: data.imageUrl,
+                deskripsiGambar: data.deskripsiGambar || 'Ilustrasi Diagram AI'
+              }
+            : s
+        )
+      );
+    } catch (err: any) {
+      setInBankAiError(err?.message || `Gagal menghubungi AI untuk membuat gambar soal #${idx + 1}.`);
+    } finally {
+      setInBankAiGeneratingImgIdx(null);
+    }
+  };
+
+  const handleUploadImageForReviewItem = async (idx: number, file?: File | null) => {
+    if (!file) return;
+    setInBankAiError(null);
+    try {
+      const compressed = await compressImageToDataUrl(file);
+      setInBankAiGeneratedList(prev =>
+        prev.map((s, i) =>
+          i === idx
+            ? {
+                ...s,
+                imageUrl: compressed.dataUrl,
+                deskripsiGambar: file.name
+              }
+            : s
+        )
+      );
+    } catch {
+      setInBankAiError(`Gagal mengunggah gambar untuk Butir Soal #${idx + 1}.`);
+    }
+  };
+
   const handleApplyAiQuestionsToActiveBank = () => {
     if (!activeBank) return;
-    const selectedSoal = inBankAiGeneratedList.filter((_, idx) => inBankAiSelectedIndices.includes(idx));
+    const selectedSoal: SoalCBT[] = inBankAiGeneratedList
+      .filter((_, idx) => inBankAiSelectedIndices.includes(idx))
+      .map(({ deskripsiGambar: _ignored, ...rest }) => rest);
     if (selectedSoal.length === 0) {
-      alert('Pilih minimal satu butir soal untuk dimasukkan ke Bank Soal!');
+      setInBankAiError('Pilih minimal satu butir soal untuk dimasukkan ke Bank Soal.');
       return;
     }
 
     setBankSoalList(prev => prev.map(b => {
       if (b.id === activeBank.id) {
-        const updatedDaftar = [...b.daftarSoal, ...selectedSoal];
+        const updatedDaftar = sortSoalByTipeOrder([...b.daftarSoal, ...selectedSoal]);
         return {
           ...b,
           daftarSoal: updatedDaftar,
@@ -1474,6 +1754,15 @@ export const CbtView: React.FC<CbtViewProps> = ({
   const [aiTipeSoal, setAiTipeSoal] = useState<string[]>(['pg', 'multiple_choice', 'isian', 'esai']);
   const [aiTopik, setAiTopik] = useState(() => getSubjectTopicSuggestions(initialAiMapel)[0] || 'Capaian Pembelajaran Kurikulum Merdeka');
   const [aiJumlah, setAiJumlah] = useState(10);
+  const [aiImageMode, setAiImageMode] = useState<'tidak' | 'campuran' | 'semua'>('tidak');
+  const [aiImageCount, setAiImageCount] = useState(3);
+  const [aiStimulusImage, setAiStimulusImage] = useState<{
+    dataUrl: string;
+    base64: string;
+    mimeType: string;
+    name: string;
+  } | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
 
   const handleToggleAiKelas = (kelasName: string) => {
@@ -1495,9 +1784,25 @@ export const CbtView: React.FC<CbtViewProps> = ({
     });
   };
 
+  const handleUploadAiTabStimulus = async (file?: File | null) => {
+    if (!file) return;
+    setAiError(null);
+    try {
+      const compressed = await compressImageToDataUrl(file);
+      setAiStimulusImage({ ...compressed, name: file.name });
+    } catch {
+      setAiError('Gagal memproses file gambar stimulus.');
+    }
+  };
+
   const handleGenerateAi = async () => {
+    setAiError(null);
     if (aiKelas.length === 0) {
-      alert('Pilih minimal satu kelas target!');
+      setAiError('Pilih minimal satu kelas target sebelum generate soal.');
+      return;
+    }
+    if (!aiTopik.trim()) {
+      setAiError('Isi topik atau bahasan soal terlebih dahulu.');
       return;
     }
     setLoadingAi(true);
@@ -1510,20 +1815,29 @@ export const CbtView: React.FC<CbtViewProps> = ({
           kelas: aiKelas.join(', '),
           topik: aiTopik,
           jumlahSoal: aiJumlah,
-          tipeSoal: aiTipeSoal
+          tipeSoal: aiTipeSoal,
+          sertakanGambar: aiImageMode,
+          jumlahBergambar: aiImageMode === 'campuran' ? Math.min(Math.max(aiImageCount, 1), aiJumlah) : undefined,
+          stimulusImage: aiStimulusImage
+            ? { data: aiStimulusImage.base64, mimeType: aiStimulusImage.mimeType }
+            : undefined,
+          terapkanGambarStimulus: true
         })
       });
       const data = await res.json();
-      if (data.success && Array.isArray(data.soalList)) {
-        const formattedSoal: SoalCBT[] = data.soalList.map((item: any, index: number) => ({
-          id: `ai-soal-${Date.now()}-${index}`,
-          tipe: item.tipe || 'pg',
-          pertanyaan: item.pertanyaan,
-          opsi: item.opsi,
-          kunciJawaban: item.kunciJawaban,
-          pembahasan: item.pembahasan,
-          bobot: item.bobot || 25
-        }));
+      if (res.ok && data.success && Array.isArray(data.soalList) && data.soalList.length > 0) {
+        const formattedSoal: SoalCBT[] = sortSoalByTipeOrder(
+          data.soalList.map((item: any, index: number) => ({
+            id: `ai-soal-${Date.now()}-${index}`,
+            tipe: item.tipe || 'pg',
+            pertanyaan: item.pertanyaan,
+            opsi: item.opsi,
+            kunciJawaban: item.kunciJawaban,
+            pembahasan: item.pembahasan,
+            bobot: item.bobot || 25,
+            imageUrl: item.imageUrl || (item.usesStimulusImage && aiStimulusImage ? aiStimulusImage.dataUrl : undefined)
+          }))
+        );
 
         const newBank: BankSoal = {
           id: `bs-ai-${Date.now()}`,
@@ -1541,13 +1855,13 @@ export const CbtView: React.FC<CbtViewProps> = ({
         setBankSoalList(prev => [newBank, ...prev]);
         setSelectedBankId(newBank.id);
         setSubTab('bank_soal');
-        alert('Berhasil membuat Bank Soal otomatis dengan Gemini AI!');
+        setInBankAiToast(`Berhasil membuat paket "${newBank.judul}" (${formattedSoal.length} soal) dengan Gemini AI!`);
+        setTimeout(() => setInBankAiToast(null), 4000);
       } else {
-        alert('Gagal menghasilkan soal. Silakan coba lagi.');
+        setAiError(data?.message || 'Gagal menghasilkan soal dari Gemini AI. Silakan coba lagi.');
       }
     } catch (err: any) {
-      console.error(err);
-      alert('Terjadi kesalahan saat menghubungi API Gemini AI.');
+      setAiError(err?.message || 'Terjadi kesalahan saat menghubungi layanan Gemini AI.');
     } finally {
       setLoadingAi(false);
     }
@@ -1611,9 +1925,17 @@ export const CbtView: React.FC<CbtViewProps> = ({
     try {
       await downloadBankSoalWordTemplate(schoolSettings);
       showToast('Template Bank Soal Word (.docx) berhasil diunduh!');
-    } catch (err) {
-      console.error('Gagal mengunduh template Word:', err);
-      showToast('Gagal membuat file Template Word (.docx).');
+    } catch {
+      showToast('Gagal membuat file Template Word (.docx).', 'error');
+    }
+  };
+
+  const handleDownloadExcelTemplate = async () => {
+    try {
+      await downloadBankSoalExcelTemplate(schoolSettings);
+      showToast('Template Bank Soal Excel (.xlsx) berhasil diunduh!');
+    } catch {
+      showToast('Gagal membuat file Template Excel (.xlsx).', 'error');
     }
   };
 
@@ -1622,38 +1944,113 @@ export const CbtView: React.FC<CbtViewProps> = ({
     try {
       await exportBankSoalToWord(activeBank, schoolSettings);
       showToast(`Paket "${activeBank.judul}" berhasil diekspor ke Word (.docx)!`);
-    } catch (err) {
-      console.error('Gagal mengekspor Bank Soal ke Word:', err);
-      showToast('Gagal mengekspor Bank Soal ke format Word (.docx).');
+    } catch {
+      showToast('Gagal mengekspor Bank Soal ke format Word (.docx).', 'error');
     }
   };
 
-  const handleImportWordToActiveBank = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // --- Dedicated Import Soal Modal State & Handlers (Word .docx, Excel .xlsx, CSV, JSON, TXT, or Paste) ---
+  const [showImportSoalModal, setShowImportSoalModal] = useState(false);
+  const [importSoalTab, setImportSoalTab] = useState<'file' | 'text'>('file');
+  const [importRawText, setImportRawText] = useState('');
+  const [importParsedList, setImportParsedList] = useState<SoalCBT[]>([]);
+  const [importSelectedIndices, setImportSelectedIndices] = useState<number[]>([]);
+  const [importReplaceExisting, setImportReplaceExisting] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importFormatLabel, setImportFormatLabel] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+
+  const handleOpenImportSoalModal = () => {
+    setImportSoalTab('file');
+    setImportRawText('');
+    setImportParsedList([]);
+    setImportSelectedIndices([]);
+    setImportReplaceExisting(false);
+    setImportFileName('');
+    setImportFormatLabel('');
+    setImportError(null);
+    setImportLoading(false);
+    setShowImportSoalModal(true);
+  };
+
+  const handleImportFileIntoPreviewModal = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file || !activeBank) return;
+    if (!file) return;
+    setImportError(null);
+    setImportLoading(true);
     try {
-      const imported = await parseWordFileToSoalList(file);
-      if (imported.length === 0) {
-        showToast('Tidak ada butir soal valid ditemukan di file Word (.docx). Pastikan format mengikuti Template Word.');
+      const { soalList, formatLabel } = await parseSoalImportFile(file);
+      if (soalList.length === 0) {
+        setImportParsedList([]);
+        setImportSelectedIndices([]);
+        setImportFileName(file.name);
+        setImportError(
+          `Tidak ada butir soal valid yang terbaca dari "${file.name}". Pastikan tabel memiliki kolom "Pertanyaan" atau teks bernomor (1. Pertanyaan ... A. ... Kunci: A).`
+        );
         return;
       }
-      setBankSoalList(prev =>
-        prev.map(b =>
-          b.id === activeBank.id
-            ? {
-                ...b,
-                daftarSoal: [...b.daftarSoal, ...imported],
-                jumlahSoal: b.daftarSoal.length + imported.length
-              }
-            : b
-        )
-      );
-      showToast(`${imported.length} soal dari "${file.name}" berhasil ditambahkan ke paket "${activeBank.judul}"!`);
-    } catch (err) {
-      console.error('Gagal mengimpor file Word:', err);
-      showToast('Gagal membaca file Word (.docx). Pastikan file berformat .docx yang valid.');
+      setImportFileName(file.name);
+      setImportFormatLabel(formatLabel);
+      setImportParsedList(soalList);
+      setImportSelectedIndices(soalList.map((_, idx) => idx));
+    } catch (err: any) {
+      setImportParsedList([]);
+      setImportSelectedIndices([]);
+      setImportError(err?.message || `Gagal membaca file "${file.name}". Pastikan format file valid.`);
+    } finally {
+      setImportLoading(false);
     }
+  };
+
+  const handleParsePastedTextForImport = () => {
+    setImportError(null);
+    if (!importRawText.trim()) {
+      setImportError('Tempelkan teks daftar soal terlebih dahulu sebelum memproses.');
+      return;
+    }
+    const parsed = sortSoalByTipeOrder(parsePlainTextToSoalList(importRawText));
+    if (parsed.length === 0) {
+      setImportParsedList([]);
+      setImportSelectedIndices([]);
+      setImportError(
+        'Format teks soal belum terbaca. Gunakan penomoran seperti "1. Pertanyaan...", diikuti opsi "A. ... B. ... C. ... D. ..." dan "Kunci: A".'
+      );
+      return;
+    }
+    setImportFileName('Teks Tempelan Langsung');
+    setImportFormatLabel('Teks');
+    setImportParsedList(parsed);
+    setImportSelectedIndices(parsed.map((_, idx) => idx));
+  };
+
+  const handleConfirmImportSoalToActiveBank = () => {
+    if (!activeBank) return;
+    const selected = importParsedList.filter((_, idx) => importSelectedIndices.includes(idx));
+    if (selected.length === 0) {
+      setImportError('Pilih minimal satu butir soal untuk dimasukkan ke paket.');
+      return;
+    }
+    setBankSoalList(prev =>
+      prev.map(b => {
+        if (b.id !== activeBank.id) return b;
+        const nextDaftar = sortSoalByTipeOrder(
+          importReplaceExisting ? selected : [...b.daftarSoal, ...selected]
+        );
+        return {
+          ...b,
+          daftarSoal: nextDaftar,
+          jumlahSoal: nextDaftar.length
+        };
+      })
+    );
+    setShowImportSoalModal(false);
+    showToast(
+      importReplaceExisting
+        ? `Daftar soal paket "${activeBank.judul}" diganti dengan ${selected.length} soal hasil import!`
+        : `${selected.length} soal hasil import berhasil ditambahkan ke paket "${activeBank.judul}"!`
+    );
   };
 
   // --- Simulasi Ujian Student State ---
@@ -1666,6 +2063,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [selectedSiswaId, setSelectedSiswaId] = useState<string>('');
   const [selectedRaporHasil, setSelectedRaporHasil] = useState<HasilUjian | null>(null);
+  const [koreksiTargetHasilId, setKoreksiTargetHasilId] = useState<string | null>(null);
   const [showKolektifRaporModal, setShowKolektifRaporModal] = useState(false);
   const [selectedMapelRapor, setSelectedMapelRapor] = useState(availableMapelList[0] || 'Matematika');
   const [hasilKelasFilter, setHasilKelasFilter] = useState<string>('Semua');
@@ -2083,69 +2481,21 @@ export const CbtView: React.FC<CbtViewProps> = ({
     if (!file) return;
     setBankFormError('');
 
-    const isWordDocx =
-      file.name.toLowerCase().endsWith('.docx') ||
-      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-
-    if (isWordDocx) {
-      try {
-        const normalized = await parseWordFileToSoalList(file);
-        if (normalized.length === 0) {
-          setBankFormError('Tidak ada soal valid ditemukan dalam file Word (.docx). Gunakan Template Word sebagai acuan.');
-          return;
-        }
-        setBankImportedSoal(normalized);
-        setBankImportFileName(`${file.name} (${normalized.length} soal)`);
-      } catch {
-        setBankFormError('Format file Word (.docx) tidak valid atau rusak. Pastikan Anda menggunakan file .docx dari Template Word.');
+    try {
+      const { soalList, formatLabel } = await parseSoalImportFile(file);
+      if (soalList.length === 0) {
+        setBankFormError(
+          `Tidak ada butir soal valid ditemukan dalam file ${formatLabel} ("${file.name}"). Gunakan Template Word, Excel, atau JSON sebagai acuan.`
+        );
+        return;
       }
-      return;
+      setBankImportedSoal(soalList);
+      setBankImportFileName(`${file.name} (${soalList.length} soal • ${formatLabel})`);
+    } catch (err: any) {
+      setBankFormError(
+        err?.message || 'File import tidak valid atau tidak terbaca. Gunakan format .docx, .xlsx, .csv, .json, atau .txt.'
+      );
     }
-
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const parsed = JSON.parse(String(ev.target?.result || '[]'));
-        const rawList = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.daftarSoal) ? parsed.daftarSoal : null;
-        if (!rawList || rawList.length === 0) {
-          setBankFormError('File JSON harus berisi array daftar soal (minimal 1 soal).');
-          return;
-        }
-        const normalized: SoalCBT[] = rawList
-          .filter((item: any) => item && typeof item.pertanyaan === 'string' && item.pertanyaan.trim())
-          .map((item: any, idx: number) => {
-            const tipe: TipeSoal = ['pg', 'multiple_choice', 'isian', 'esai'].includes(item.tipe) ? item.tipe : 'pg';
-            return {
-              id: `soal-json-${Date.now()}-${idx}`,
-              tipe,
-              pertanyaan: item.pertanyaan.trim(),
-              opsi:
-                tipe === 'pg' || tipe === 'multiple_choice'
-                  ? Array.isArray(item.opsi) && item.opsi.length >= 2
-                    ? item.opsi
-                    : [
-                        { id: 'A', teks: 'Opsi A' },
-                        { id: 'B', teks: 'Opsi B' },
-                        { id: 'C', teks: 'Opsi C' },
-                        { id: 'D', teks: 'Opsi D' }
-                      ]
-                  : undefined,
-              kunciJawaban: item.kunciJawaban ?? (tipe === 'multiple_choice' ? ['A', 'B'] : 'A'),
-              pembahasan: item.pembahasan || '',
-              bobot: Number(item.bobot) || 25
-            };
-          });
-        if (normalized.length === 0) {
-          setBankFormError('Tidak ada soal valid ditemukan dalam file JSON.');
-          return;
-        }
-        setBankImportedSoal(normalized);
-        setBankImportFileName(`${file.name} (${normalized.length} soal)`);
-      } catch {
-        setBankFormError('Format file JSON tidak valid. Gunakan Template JSON sebagai acuan.');
-      }
-    };
-    reader.readAsText(file);
   };
 
   const handleSaveBankPaket = (e: React.FormEvent) => {
@@ -2184,7 +2534,10 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 mataPelajaran: bankMapel.trim(),
                 kelas: bankKelas.trim(),
                 durasiMenit: durasiNum,
-                daftarSoal: bankImportedSoal.length > 0 ? [...b.daftarSoal, ...bankImportedSoal] : b.daftarSoal,
+                daftarSoal:
+                  bankImportedSoal.length > 0
+                    ? sortSoalByTipeOrder([...b.daftarSoal, ...bankImportedSoal])
+                    : sortSoalByTipeOrder(b.daftarSoal),
                 jumlahSoal:
                   bankImportedSoal.length > 0
                     ? b.daftarSoal.length + bankImportedSoal.length
@@ -2195,6 +2548,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
       );
       showToast('Paket Bank Soal berhasil diperbarui!');
     } else {
+      const sortedImported = sortSoalByTipeOrder(bankImportedSoal);
       const newBank: BankSoal = {
         id: `bs-${Date.now()}`,
         judul: bankJudul.trim(),
@@ -2202,8 +2556,8 @@ export const CbtView: React.FC<CbtViewProps> = ({
         mataPelajaran: bankMapel.trim(),
         kelas: bankKelas.trim(),
         durasiMenit: durasiNum,
-        jumlahSoal: bankImportedSoal.length,
-        daftarSoal: bankImportedSoal,
+        jumlahSoal: sortedImported.length,
+        daftarSoal: sortedImported,
         dibuatOleh: pembuatNama,
         tanggalDibuat: new Date().toISOString().split('T')[0]
       };
@@ -2376,28 +2730,64 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
   const handleFinishExam = () => {
     if (!currentExam) return;
-    let score = 0;
+    let earned = 0;
+    let maxBobot = 0;
+    const enrichedJawaban: Record<string, JawabanSiswa> = { ...siswaJawaban };
+    let needsManualCorrection = false;
+
     currentExam.daftarSoal.forEach(s => {
-      const userAns = siswaJawaban[s.id]?.jawaban;
+      const bobot = Math.max(1, Number(s.bobot) || 10);
+      maxBobot += bobot;
+      const existingAns = siswaJawaban[s.id];
+      const userAns = existingAns?.jawaban;
+      let itemScore = 0;
+      let checked = true;
+
       if (s.tipe === 'pg') {
-        if (userAns === s.kunciJawaban) score += s.bobot;
+        const u = String(userAns || '').trim().toUpperCase();
+        const k = String(s.kunciJawaban || '').trim().toUpperCase();
+        if (u && k && u === k) itemScore = bobot;
       } else if (s.tipe === 'isian') {
-        if (typeof userAns === 'string' && typeof s.kunciJawaban === 'string') {
-          if (userAns.trim().toLowerCase() === s.kunciJawaban.trim().toLowerCase()) {
-            score += s.bobot;
-          }
+        const u = String(userAns || '').trim().toLowerCase();
+        const k = String(s.kunciJawaban || '').trim().toLowerCase();
+        if (u && k && u === k) {
+          itemScore = bobot;
+        } else if (u) {
+          // Non-empty short answer that didn't exact-match can be reviewed manually/AI
+          checked = false;
+          needsManualCorrection = true;
         }
       } else if (s.tipe === 'multiple_choice') {
-        if (Array.isArray(userAns) && Array.isArray(s.kunciJawaban)) {
-          if (JSON.stringify(userAns.sort()) === JSON.stringify((s.kunciJawaban as string[]).sort())) {
-            score += s.bobot;
-          }
+        const uArr = Array.isArray(userAns)
+          ? [...userAns].map(x => String(x).trim().toUpperCase()).sort()
+          : [];
+        const kArr = Array.isArray(s.kunciJawaban)
+          ? [...s.kunciJawaban].map(x => String(x).trim().toUpperCase()).sort()
+          : [];
+        if (uArr.length > 0 && uArr.length === kArr.length && uArr.every((v, i) => v === kArr[i])) {
+          itemScore = bobot;
         }
       } else if (s.tipe === 'esai') {
-        // Default partial score for esai preview
-        score += Math.round(s.bobot * 0.8);
+        const uEsai = String(userAns || '').trim();
+        if (uEsai.length > 0) {
+          checked = false;
+          needsManualCorrection = true;
+        }
+        itemScore = 0;
       }
+
+      earned += itemScore;
+      enrichedJawaban[s.id] = {
+        soalId: s.id,
+        jawaban: userAns ?? (s.tipe === 'multiple_choice' ? [] : ''),
+        raguRagu: existingAns?.raguRagu || false,
+        nilai: itemScore,
+        sudahDikoreksi: checked
+      };
     });
+
+    const normalizedScore =
+      maxBobot > 0 ? Math.min(100, Math.max(0, Math.round((earned / maxBobot) * 100))) : 0;
 
     const newHasil: HasilUjian = {
       id: `hsl-${Date.now()}`,
@@ -2408,9 +2798,9 @@ export const CbtView: React.FC<CbtViewProps> = ({
       siswaNama: activeSiswa.nama,
       nis: activeSiswa.nis,
       kelas: activeSiswa.kelas,
-      jawaban: siswaJawaban,
-      nilaiTotal: score,
-      statusPenilaian: currentExam.daftarSoal.some(s => s.tipe === 'esai') ? 'Perlu Koreksi Manual' : 'Selesai',
+      jawaban: enrichedJawaban,
+      nilaiTotal: normalizedScore,
+      statusPenilaian: needsManualCorrection ? 'Perlu Koreksi Manual' : 'Selesai',
       waktuSubmit: new Date().toISOString(),
       pelanggaranCount: cheatCount,
       logKecurangan: cheatLogs
@@ -2420,7 +2810,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
       setHasilUjianList(prev => [...prev, newHasil]);
     }
 
-    setFinalScore(score);
+    setFinalScore(normalizedScore);
     setExamFinished(true);
   };
 
@@ -2429,8 +2819,12 @@ export const CbtView: React.FC<CbtViewProps> = ({
       
       {/* Global Toast Notification */}
       {toastNotification && (
-        <div className="fixed top-5 right-5 z-[120] bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold animate-bounce">
-          <CheckCircle2 className="w-4 h-4" />
+        <div
+          className={`fixed top-5 right-5 z-[120] px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold text-white ${
+            toastType === 'error' ? 'bg-rose-600' : 'bg-emerald-600'
+          }`}
+        >
+          {toastType === 'error' ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
           <span>{toastNotification}</span>
         </div>
       )}
@@ -2487,6 +2881,10 @@ export const CbtView: React.FC<CbtViewProps> = ({
             {subTab === 'daftar_pengawas' && 'Daftar Pengawas Ujian'}
             {subTab === 'berita_acara' && 'Berita Acara Ujian'}
             {subTab === 'simulasi_ujian' && 'Simulasi CBT Anti-Cheat'}
+            {subTab === 'koreksi_soal' && 'Koreksi Soal CBT'}
+            {subTab === 'input_nilai' && 'Input Nilai CBT'}
+            {subTab === 'rekap_nilai' && 'Rekap Nilai CBT'}
+            {subTab === 'analisis_nilai' && 'Analisis Nilai CBT'}
             {subTab === 'hasil_ujian' && 'Hasil Ujian (Firebase)'}
             {subTab === 'pengaturan_cbt' && 'Pengaturan Ujian'}
           </span>
@@ -2814,7 +3212,16 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   className="text-[11px] text-sky-400 hover:text-sky-300 font-bold hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
                   title="Unduh Template Bank Soal format Microsoft Word (.docx)"
                 >
-                  <FileText className="w-3.5 h-3.5" /> Template Word
+                  <FileText className="w-3.5 h-3.5" /> Word
+                </button>
+                <span className="text-slate-600 text-xs" aria-hidden="true">·</span>
+                <button 
+                  type="button"
+                  onClick={handleDownloadExcelTemplate}
+                  className="text-[11px] text-teal-400 hover:text-teal-300 font-bold hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+                  title="Unduh Template Bank Soal format Excel (.xlsx)"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
                 </button>
                 <span className="text-slate-600 text-xs" aria-hidden="true">·</span>
                 <button 
@@ -2964,19 +3371,15 @@ export const CbtView: React.FC<CbtViewProps> = ({
                       <FileText className="w-4 h-4" />
                       <span>Unduh Word</span>
                     </button>
-                    <label
+                    <button
+                      type="button"
+                      onClick={handleOpenImportSoalModal}
                       className="px-3 py-2 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
-                      title="Import butir soal dari Template Word (.docx) ke paket ini"
+                      title="Import butir soal dari Word (.docx), Excel (.xlsx), CSV, JSON, TXT, atau tempel teks"
                     >
                       <Upload className="w-4 h-4" />
-                      <span>Import Word</span>
-                      <input
-                        type="file"
-                        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        onChange={handleImportWordToActiveBank}
-                        className="hidden"
-                      />
-                    </label>
+                      <span>Import Soal</span>
+                    </button>
                     <button
                       onClick={handleOpenAiModalForActiveBank}
                       className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-indigo-500/20 cursor-pointer whitespace-nowrap shrink-0"
@@ -3010,32 +3413,154 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   </div>
                 </div>
 
-                {/* List of Questions in Bank */}
-                <div className="space-y-4">
-                  {activeBank.daftarSoal.length === 0 && (
-                    <div className="p-8 text-center rounded-2xl border-2 border-dashed border-slate-700 bg-[#181818] space-y-3">
-                      <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 text-indigo-400 flex items-center justify-center mx-auto border border-indigo-500/30">
-                        <BookOpen className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-extrabold text-slate-100">
-                          Paket "{activeBank.judul}" Masih Kosong
-                        </h4>
-                        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-                          Silakan mulai menambahkan butir soal untuk mata pelajaran <span className="font-bold text-emerald-400">{activeBank.mataPelajaran}</span> menggunakan tombol <strong className="text-indigo-400">Tambah Soal AI</strong> atau <strong className="text-emerald-400">Tambah Soal Manual</strong> di atas.
-                        </p>
-                      </div>
+                {/* List of Questions in Bank & Order Bar */}
+                {activeBank.daftarSoal.length === 0 && (
+                  <div className="p-8 text-center rounded-2xl border-2 border-dashed border-slate-700 bg-[#181818] space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 text-indigo-400 flex items-center justify-center mx-auto border border-indigo-500/30">
+                      <BookOpen className="w-6 h-6" />
                     </div>
-                  )}
-                  {activeBank.daftarSoal.map((soal, idx) => (
-                    <div key={soal.id} className="p-4 rounded-xl border border-slate-800 bg-[#181818] space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-200 font-mono font-bold rounded text-[10px]">
-                            Soal #{idx + 1} • {soal.tipe.toUpperCase()}
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-100">
+                        Paket "{activeBank.judul}" Masih Kosong
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                        Silakan mulai menambahkan butir soal untuk mata pelajaran <span className="font-bold text-emerald-400">{activeBank.mataPelajaran}</span> menggunakan tombol <strong className="text-indigo-400">Tambah Soal AI</strong> atau <strong className="text-emerald-400">Tambah Soal Manual</strong> di atas.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {activeBank.daftarSoal.length > 0 && (() => {
+                  const orderedSoal = sortSoalByTipeOrder(activeBank.daftarSoal);
+                  const countPg = orderedSoal.filter(s => s.tipe === 'pg').length;
+                  const countMc = orderedSoal.filter(s => s.tipe === 'multiple_choice').length;
+                  const countIsian = orderedSoal.filter(s => s.tipe === 'isian').length;
+                  const countEsai = orderedSoal.filter(s => s.tipe === 'esai').length;
+                  const validSelectedCount = orderedSoal.filter(s => selectedSoalIds.includes(s.id)).length;
+                  const isAllSelected = orderedSoal.length > 0 && validSelectedCount === orderedSoal.length;
+                  return (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px]">
+                        <div className="flex items-center flex-wrap gap-1.5 text-slate-300">
+                          <span className="font-bold text-slate-400 mr-1 flex items-center gap-1">
+                            <ListOrdered className="w-3.5 h-3.5 text-emerald-400" />
+                            Urutan Soal:
                           </span>
-                          <span className="text-[11px] font-bold text-emerald-400">Bobot: {soal.bobot} Poin</span>
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
+                            1. PG ({countPg})
+                          </span>
+                          <span className="text-slate-500">→</span>
+                          <span className="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-bold">
+                            2. Ganda Kompleks ({countMc})
+                          </span>
+                          <span className="text-slate-500">→</span>
+                          <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold">
+                            3. Isian Singkat ({countIsian})
+                          </span>
+                          <span className="text-slate-500">→</span>
+                          <span className="px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 font-bold">
+                            4. Esai ({countEsai})
+                          </span>
                         </div>
+                        <button
+                          type="button"
+                          onClick={handleSortActiveBankSoal}
+                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0"
+                          title="Susun ulang urutan soal menjadi PG → Ganda Kompleks → Isian Singkat → Esai"
+                        >
+                          <ListOrdered className="w-3 h-3" />
+                          <span>Urutkan</span>
+                        </button>
+                      </div>
+
+                      {/* Pilih & Hapus Massal Bar */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-[#161922] border border-slate-800 text-xs">
+                        <div className="flex items-center flex-wrap gap-2.5">
+                          <button
+                            type="button"
+                            onClick={handleToggleSelectAllSoal}
+                            className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                              isAllSelected
+                                ? 'bg-indigo-500/20 text-indigo-200 border-indigo-500/50'
+                                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border-slate-700'
+                            }`}
+                          >
+                            {isAllSelected ? (
+                              <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
+                            ) : (
+                              <Square className="w-3.5 h-3.5 text-slate-400" />
+                            )}
+                            <span>{isAllSelected ? 'Batal Pilih Semua' : `Pilih Semua (${orderedSoal.length})`}</span>
+                          </button>
+                          {validSelectedCount > 0 && (
+                            <span className="text-[11px] font-semibold text-indigo-300 bg-indigo-500/10 border border-indigo-500/30 px-2.5 py-1 rounded-lg">
+                              {validSelectedCount} soal dipilih
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center flex-wrap gap-2">
+                          {validSelectedCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setBulkDeleteConfirmMode('selected')}
+                              className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Hapus Terpilih ({validSelectedCount})</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setBulkDeleteConfirmMode('all')}
+                            className="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                            title="Hapus semua butir soal dalam paket bank soal ini"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Hapus Semua ({orderedSoal.length})</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        {orderedSoal.map((soal, idx) => {
+                          const isChecked = selectedSoalIds.includes(soal.id);
+                          const tipeBadgeLabel =
+                            soal.tipe === 'pg'
+                              ? 'PG'
+                              : soal.tipe === 'multiple_choice'
+                              ? 'GANDA KOMPLEKS'
+                              : soal.tipe === 'isian'
+                              ? 'ISIAN SINGKAT'
+                              : 'ESAI';
+                          return (
+                            <div
+                              key={soal.id}
+                              className={`p-4 rounded-xl border space-y-2.5 transition-colors ${
+                                isChecked
+                                  ? 'border-indigo-500/60 bg-indigo-950/15'
+                                  : 'border-slate-800 bg-[#181818]'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleSelectSoal(soal.id)}
+                                    className="p-1 rounded-md hover:bg-slate-800 text-slate-300 transition-colors cursor-pointer"
+                                    title={isChecked ? 'Batalkan pilihan soal ini' : 'Pilih soal ini untuk dihapus'}
+                                    aria-label={`Pilih Soal #${idx + 1}`}
+                                  >
+                                    {isChecked ? (
+                                      <CheckSquare className="w-4 h-4 text-indigo-400" />
+                                    ) : (
+                                      <Square className="w-4 h-4 text-slate-500 hover:text-slate-300" />
+                                    )}
+                                  </button>
+                                  <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-200 font-mono font-bold rounded text-[10px]">
+                                    Soal #{idx + 1} • {tipeBadgeLabel}
+                                  </span>
+                                  <span className="text-[11px] font-bold text-emerald-400">Bobot: {soal.bobot} Poin</span>
+                                </div>
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={() => handleOpenEditSoal(soal)}
@@ -3097,8 +3622,12 @@ export const CbtView: React.FC<CbtViewProps> = ({
                         {soal.pembahasan && <div className="text-[10px] text-emerald-300/90 mt-0.5">Pembahasan: {soal.pembahasan}</div>}
                       </div>
                     </div>
-                  ))}
-                </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
 
                 <div className="pt-2 flex justify-center">
                   <button
@@ -3275,10 +3804,101 @@ export const CbtView: React.FC<CbtViewProps> = ({
               </div>
             </div>
 
+            {/* Soal Bergambar Options (AI Generator Tab) */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                  <Image className="w-4 h-4 text-indigo-600" /> Fitur Soal Bergambar
+                </span>
+                {aiImageMode === 'campuran' && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-700 font-semibold">
+                    <span>Jumlah soal bergambar:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={aiJumlah}
+                      value={Math.min(aiImageCount, aiJumlah)}
+                      onChange={e => setAiImageCount(Math.min(Math.max(Number(e.target.value) || 1, 1), aiJumlah))}
+                      className="w-14 p-1 text-center bg-white border border-indigo-300 rounded-lg text-xs font-bold text-indigo-700"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'tidak', label: 'Tanpa Gambar' },
+                  { id: 'campuran', label: 'Sebagian Bergambar' },
+                  { id: 'semua', label: 'Semua Bergambar' }
+                ].map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setAiImageMode(opt.id as 'tidak' | 'campuran' | 'semua')}
+                    className={`py-2 px-2.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                      aiImageMode === opt.id
+                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                        : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="pt-1 border-t border-slate-200/80">
+                <label className="text-[10px] font-bold text-slate-600 block mb-1.5">
+                  Atau Unggah Gambar Stimulus untuk Dianalisis AI (Opsional):
+                </label>
+                {aiStimulusImage ? (
+                  <div className="flex items-center gap-3 p-2 bg-white border border-indigo-200 rounded-lg">
+                    <img
+                      src={aiStimulusImage.dataUrl}
+                      alt="Stimulus AI"
+                      className="w-14 h-14 object-contain rounded border border-slate-200 bg-slate-50"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-slate-800 truncate">{aiStimulusImage.name}</p>
+                      <p className="text-[10px] text-slate-500">AI akan menganalisis gambar ini dan melampirkannya pada soal.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAiStimulusImage(null)}
+                      className="px-2.5 py-1 text-[10px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg cursor-pointer"
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                ) : (
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-indigo-50 border border-dashed border-slate-300 hover:border-indigo-400 rounded-lg text-[11px] font-semibold text-slate-700 cursor-pointer transition-colors">
+                    <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Pilih Gambar Stimulus (PNG/JPG/SVG)</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        handleUploadAiTabStimulus(file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {aiError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{aiError}</span>
+              </div>
+            )}
+
             <button
               onClick={handleGenerateAi}
               disabled={loadingAi}
-              className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer"
+              className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer"
             >
               {loadingAi ? (
                 <span>Generating {aiJumlah} Soal dengan Gemini AI...</span>
@@ -3797,6 +4417,77 @@ export const CbtView: React.FC<CbtViewProps> = ({
         </div>
       )}
 
+      {/* SUBTAB KOREKSI SOAL & PENILAIAN CBT */}
+      {subTab === 'koreksi_soal' && currentRole !== 'siswa' && (
+        <KoreksiSoalCbt
+          hasilUjianList={hasilUjianList}
+          onUpdateHasilUjian={updated => {
+            if (setHasilUjianList) {
+              setHasilUjianList(prev => prev.map(h => (h.id === updated.id ? updated : h)));
+            }
+          }}
+          onBatchUpdateHasilUjian={updatedItems => {
+            if (setHasilUjianList) {
+              const byId = new Map(updatedItems.map(item => [item.id, item]));
+              setHasilUjianList(prev => prev.map(h => byId.get(h.id) || h));
+            }
+          }}
+          bankSoalList={bankSoalList}
+          availableKelasList={availableKelasList}
+          availableMapelList={kolektifMapelOptions}
+          resolveHasilMapel={resolveHasilMapel}
+          initialSelectedHasilId={koreksiTargetHasilId}
+          onNavigateToSimulasi={() => setSubTab('simulasi_ujian')}
+          korektorNama={
+            currentRole === 'guru'
+              ? activeGuru?.nama || userEmail || 'Guru Mapel'
+              : 'Administrator'
+          }
+          showToast={showToast}
+        />
+      )}
+
+      {/* SUBTAB INPUT NILAI, REKAP NILAI, & ANALISIS NILAI CBT */}
+      {(subTab === 'input_nilai' || subTab === 'rekap_nilai' || subTab === 'analisis_nilai') && currentRole !== 'siswa' && (
+        <NilaiCbtSection
+          mode={subTab as NilaiCbtMode}
+          onChangeMode={nextMode => setSubTab(nextMode)}
+          hasilUjianList={hasilUjianList}
+          onUpsertHasilUjianList={updatedOrNewItems => {
+            if (!setHasilUjianList || updatedOrNewItems.length === 0) return;
+            const incomingById = new Map(updatedOrNewItems.map(item => [item.id, item]));
+            setHasilUjianList(prev => {
+              const seenIds = new Set<string>();
+              const updatedPrev = prev.map(existing => {
+                const match = incomingById.get(existing.id);
+                if (match) {
+                  seenIds.add(existing.id);
+                  return match;
+                }
+                return existing;
+              });
+              const appended = updatedOrNewItems.filter(item => !seenIds.has(item.id));
+              return [...updatedPrev, ...appended];
+            });
+          }}
+          siswaList={siswaList}
+          rombelList={rombelList}
+          mapelList={mapelList}
+          bankSoalList={bankSoalList}
+          availableKelasList={availableKelasList}
+          availableMapelList={kolektifMapelOptions}
+          resolveHasilMapel={resolveHasilMapel}
+          schoolSettings={schoolSettings}
+          cbtSettings={cbtSettings}
+          korektorNama={
+            currentRole === 'guru'
+              ? activeGuru?.nama || userEmail || 'Guru Mapel'
+              : 'Administrator'
+          }
+          showToast={showToast}
+        />
+      )}
+
       {/* SUBTAB 5: HASIL UJIAN FROM FIREBASE */}
       {subTab === 'hasil_ujian' && (
         <div className="space-y-6">
@@ -3811,6 +4502,41 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {currentRole !== 'siswa' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setKoreksiTargetHasilId(hasilUjianList[0]?.id || null);
+                        setSubTab('koreksi_soal');
+                      }}
+                      className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
+                    >
+                      <ClipboardCheck className="w-4 h-4" /> Koreksi Soal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSubTab('input_nilai')}
+                      className="px-3 py-2 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+                    >
+                      Input Nilai
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSubTab('rekap_nilai')}
+                      className="px-3 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+                    >
+                      Rekap Nilai
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSubTab('analisis_nilai')}
+                      className="px-3 py-2 bg-violet-500/15 hover:bg-violet-500/25 text-violet-300 border border-violet-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+                    >
+                      Analisis Nilai
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => {
                     if (hasilMapelFilter !== 'Semua') {
@@ -4008,6 +4734,19 @@ export const CbtView: React.FC<CbtViewProps> = ({
                         </td>
                         <td className="p-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
+                            {currentRole !== 'siswa' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setKoreksiTargetHasilId(h.id);
+                                  setSubTab('koreksi_soal');
+                                }}
+                                className="px-2.5 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Koreksi Jawaban & Skor Ujian Siswa"
+                              >
+                                <ClipboardCheck className="w-3 h-3" /> Koreksi
+                              </button>
+                            )}
                             <button
                               onClick={() => setSelectedRaporHasil(h)}
                               className="px-2.5 py-1 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
@@ -4417,14 +5156,19 @@ export const CbtView: React.FC<CbtViewProps> = ({
                             type="file" 
                             accept="image/*" 
                             className="hidden" 
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setNewImageUrl(reader.result as string);
-                                };
-                                reader.readAsDataURL(file);
+                                try {
+                                  const compressed = await compressImageToDataUrl(file);
+                                  setNewImageUrl(compressed.dataUrl);
+                                } catch {
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    setNewImageUrl(reader.result as string);
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
                               }
                             }} 
                           />
@@ -4512,17 +5256,17 @@ export const CbtView: React.FC<CbtViewProps> = ({
           <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
             
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-200/80 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between">
+            <div className="p-4 sm:p-5 border-b border-slate-200/80 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-500 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
-                  <Sparkles className="w-6 h-6 animate-pulse" />
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-indigo-500 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 shrink-0">
+                  <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-extrabold text-base text-white">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-extrabold text-sm sm:text-base text-white">
                       Tambah Soal dengan Bantuan AI (Gemini)
                     </h3>
-                    <span className="text-[10px] font-bold bg-indigo-500/30 text-indigo-300 border border-indigo-400/30 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 px-2 py-0.5 rounded-full">
                       Kurikulum Merdeka
                     </span>
                   </div>
@@ -4534,7 +5278,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
               <button 
                 type="button" 
                 onClick={() => setShowAiModalInBank(false)}
-                className="text-slate-400 hover:text-white font-bold p-2 hover:bg-white/10 rounded-xl transition-colors cursor-pointer text-xs"
+                className="text-slate-400 hover:text-white font-bold p-2 hover:bg-white/10 rounded-xl transition-colors cursor-pointer text-xs shrink-0"
                 title="Tutup Modal"
               >
                 <X className="w-5 h-5" />
@@ -4542,7 +5286,25 @@ export const CbtView: React.FC<CbtViewProps> = ({
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 custom-scrollbar bg-slate-50/60">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 custom-scrollbar bg-slate-50/60">
+
+              {/* Inline Error Banner */}
+              {inBankAiError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <span className="font-semibold leading-relaxed">{inBankAiError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setInBankAiError(null)}
+                    className="text-rose-500 hover:text-rose-700 p-0.5 cursor-pointer"
+                    title="Tutup pesan"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
               
               {/* Step 1: Parameter Generator (If not reviewed yet) */}
               {inBankAiGeneratedList.length === 0 ? (
@@ -4552,7 +5314,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
                         <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
                           <span>{getSubjectMetadata(inBankAiMapel).icon}</span>
                           <span>Tersambung ke Mata Pelajaran: {inBankAiMapel}</span>
@@ -4658,7 +5420,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                             ({getSubjectTopicSuggestions(inBankAiMapel).length} materi)
                           </span>
                         </div>
-                        <span className="text-[10px] text-slate-400">Klik rekomendasi di bawah untuk memilih</span>
+                        <span className="text-[10px] text-slate-400 hidden sm:inline">Klik rekomendasi di bawah untuk memilih</span>
                       </div>
 
                       <div className="flex flex-wrap gap-1.5">
@@ -4683,6 +5445,155 @@ export const CbtView: React.FC<CbtViewProps> = ({
                           );
                         })}
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Fitur Soal Bergambar (Diagram Otomatis AI & Analisis Gambar Stimulus) */}
+                  <div className="p-4 rounded-2xl bg-white border border-indigo-200/80 shadow-sm space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center">
+                          <Image className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-extrabold text-slate-900">Pengaturan Soal Bergambar</div>
+                          <div className="text-[11px] text-slate-500">
+                            AI dapat membuat diagram/ilustrasi otomatis atau membuat soal dari gambar yang Anda unggah
+                          </div>
+                        </div>
+                      </div>
+
+                      {inBankAiImageMode === 'campuran' && (
+                        <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-xl text-[11px]">
+                          <span className="font-bold text-indigo-900">Jml Bergambar:</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={inBankAiJumlah}
+                            value={Math.min(inBankAiImageCount, inBankAiJumlah)}
+                            onChange={e =>
+                              setInBankAiImageCount(
+                                Math.min(Math.max(Number(e.target.value) || 1, 1), inBankAiJumlah)
+                              )
+                            }
+                            className="w-12 p-0.5 text-center bg-white border border-indigo-300 rounded-md text-xs font-extrabold text-indigo-700"
+                          />
+                          <span className="text-indigo-700 font-semibold">/ {inBankAiJumlah}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {[
+                        {
+                          id: 'tidak',
+                          title: 'Tanpa Gambar Otomatis',
+                          desc: 'Soal berbasis teks saja'
+                        },
+                        {
+                          id: 'campuran',
+                          title: 'Sebagian Bergambar',
+                          desc: 'Campuran teks & diagram AI'
+                        },
+                        {
+                          id: 'semua',
+                          title: 'Semua Soal Bergambar',
+                          desc: 'Setiap butir berilustrasi AI'
+                        }
+                      ].map(mode => {
+                        const active = inBankAiImageMode === mode.id;
+                        return (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            onClick={() => setInBankAiImageMode(mode.id as 'tidak' | 'campuran' | 'semua')}
+                            className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                              active
+                                ? 'bg-indigo-50 border-indigo-500 text-indigo-950 ring-1 ring-indigo-500 shadow-sm'
+                                : 'bg-slate-50/70 border-slate-200 text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            <div className="text-xs font-extrabold flex items-center justify-between">
+                              <span>{mode.title}</span>
+                              {active && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">{mode.desc}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Upload Gambar Stimulus untuk Dianalisis AI */}
+                    <div className="pt-2.5 border-t border-slate-100 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-bold text-slate-700">
+                          Unggah Gambar Stimulus untuk Dianalisis AI (Opsional)
+                        </label>
+                        <span className="text-[10px] text-slate-400">
+                          Grafik, topologi, bangun datar, foto praktik, peta, dll.
+                        </span>
+                      </div>
+
+                      {inBankAiStimulusImage ? (
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-2.5 bg-indigo-50/50 border border-indigo-200 rounded-xl">
+                          <img
+                            src={inBankAiStimulusImage.dataUrl}
+                            alt="Gambar Stimulus"
+                            className="w-24 h-20 object-contain rounded-lg border border-slate-200 bg-white shrink-0"
+                          />
+                          <div className="flex-1 min-w-0 space-y-1.5">
+                            <div className="text-xs font-bold text-slate-900 truncate">
+                              {inBankAiStimulusImage.name}
+                            </div>
+                            <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={inBankAiAttachStimulus}
+                                onChange={e => setInBankAiAttachStimulus(e.target.checked)}
+                                className="w-3.5 h-3.5 text-indigo-600 rounded"
+                              />
+                              <span>Lampirkan gambar ini otomatis ke butir soal yang merujuk gambar</span>
+                            </label>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <label className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-[11px] font-bold text-slate-700 cursor-pointer">
+                              Ganti
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={e => {
+                                  handleUploadInBankStimulus(e.target.files?.[0]);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setInBankAiStimulusImage(null)}
+                              className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg text-[11px] font-bold cursor-pointer"
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <label className="border border-dashed border-slate-300 hover:border-indigo-400 bg-slate-50/60 hover:bg-indigo-50/40 rounded-xl p-3 flex items-center justify-center gap-2.5 cursor-pointer transition-colors">
+                          <Upload className="w-4 h-4 text-indigo-600" />
+                          <span className="text-xs font-bold text-slate-700">
+                            Unggah Gambar Stimulus (PNG / JPG / WebP / SVG)
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={e => {
+                              handleUploadInBankStimulus(e.target.files?.[0]);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                      )}
                     </div>
                   </div>
 
@@ -4826,40 +5737,23 @@ export const CbtView: React.FC<CbtViewProps> = ({
                     />
                   </div>
 
-                  {/* Action Button: Generate */}
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      disabled={inBankAiLoading}
-                      onClick={handleGenerateInBankAi}
-                      className="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 cursor-pointer"
-                    >
-                      {inBankAiLoading ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          <span>AI Sedang Merumuskan {inBankAiJumlah} Soal & Kunci Jawaban...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-5 h-5 text-amber-300" />
-                          <span>Generate {inBankAiJumlah} Soal AI untuk "{inBankAiMapel}"</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
                 </div>
               ) : (
                 /* Step 2: Review Generated Questions before adding to active Bank */
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-white rounded-2xl border border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <span className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0">
                         ✓
                       </span>
                       <div>
-                        <div className="text-xs font-extrabold text-slate-900">
-                          {inBankAiGeneratedList.length} Soal AI Berhasil Dibuat
+                        <div className="text-xs font-extrabold text-slate-900 flex flex-wrap items-center gap-2">
+                          <span>{inBankAiGeneratedList.length} Soal AI Berhasil Dibuat</span>
+                          {inBankAiGeneratedList.some(s => Boolean(s.imageUrl)) && (
+                            <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full">
+                              {inBankAiGeneratedList.filter(s => Boolean(s.imageUrl)).length} Soal Bergambar
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-slate-500">
                           {inBankAiSelectedIndices.length} dari {inBankAiGeneratedList.length} soal terpilih untuk dimasukkan ke "{activeBank.judul}"
@@ -4887,6 +5781,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                         onClick={() => {
                           setInBankAiGeneratedList([]);
                           setInBankAiSelectedIndices([]);
+                          setInBankAiError(null);
                         }}
                         className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-all cursor-pointer flex items-center gap-1"
                       >
@@ -4899,6 +5794,8 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   <div className="space-y-3">
                     {inBankAiGeneratedList.map((soal, idx) => {
                       const isSelected = inBankAiSelectedIndices.includes(idx);
+                      const isGeneratingThisImg = inBankAiGeneratingImgIdx === idx;
+                      const isEditingUrl = inBankAiUrlInputIdx === idx;
                       return (
                         <div 
                           key={soal.id || idx}
@@ -4908,7 +5805,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                               : 'bg-slate-100/70 border-slate-200 opacity-70'
                           }`}
                         >
-                          <div className="flex items-center justify-between border-b pb-2 mb-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 mb-2.5">
                             <label className="flex items-center gap-2 cursor-pointer">
                               <input 
                                 type="checkbox"
@@ -4923,6 +5820,11 @@ export const CbtView: React.FC<CbtViewProps> = ({
                               <span className="text-xs font-extrabold text-slate-800">
                                 Butir Soal #{idx + 1}
                               </span>
+                              {soal.imageUrl && (
+                                <span className="text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                  <Image className="w-3 h-3" /> Bergambar
+                                </span>
+                              )}
                             </label>
 
                             <div className="flex items-center gap-2">
@@ -4948,6 +5850,123 @@ export const CbtView: React.FC<CbtViewProps> = ({
                             />
                           </div>
 
+                          {/* Soal Bergambar Preview & Action Toolbar */}
+                          <div className="mb-3 p-3 rounded-xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+                            {soal.imageUrl && (
+                              <div className="space-y-1.5">
+                                <div className="rounded-xl overflow-hidden border border-slate-200 bg-white p-2 flex items-center justify-center">
+                                  <img
+                                    src={soal.imageUrl}
+                                    alt={`Ilustrasi Soal #${idx + 1}`}
+                                    className="max-h-56 w-auto max-w-full object-contain rounded-lg"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                                {soal.deskripsiGambar && (
+                                  <p className="text-[10px] text-slate-500 italic px-1">
+                                    Keterangan gambar: {soal.deskripsiGambar}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={isGeneratingThisImg}
+                                onClick={() => handleGenerateIllustrationForReviewItem(idx)}
+                                className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                              >
+                                {isGeneratingThisImg ? (
+                                  <>
+                                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    <span>Membuat Gambar AI...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                    <span>{soal.imageUrl ? 'Buat Ulang Gambar AI' : 'Buat Gambar AI'}</span>
+                                  </>
+                                )}
+                              </button>
+
+                              <label className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors">
+                                <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>{soal.imageUrl ? 'Ganti Gambar' : 'Unggah Gambar'}</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={e => {
+                                    handleUploadImageForReviewItem(idx, e.target.files?.[0]);
+                                    e.target.value = '';
+                                  }}
+                                />
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (isEditingUrl) {
+                                    setInBankAiUrlInputIdx(null);
+                                  } else {
+                                    setInBankAiUrlInputIdx(idx);
+                                    setInBankAiUrlDraft(soal.imageUrl && soal.imageUrl.startsWith('http') ? soal.imageUrl : '');
+                                  }
+                                }}
+                                className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-bold cursor-pointer transition-colors"
+                              >
+                                {isEditingUrl ? 'Tutup URL' : 'URL Gambar'}
+                              </button>
+
+                              {soal.imageUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setInBankAiGeneratedList(prev =>
+                                      prev.map((s, i) =>
+                                        i === idx ? { ...s, imageUrl: undefined, deskripsiGambar: undefined } : s
+                                      )
+                                    );
+                                  }}
+                                  className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ml-auto"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>Hapus Gambar</span>
+                                </button>
+                              )}
+                            </div>
+
+                            {isEditingUrl && (
+                              <div className="flex items-center gap-2 pt-1">
+                                <input
+                                  type="url"
+                                  value={inBankAiUrlDraft}
+                                  onChange={e => setInBankAiUrlDraft(e.target.value)}
+                                  placeholder="Tempel URL gambar (https://...)"
+                                  className="flex-1 p-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const trimmed = inBankAiUrlDraft.trim();
+                                    if (trimmed) {
+                                      setInBankAiGeneratedList(prev =>
+                                        prev.map((s, i) =>
+                                          i === idx ? { ...s, imageUrl: trimmed, deskripsiGambar: 'URL Gambar Eksternal' } : s
+                                        )
+                                      );
+                                    }
+                                    setInBankAiUrlInputIdx(null);
+                                  }}
+                                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold cursor-pointer"
+                                >
+                                  Pasang
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
                           {/* Options if PG or Multiple Choice */}
                           {(soal.tipe === 'pg' || soal.tipe === 'multiple_choice') && soal.opsi && (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
@@ -4969,7 +5988,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                                       <span>{op.teks}</span>
                                     </div>
                                     {isCorrect && (
-                                      <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold">
+                                      <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold shrink-0">
                                         Kunci ✓
                                       </span>
                                     )}
@@ -5005,17 +6024,38 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3">
+            {/* Sticky Modal Footer */}
+            <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
               <button 
                 type="button" 
                 onClick={() => setShowAiModalInBank(false)}
-                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
               >
                 Batal
               </button>
 
-              {inBankAiGeneratedList.length > 0 && (
+              {inBankAiGeneratedList.length === 0 ? (
+                <button
+                  type="button"
+                  disabled={inBankAiLoading}
+                  onClick={handleGenerateInBankAi}
+                  className="px-5 sm:px-6 py-2.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs sm:text-sm transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/25 cursor-pointer"
+                >
+                  {inBankAiLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>AI Sedang Merumuskan {inBankAiJumlah} Soal...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 text-amber-300" />
+                      <span>
+                        Generate {inBankAiJumlah} Soal AI{inBankAiImageMode !== 'tidak' || inBankAiStimulusImage ? ' (Bergambar)' : ''}
+                      </span>
+                    </>
+                  )}
+                </button>
+              ) : (
                 <button
                   type="button"
                   onClick={handleApplyAiQuestionsToActiveBank}
@@ -5683,7 +6723,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 type="button"
                 onClick={() => {
                   if (bankSoalList.length <= 1) {
-                    alert('Minimal harus menyisakan 1 paket Bank Soal.');
+                    showToast('Minimal harus menyisakan 1 paket Bank Soal.', 'error');
                     setDeleteTargetBankSoal(null);
                     return;
                   }
@@ -5746,6 +6786,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                       }
                       return b;
                     }));
+                    setSelectedSoalIds(prev => prev.filter(id => id !== deleteTargetSoal.id));
                     showToast('Soal berhasil dihapus dari Bank Soal!');
                   }
                   setDeleteTargetSoal(null);
@@ -5758,6 +6799,60 @@ export const CbtView: React.FC<CbtViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Bulk Delete Confirmation Modal for Selected / All Soal */}
+      {bulkDeleteConfirmMode && activeBank && (() => {
+        const activeIds = new Set((activeBank.daftarSoal || []).map(s => s.id));
+        const selectedCount = selectedSoalIds.filter(id => activeIds.has(id)).length;
+        const targetCount = bulkDeleteConfirmMode === 'all' ? activeBank.daftarSoal.length : selectedCount;
+        return (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+            <div className="bg-[#121212] border border-rose-500/40 rounded-2xl p-6 w-full max-w-md shadow-2xl shadow-rose-950/30 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-2xl shrink-0">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div className="space-y-2 flex-1">
+                  <h3 className="text-base font-bold text-white">
+                    {bulkDeleteConfirmMode === 'all'
+                      ? 'Hapus Semua Soal dari Paket?'
+                      : `Hapus ${targetCount} Soal Terpilih?`}
+                  </h3>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {bulkDeleteConfirmMode === 'all'
+                      ? `Tindakan ini akan mengosongkan seluruh ${targetCount} butir soal di paket "${activeBank.judul}". Paket bank soal tetap tersimpan agar Anda bisa mengisi soal baru.`
+                      : `Sebanyak ${targetCount} butir soal yang Anda pilih akan dihapus dari paket "${activeBank.judul}".`}
+                  </p>
+                  <div className="p-3 bg-[#181818] rounded-xl border border-slate-800 space-y-1">
+                    <div className="text-xs font-bold text-rose-300">{activeBank.judul}</div>
+                    <div className="text-[11px] text-slate-400">
+                      {targetCount} dari {activeBank.daftarSoal.length} butir soal akan dihapus
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setBulkDeleteConfirmMode(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmBulkDeleteSoal}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-rose-900/40 transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{bulkDeleteConfirmMode === 'all' ? 'Ya, Hapus Semua' : `Ya, Hapus ${targetCount} Soal`}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Delete Confirmation Modal for Hasil Ujian */}
       {deleteTargetHasilUjian && (
@@ -6042,12 +7137,12 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   </div>
                 </div>
 
-                {/* Optional Word / JSON Question Import */}
+                {/* Optional Word / Excel / JSON Question Import */}
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-dashed border-slate-300 space-y-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
                       <FileText className="w-4 h-4 text-sky-600" />
-                      <span>Import Soal dari Word (.docx) atau JSON (Opsional)</span>
+                      <span>Import Soal (Word, Excel, CSV, JSON, TXT) — Opsional</span>
                     </span>
                     <div className="flex items-center gap-2 shrink-0">
                       <button
@@ -6055,7 +7150,15 @@ export const CbtView: React.FC<CbtViewProps> = ({
                         onClick={handleDownloadWordTemplate}
                         className="text-[11px] font-bold text-sky-700 hover:underline flex items-center gap-1 cursor-pointer"
                       >
-                        <FileText className="w-3 h-3" /> Template Word
+                        <FileText className="w-3 h-3" /> Word
+                      </button>
+                      <span className="text-slate-300 text-xs" aria-hidden="true">·</span>
+                      <button
+                        type="button"
+                        onClick={handleDownloadExcelTemplate}
+                        className="text-[11px] font-bold text-teal-700 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <FileSpreadsheet className="w-3 h-3" /> Excel
                       </button>
                       <span className="text-slate-300 text-xs" aria-hidden="true">·</span>
                       <button
@@ -6069,16 +7172,16 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   </div>
                   <p className="text-[11px] text-slate-500">
                     {editingBankId
-                      ? 'Jika Anda mengunggah file Word (.docx) atau JSON, soal di dalamnya akan ditambahkan ke paket ini.'
-                      : 'Unduh Template Word (.docx) untuk mengisi soal di Microsoft Word, atau biarkan kosong untuk mengisi nanti via AI / Manual.'}
+                      ? 'Jika Anda mengunggah file soal (.docx, .xlsx, .csv, .json, .txt), soal di dalamnya akan ditambahkan ke paket ini.'
+                      : 'Unduh Template Word / Excel / JSON untuk mengisi soal, atau biarkan kosong untuk mengisi nanti via Import / AI / Manual.'}
                   </p>
                   <div className="flex items-center gap-2 flex-wrap">
                     <label className="px-3 py-1.5 bg-white hover:bg-sky-50 text-slate-700 hover:text-sky-800 border border-slate-300 rounded-xl text-[11px] font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all">
                       <Upload className="w-3.5 h-3.5 text-sky-600" />
-                      <span>{bankImportFileName ? 'Ganti File Word / JSON' : 'Pilih File Word (.docx) / JSON'}</span>
+                      <span>{bankImportFileName ? 'Ganti File Soal' : 'Pilih File (.docx / .xlsx / .csv / .json / .txt)'}</span>
                       <input
                         type="file"
-                        accept=".docx,.json,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/json"
+                        accept=".docx,.xlsx,.csv,.json,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/json,text/plain"
                         onChange={handleImportJsonForBank}
                         className="hidden"
                       />
@@ -6122,6 +7225,326 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL IMPORT SOAL MULTI-FORMAT & PREVIEW (WORD, EXCEL, CSV, JSON, TXT / TEMPEL TEKS) */}
+      {showImportSoalModal && activeBank && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-900 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-sky-500/20 border border-sky-400/30 text-sky-300 flex items-center justify-center shrink-0">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-white">
+                    Import Soal ke Paket Bank Soal
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Paket: <span className="font-bold text-emerald-300">{activeBank.judul}</span> • Mendukung Word (.docx), Excel (.xlsx), CSV, JSON &amp; Teks
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImportSoalModal(false)}
+                className="text-slate-400 hover:text-white p-2 hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
+                title="Tutup"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-slate-50/70 custom-scrollbar">
+              {/* Mode Switcher + Template Downloads */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="inline-flex bg-slate-200/80 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportSoalTab('file');
+                      setImportError(null);
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      importSoalTab === 'file' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Unggah File Soal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportSoalTab('text');
+                      setImportError(null);
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      importSoalTab === 'text' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Tempel Teks Soal
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 text-[11px] font-bold">
+                  <span className="text-slate-500">Unduh Template:</span>
+                  <button
+                    type="button"
+                    onClick={handleDownloadWordTemplate}
+                    className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-lg flex items-center gap-1 cursor-pointer"
+                  >
+                    <FileText className="w-3 h-3" /> Word (.docx)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadExcelTemplate}
+                    className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 rounded-lg flex items-center gap-1 cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-3 h-3" /> Excel (.xlsx)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadTemplate}
+                    className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg flex items-center gap-1 cursor-pointer"
+                  >
+                    <Download className="w-3 h-3" /> JSON
+                  </button>
+                </div>
+              </div>
+
+              {importError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <span className="font-semibold leading-relaxed">{importError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setImportError(null)}
+                    className="text-rose-500 hover:text-rose-700 p-0.5 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {importSoalTab === 'file' ? (
+                <label className="block border-2 border-dashed border-sky-300 hover:border-sky-500 bg-white hover:bg-sky-50/40 rounded-2xl p-6 text-center cursor-pointer transition-all">
+                  <div className="w-12 h-12 rounded-2xl bg-sky-100 text-sky-600 flex items-center justify-center mx-auto mb-2.5">
+                    <Upload className="w-6 h-6" />
+                  </div>
+                  <div className="text-sm font-extrabold text-slate-900">
+                    {importLoading
+                      ? 'Sedang memproses file soal...'
+                      : importFileName && importParsedList.length > 0
+                      ? `File terpilih: ${importFileName}`
+                      : 'Klik untuk memilih file soal (.docx, .xlsx, .csv, .json, .txt)'}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Mendukung Template Word (tabel), dokumen Word bernomor (1. ... A. ... B. ... Kunci: A), Excel (.xlsx), CSV, JSON, dan TXT.
+                  </p>
+                  <input
+                    type="file"
+                    accept=".docx,.xlsx,.csv,.json,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/json,text/plain"
+                    onChange={handleImportFileIntoPreviewModal}
+                    className="hidden"
+                  />
+                </label>
+              ) : (
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-2.5">
+                  <label className="text-xs font-extrabold text-slate-800 block">
+                    Tempelkan Daftar Soal dari Word / Google Docs / PDF / Teks:
+                  </label>
+                  <textarea
+                    rows={6}
+                    value={importRawText}
+                    onChange={e => setImportRawText(e.target.value)}
+                    placeholder={`Contoh format:\n1. Ibu kota Provinsi Jawa Barat adalah ...\nA. Surabaya\nB. Bandung\nC. Semarang\nD. Medan\nKunci: B\nBobot: 10\n\n2. Pilih dua perangkat jaringan komputer:\nA. Router\nB. Switch\nC. Mouse\nD. Keyboard\nKunci: A, B`}
+                    className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleParsePastedTextForImport}
+                      className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      Proses &amp; Pratinjau Teks Soal
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Preview Parsed Questions */}
+              {importParsedList.length > 0 && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-white rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-extrabold text-xs">
+                        ✓
+                      </span>
+                      <div>
+                        <div className="text-xs font-extrabold text-slate-900 flex flex-wrap items-center gap-2">
+                          <span>{importParsedList.length} Soal Terbaca ({importFormatLabel})</span>
+                          {importParsedList.some(s => Boolean(s.imageUrl)) && (
+                            <span className="text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-full">
+                              {importParsedList.filter(s => Boolean(s.imageUrl)).length} Bergambar
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          {importSelectedIndices.length} soal terpilih akan {importReplaceExisting ? 'menggantikan semua soal lama' : 'ditambahkan ke paket ini'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-900 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={importReplaceExisting}
+                          onChange={e => setImportReplaceExisting(e.target.checked)}
+                          className="w-3.5 h-3.5 text-amber-600 rounded"
+                        />
+                        <span>Ganti semua soal yang ada</span>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (importSelectedIndices.length === importParsedList.length) {
+                            setImportSelectedIndices([]);
+                          } else {
+                            setImportSelectedIndices(importParsedList.map((_, i) => i));
+                          }
+                        }}
+                        className="px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer"
+                      >
+                        {importSelectedIndices.length === importParsedList.length ? 'Batal Semua' : 'Pilih Semua'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1 custom-scrollbar">
+                    {importParsedList.map((soal, idx) => {
+                      const isChecked = importSelectedIndices.includes(idx);
+                      return (
+                        <div
+                          key={soal.id || idx}
+                          className={`p-3.5 rounded-2xl border transition-all ${
+                            isChecked
+                              ? 'bg-white border-sky-400 shadow-sm'
+                              : 'bg-slate-100/70 border-slate-200 opacity-65'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-100">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() =>
+                                  setImportSelectedIndices(prev =>
+                                    prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+                                  )
+                                }
+                                className="w-4 h-4 text-sky-600 rounded cursor-pointer"
+                              />
+                              <span className="text-xs font-extrabold text-slate-900">Soal #{idx + 1}</span>
+                            </label>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                                {soal.tipe}
+                              </span>
+                              <span className="text-[11px] font-bold text-emerald-700">Bobot: {soal.bobot}</span>
+                            </div>
+                          </div>
+
+                          <p className="text-xs font-bold text-slate-800 mb-2">{soal.pertanyaan}</p>
+
+                          {soal.imageUrl && (
+                            <div className="mb-2 p-2 rounded-xl border border-slate-200 bg-slate-50 flex justify-center">
+                              <img
+                                src={soal.imageUrl}
+                                alt={`Gambar Import #${idx + 1}`}
+                                className="max-h-36 object-contain rounded"
+                              />
+                            </div>
+                          )}
+
+                          {(soal.tipe === 'pg' || soal.tipe === 'multiple_choice') && soal.opsi && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-2">
+                              {soal.opsi.map(op => {
+                                const isKey = Array.isArray(soal.kunciJawaban)
+                                  ? soal.kunciJawaban.includes(op.id)
+                                  : soal.kunciJawaban === op.id;
+                                return (
+                                  <div
+                                    key={op.id}
+                                    className={`px-2.5 py-1.5 rounded-lg text-[11px] border flex items-center justify-between ${
+                                      isKey
+                                        ? 'bg-emerald-50 border-emerald-400 text-emerald-950 font-bold'
+                                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                                    }`}
+                                  >
+                                    <span>
+                                      <strong className="font-mono">{op.id}.</strong> {op.teks}
+                                    </span>
+                                    {isKey && (
+                                      <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold ml-1 shrink-0">
+                                        Kunci
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {(soal.tipe === 'isian' || soal.tipe === 'esai') && (
+                            <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-slate-800">
+                              <strong className="text-amber-900">Kunci:</strong> {String(soal.kunciJawaban)}
+                            </div>
+                          )}
+
+                          {soal.pembahasan && (
+                            <div className="mt-1.5 text-[11px] text-slate-500">
+                              <strong className="text-slate-700">Pembahasan:</strong> {soal.pembahasan}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Sticky Footer */}
+            <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowImportSoalModal(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+
+              <button
+                type="button"
+                disabled={importSelectedIndices.length === 0}
+                onClick={handleConfirmImportSoalToActiveBank}
+                className="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white shadow-lg shadow-emerald-600/20 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>
+                  {importReplaceExisting
+                    ? `Ganti dengan ${importSelectedIndices.length} Soal`
+                    : `Masukkan ${importSelectedIndices.length} Soal ke Paket`}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'path';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import { suggestAyatForMateri, PRINSIP_PEMBELAJARAN_MENDALAM } from './src/lib/quranAyatPresets';
 import { buildOfficialCpData, formatCpToPlainText } from './src/lib/capaianPembelajaranHelper';
@@ -20,10 +20,13 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
+function getNormalizedGeminiKey() {
+  return (process.env.GEMINI_API_KEY || '').trim().replace(/^["']|["']$/g, '');
+}
+
 function getGenAI() {
-  const currentKey = process.env.GEMINI_API_KEY || '';
   return new GoogleGenAI({
-    apiKey: currentKey,
+    apiKey: getNormalizedGeminiKey(),
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build',
@@ -33,9 +36,9 @@ function getGenAI() {
 }
 
 // Helper function to safely call Gemini generateContent with fallback models in case of high demand (503/429/etc.)
-async function generateContentWithFallback(options: { model: string; contents: string; config?: any }) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey.trim() === '' || apiKey === 'MY_GEMINI_API_KEY' || apiKey === 'YOUR_API_KEY' || apiKey.startsWith('MY_') || apiKey.includes('invalid')) {
+async function generateContentWithFallback(options: { model: string; contents: any; config?: any }) {
+  const apiKey = getNormalizedGeminiKey();
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY' || apiKey === 'YOUR_API_KEY' || apiKey.startsWith('MY_') || apiKey.includes('invalid')) {
     const err = new Error('GEMINI_API_KEY_NOT_CONFIGURED');
     (err as any).isKeyConfigError = true;
     throw err;
@@ -57,7 +60,11 @@ async function generateContentWithFallback(options: { model: string; contents: s
     } catch (err: any) {
       lastError = err;
       const errMsg = err?.message || String(err);
-      const isKeyInvalid = errMsg.includes('API key not valid') || errMsg.includes('API_KEY_INVALID') || err?.status === 'INVALID_ARGUMENT';
+      const isKeyInvalid =
+        errMsg.includes('API key not valid') ||
+        errMsg.includes('API_KEY_INVALID') ||
+        errMsg.includes('API_KEY_SERVICE_BLOCKED') ||
+        errMsg.includes('PERMISSION_DENIED');
       if (isKeyInvalid) {
         // Stop immediately without retrying secondary models with the same invalid key
         const keyErr = new Error('GEMINI_API_KEY_INVALID');
@@ -594,152 +601,536 @@ function generateSmartFallbackQuestions(params: {
     variantIdx++;
   }
 
-  return selected.slice(0, jumlahSoal);
+  return sortAiSoalByTipeOrder(selected.slice(0, jumlahSoal));
 }
 
-// 2. Gemini AI Assistant Endpoint for CBT Question Generator
-app.post('/api/ai/generate-questions', async (req, res) => {
-  let mataPelajaran = '';
-  let kelas = '';
-  let topik = '';
-  let jumlahSoal = 10;
-  let tipeSoal: string[] = ['pg', 'multiple_choice', 'isian', 'esai'];
-  let tingkatKesulitan = 'Sedang (C3: Aplikasi Konsep)';
-  let instruksiTambahan = '';
-  let bobotPerSoal = 10;
+const AI_TIPE_SOAL_ORDER: Record<string, number> = {
+  pg: 0,
+  multiple_choice: 1,
+  isian: 2,
+  esai: 3,
+};
 
+function sortAiSoalByTipeOrder<T extends { tipe?: string }>(list: T[]): T[] {
+  return [...list].sort(
+    (a, b) =>
+      (AI_TIPE_SOAL_ORDER[String(a?.tipe || 'pg').toLowerCase().trim()] ?? 99) -
+      (AI_TIPE_SOAL_ORDER[String(b?.tipe || 'pg').toLowerCase().trim()] ?? 99)
+  );
+}
+
+// Helper: Sanitize SVG string from AI and convert to lightweight data URL
+function svgToSafeDataUrl(rawSvg?: string): string | undefined {
+  if (!rawSvg || typeof rawSvg !== 'string') return undefined;
+  const match = rawSvg.match(/<svg[\s\S]*?<\/svg>/i);
+  if (!match) return undefined;
+  let svg = match[0]
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/javascript:/gi, '');
+
+  if (!/xmlns\s*=/i.test(svg)) {
+    svg = svg.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+  }
+  if (!/viewBox\s*=/i.test(svg)) {
+    svg = svg.replace(/<svg/i, '<svg viewBox="0 0 480 260"');
+  }
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function normalizeAiQuestionItem(item: any, fallbackBobot: number, allowedTypes: string[]) {
+  const rawTipe = String(item?.tipe || '').toLowerCase().trim();
+  const tipe = ['pg', 'multiple_choice', 'isian', 'esai'].includes(rawTipe)
+    ? rawTipe
+    : (allowedTypes[0] || 'pg');
+
+  let opsi: Array<{ id: string; teks: string }> | undefined;
+  if (tipe === 'pg' || tipe === 'multiple_choice') {
+    const rawOpsi = Array.isArray(item?.opsi) ? item.opsi : [];
+    const letters = ['A', 'B', 'C', 'D'];
+    opsi = letters.map((letter, idx) => {
+      const found = rawOpsi.find((o: any) => String(o?.id || '').toUpperCase().trim() === letter) || rawOpsi[idx];
+      return {
+        id: letter,
+        teks: String(found?.teks || `Pilihan ${letter}`).trim()
+      };
+    });
+  }
+
+  let kunciJawaban: string | string[] = '';
+  const arrKunci = Array.isArray(item?.kunciJawabanArray)
+    ? item.kunciJawabanArray.map((k: any) => String(k).toUpperCase().trim()).filter((k: string) => ['A', 'B', 'C', 'D'].includes(k))
+    : [];
+  const textKunci = String(item?.kunciJawabanTeks ?? item?.kunciJawaban ?? '').trim();
+
+  if (tipe === 'multiple_choice') {
+    if (arrKunci.length >= 2) {
+      kunciJawaban = Array.from(new Set(arrKunci));
+    } else if (Array.isArray(item?.kunciJawaban) && item.kunciJawaban.length > 0) {
+      kunciJawaban = item.kunciJawaban.map((k: any) => String(k).toUpperCase().trim());
+    } else {
+      const parsedLetters = textKunci.toUpperCase().match(/[A-D]/g) || [];
+      kunciJawaban = parsedLetters.length >= 2 ? Array.from(new Set(parsedLetters)) : ['A', 'C'];
+    }
+  } else if (tipe === 'pg') {
+    const letter = (textKunci.toUpperCase().match(/[A-D]/)?.[0]) || arrKunci[0] || 'A';
+    kunciJawaban = letter;
+  } else {
+    kunciJawaban = textKunci || (arrKunci.length > 0 ? arrKunci.join(', ') : '-');
+  }
+
+  const imageUrl = svgToSafeDataUrl(item?.ilustrasiSvg);
+
+  return {
+    tipe,
+    pertanyaan: String(item?.pertanyaan || '').trim(),
+    ...(opsi ? { opsi } : {}),
+    kunciJawaban,
+    pembahasan: String(item?.pembahasan || '').trim(),
+    bobot: Number(item?.bobot) > 0 ? Number(item.bobot) : fallbackBobot,
+    ...(imageUrl ? { imageUrl } : {}),
+    ...(item?.deskripsiGambar ? { deskripsiGambar: String(item.deskripsiGambar).trim() } : {}),
+    ...(item?.usesStimulusImage ? { usesStimulusImage: true } : {})
+  };
+}
+
+// 2. Gemini AI Assistant Endpoint for CBT Question Generator (Supports Text, Multimodal Image Stimulus & SVG Illustrations)
+app.post('/api/ai/generate-questions', async (req, res) => {
   try {
     const body = req.body || {};
-    mataPelajaran = body.mataPelajaran || 'Mata Pelajaran Umum';
-    kelas = body.kelas || 'Kelas VII';
-    topik = body.topik || 'Capaian Pembelajaran Kurikulum Merdeka';
-    jumlahSoal = Math.min(Math.max(Number(body.jumlahSoal) || 10, 1), 50);
-    tipeSoal = body.tipeSoal && Array.isArray(body.tipeSoal) && body.tipeSoal.length > 0 ? body.tipeSoal : ['pg', 'multiple_choice', 'isian', 'esai'];
-    tingkatKesulitan = body.tingkatKesulitan || 'Sedang (C3: Aplikasi Konsep)';
-    instruksiTambahan = body.instruksiTambahan || '';
-    bobotPerSoal = Number(body.bobotPerSoal) || 10;
+    const mataPelajaran = String(body.mataPelajaran || 'Mata Pelajaran Umum').trim();
+    const kelas = String(body.kelas || 'Kelas VII').trim();
+    const topik = String(body.topik || '').trim();
+
+    if (!topik) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_INPUT',
+        message: 'Topik atau materi pembelajaran wajib diisi sebelum membuat soal AI.'
+      });
+    }
+
+    const jumlahSoal = Math.min(Math.max(Number(body.jumlahSoal) || 10, 1), 50);
+    const tipeSoal: string[] =
+      body.tipeSoal && Array.isArray(body.tipeSoal) && body.tipeSoal.length > 0
+        ? body.tipeSoal
+        : ['pg', 'multiple_choice', 'isian', 'esai'];
+    const tingkatKesulitan = String(body.tingkatKesulitan || 'Sedang (C3: Aplikasi Konsep)');
+    const instruksiTambahan = String(body.instruksiTambahan || '').trim();
+    const bobotPerSoal = Math.min(Math.max(Number(body.bobotPerSoal) || 10, 1), 100);
+
+    // Image options: 'tidak' | 'campuran' | 'semua'
+    const sertakanGambar: 'tidak' | 'campuran' | 'semua' =
+      body.sertakanGambar === 'semua' || body.sertakanGambar === 'campuran'
+        ? body.sertakanGambar
+        : 'tidak';
+    const targetBergambarTotal =
+      sertakanGambar === 'semua'
+        ? jumlahSoal
+        : sertakanGambar === 'campuran'
+        ? Math.min(Math.max(Number(body.jumlahBergambar) || Math.ceil(jumlahSoal * 0.4), 1), jumlahSoal)
+        : 0;
+
+    const stimulusImage =
+      body.stimulusImage && body.stimulusImage.data && body.stimulusImage.mimeType
+        ? {
+            data: String(body.stimulusImage.data),
+            mimeType: String(body.stimulusImage.mimeType)
+          }
+        : null;
+    const terapkanGambarStimulus = body.terapkanGambarStimulus !== false;
 
     const tipeSoalMap: Record<string, string> = {
-      'pg': '- Pilihan Ganda (pg): memiliki 4 opsi jawaban (A, B, C, D) dengan tepat SATU jawaban benar.',
-      'multiple_choice': '- Pilihan Ganda Kompleks (multiple_choice): memiliki 4 opsi jawaban (A, B, C, D) dengan LEBIH DARI SATU jawaban benar (contoh kunciJawaban: ["A", "C"]).',
-      'isian': '- Isian Singkat (isian): pertanyaan langsung, kunciJawaban berupa kata/frasa/angka singkat yang tepat, tanpa opsi.',
-      'esai': '- Esai / Uraian (esai): pertanyaan analitis/pemecahan masalah, kunciJawaban berupa rangkuman jawaban ideal, tanpa opsi.'
+      pg: '- Pilihan Ganda (pg): memiliki tepat 4 opsi jawaban (A, B, C, D) dan SATU kunciJawabanTeks ("A"/"B"/"C"/"D"), kunciJawabanArray: [].',
+      multiple_choice: '- Pilihan Ganda Kompleks (multiple_choice): memiliki tepat 4 opsi jawaban (A, B, C, D) dengan LEBIH DARI SATU jawaban benar di kunciJawabanArray (misal ["A", "C"]) dan kunciJawabanTeks: "".',
+      isian: '- Isian Singkat (isian): pertanyaan langsung, opsi: [], kunciJawabanTeks berisi kata/frasa/angka singkat yang tepat, kunciJawabanArray: [].',
+      esai: '- Esai / Uraian (esai): pertanyaan analitis/uraian, opsi: [], kunciJawabanTeks berisi pedoman jawaban ideal, kunciJawabanArray: [].'
     };
     const tipeSoalListText = tipeSoal.map(t => tipeSoalMap[t] || `- ${t}`).join('\n');
 
-    // Batch generation in chunks of up to 20 questions so large requests (e.g. 30-50) never truncate JSON
+    const needGeneratedSvg = targetBergambarTotal > 0 && (!stimulusImage || sertakanGambar !== 'tidak');
+
+    // Use smaller batch size when generating inline SVG illustrations to keep output rich and structured
+    const batchSizeLimit = needGeneratedSvg ? 5 : 15;
     const allGenerated: any[] = [];
-    const batchSizeLimit = 20;
     let remaining = jumlahSoal;
+    let remainingSvgQuota = targetBergambarTotal;
     let batchNumber = 1;
 
-    while (remaining > 0 && batchNumber <= 4) {
+    while (remaining > 0 && batchNumber <= 12) {
       const currentBatchCount = Math.min(remaining, batchSizeLimit);
-      const existingTopicsNote = allGenerated.length > 0
-        ? `\nCATATAN PENTING ANTI-DUPLIKASI: Anda sudah membuat ${allGenerated.length} soal sebelumnya. JANGAN mengulang pertanyaan berikut:\n${allGenerated.slice(-15).map((q, i) => `${i + 1}. ${String(q.pertanyaan || '').slice(0, 90)}`).join('\n')}`
+      const batchSvgCount = needGeneratedSvg ? Math.min(remainingSvgQuota, currentBatchCount) : 0;
+
+      const existingTopicsNote =
+        allGenerated.length > 0
+          ? `\nCATATAN ANTI-DUPLIKASI (${allGenerated.length} soal sudah dibuat sebelumnya). JANGAN mengulang stem berikut:\n${allGenerated
+              .slice(-12)
+              .map((q, i) => `${i + 1}. ${String(q.pertanyaan || '').slice(0, 90)}`)
+              .join('\n')}`
+          : '';
+
+      const imageGuidance = stimulusImage
+        ? `\nINSTRUKSI GAMBAR STIMULUS (WAJIB):
+Guru melampirkan GAMBAR STIMULUS pada permintaan ini. Analisis isi, detail, angka, label, atau fenomena pada gambar tersebut secara cermat!
+- Buatlah soal-soal yang secara langsung merujuk pada gambar lampiran (misal: "Perhatikan gambar di atas! ...", "Berdasarkan gambar tersebut, ...").
+- Set field "usesStimulusImage": true pada soal yang menggunakan gambar lampiran.${
+            batchSvgCount > 0
+              ? `\n- Selain soal dari gambar lampiran, jika diminta ilustrasi tambahan (${batchSvgCount} soal), buatkan ilustrasi SVG edukatif tersendiri pada "ilustrasiSvg" dan set "usesStimulusImage": false untuk soal SVG tersebut.`
+              : ''
+          }`
+        : needGeneratedSvg && batchSvgCount > 0
+        ? `\nINSTRUKSI SOAL BERGAMBAR (WAJIB):
+Pada batch ${currentBatchCount} soal ini, buat TEPAT ${batchSvgCount} soal sebagai SOAL BERGAMBAR yang memiliki diagram/ilustrasi visual edukatif!
+Ketentuan teknis SVG ("ilustrasiSvg"):
+1. Tulis string XML SVG murni lengkap: <svg viewBox="0 0 480 260" xmlns="http://www.w3.org/2000/svg">...</svg>.
+2. Awali dengan latar putih bersih <rect width="480" height="260" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>.
+3. Gambar diagram/skema/grafik/bangun/topologi/rangkaian/bagan yang JELAS, RAPI, proporsional, dengan label teks berbahasa Indonesia yang mudah dibaca (font-family="sans-serif" font-size="13" fill="#0f172a"), garis warna kontras (#0284c7, #059669, #d97706, #4f46e5, #0f172a).
+4. JANGAN membocorkan langsung jawaban benar di dalam label SVG! (Misal untuk soal tebak bagian/hasil perhitungan, beri tanda "?" atau huruf penunjuk A/B/X).
+5. Pertanyaan soal bergambar HARUS merujuk pada gambar (misal: "Perhatikan gambar/diagram berikut! ...").
+6. Untuk ${currentBatchCount - batchSvgCount} soal lain yang tidak bergambar, isi "ilustrasiSvg": "" dan "deskripsiGambar": "".`
         : '';
 
-      const prompt = `Anda adalah pakar pembuat soal Asesmen / CBT Kurikulum Merdeka Indonesia jenjang SMP/SMA.
-Tugas Anda: Buat TEPAT ${currentBatchCount} butir soal berkualitas tinggi yang SEPENUHNYA SESUAI dengan:
+      const prompt = `Buat TEPAT ${currentBatchCount} butir soal Asesmen/CBT Kurikulum Merdeka Indonesia yang akurat dan berkualitas tinggi.
 - Mata Pelajaran: "${mataPelajaran}"
 - Tingkat / Kelas: "${kelas}"
 - Topik / Materi: "${topik}"
 - Tingkat Kesulitan: "${tingkatKesulitan}"
+- Bobot per soal: ${bobotPerSoal}
 ${instruksiTambahan ? `- Instruksi Khusus Guru: "${instruksiTambahan}"` : ''}${existingTopicsNote}
 
-Ketentuan Tipe Soal yang Diminta:
+Ketentuan Tipe Soal (gunakan HANYA tipe: ${tipeSoal.join(', ')}):
 ${tipeSoalListText}
+${imageGuidance}
 
-PANDUAN PEMBUATAN SOAL:
-1. Soal harus 100% relevan dengan mata pelajaran "${mataPelajaran}" dan materi "${topik}" (jangan mencampur dengan materi mapel lain).
-2. Buat tepat ${currentBatchCount} soal yang unik dan bervariasi. Gunakan stimulus yang bermakna.
-3. Hanya buat soal dengan tipe yang diminta (${tipeSoal.join(', ')}).
-4. Untuk 'pg', berikan opsi A, B, C, D dan kunciJawaban adalah string tunggal huruf kapital ("A", "B", "C", atau "D").
-5. Untuk 'multiple_choice', berikan opsi A, B, C, D dan kunciJawaban adalah array string minimal 2 jawaban benar (misal ["A", "C"]).
-6. Untuk 'isian' dan 'esai', opsi harus berupa array kosong []. Kunci jawaban berisi teks jawaban yang akurat.
-7. Sertakan pembahasan yang jelas dan edukatif untuk setiap soal.
-8. Berikan bobot: ${bobotPerSoal} untuk setiap soal.
+PANDUAN MUTU:
+1. 100% relevan dengan "${mataPelajaran}" dan topik "${topik}".
+2. Unik, bervariasi, bebas dari duplikasi, gunakan Bahasa Indonesia yang baik dan benar.
+3. Sertakan pembahasan yang edukatif dan tepat.`;
 
-KEMBALIKAN HANYA ARRAY JSON VALID (tanpa teks pengantar / penutup):
-[
-  {
-    "tipe": "pg",
-    "pertanyaan": "Teks soal lengkap...",
-    "opsi": [
-      { "id": "A", "teks": "Pilihan A" },
-      { "id": "B", "teks": "Pilihan B" },
-      { "id": "C", "teks": "Pilihan C" },
-      { "id": "D", "teks": "Pilihan D" }
-    ],
-    "kunciJawaban": "A",
-    "pembahasan": "Penjelasan detail kunci jawaban...",
-    "bobot": ${bobotPerSoal}
-  }
-]`;
+      const itemProperties: Record<string, any> = {
+        tipe: { type: Type.STRING, description: 'Salah satu dari: pg, multiple_choice, isian, esai' },
+        pertanyaan: { type: Type.STRING, description: 'Teks lengkap pertanyaan soal' },
+        opsi: {
+          type: Type.ARRAY,
+          description: '4 pilihan A,B,C,D untuk pg/multiple_choice; [] untuk isian/esai',
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              teks: { type: Type.STRING }
+            },
+            required: ['id', 'teks']
+          }
+        },
+        kunciJawabanTeks: { type: Type.STRING, description: 'PG: "A"/"B"/"C"/"D". Isian/Esai: teks jawaban. multiple_choice: ""' },
+        kunciJawabanArray: {
+          type: Type.ARRAY,
+          description: 'Khusus multiple_choice: misal ["A","C"]. Tipe lain: []',
+          items: { type: Type.STRING }
+        },
+        pembahasan: { type: Type.STRING },
+        bobot: { type: Type.NUMBER }
+      };
+
+      const requiredFields = ['tipe', 'pertanyaan', 'opsi', 'kunciJawabanTeks', 'kunciJawabanArray', 'pembahasan', 'bobot'];
+
+      if (needGeneratedSvg) {
+        itemProperties.deskripsiGambar = { type: Type.STRING, description: 'Keterangan singkat gambar diagram jika bergambar, atau ""' };
+        itemProperties.ilustrasiSvg = { type: Type.STRING, description: 'String XML <svg viewBox="0 0 480 260" xmlns="http://www.w3.org/2000/svg">...</svg> atau "" jika tanpa gambar' };
+        requiredFields.push('deskripsiGambar', 'ilustrasiSvg');
+      }
+
+      if (stimulusImage) {
+        itemProperties.usesStimulusImage = { type: Type.BOOLEAN, description: 'true jika soal merujuk gambar lampiran guru' };
+        requiredFields.push('usesStimulusImage');
+      }
+
+      const contentsPayload = stimulusImage
+        ? {
+            parts: [
+              { inlineData: { mimeType: stimulusImage.mimeType, data: stimulusImage.data } },
+              { text: prompt }
+            ]
+          }
+        : prompt;
 
       const response = await generateContentWithFallback({
         model: 'gemini-4-hydrogen',
-        contents: prompt,
+        contents: contentsPayload,
         config: {
+          systemInstruction: `Anda adalah pakar pembuat soal CBT Kurikulum Merdeka jenjang SMP/SMA Indonesia. Keluarkan tepat ${currentBatchCount} objek soal dalam JSON array sesuai skema tanpa teks tambahan di luar JSON.`,
           responseMimeType: 'application/json',
-          maxOutputTokens: 16384
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: itemProperties,
+              required: requiredFields
+            }
+          }
         }
       });
 
       const aiResponseText = response.text || '';
-      const jsonString = aiResponseText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsedBatch = JSON.parse(jsonString);
+      const cleanedJson = aiResponseText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+      const parsedBatch = JSON.parse(cleanedJson);
 
       if (!Array.isArray(parsedBatch) || parsedBatch.length === 0) {
-        if (allGenerated.length === 0) {
-          throw new Error('Format respon Gemini bukan array valid.');
-        }
-        break;
+        throw new Error('Gemini mengembalikan format soal kosong atau bukan array.');
       }
 
-      allGenerated.push(...parsedBatch);
+      const normalizedBatch = parsedBatch
+        .map((item: any) => normalizeAiQuestionItem(item, bobotPerSoal, tipeSoal))
+        .filter((q: any) => q.pertanyaan.length > 0)
+        .map((q: any) => ({
+          ...q,
+          ...(stimulusImage && terapkanGambarStimulus && q.usesStimulusImage !== false && !q.imageUrl
+            ? { usesStimulusImage: true }
+            : {})
+        }));
+
+      allGenerated.push(...normalizedBatch);
       remaining = jumlahSoal - allGenerated.length;
+      if (needGeneratedSvg) {
+        const createdImagesCount = normalizedBatch.filter((q: any) => Boolean(q.imageUrl)).length;
+        remainingSvgQuota = Math.max(0, remainingSvgQuota - createdImagesCount);
+      }
       batchNumber++;
     }
 
-    if (allGenerated.length > 0) {
-      // Top up with smart subject-specific templates if Gemini returned slightly fewer than requested
-      if (allGenerated.length < jumlahSoal) {
-        const extra = generateSmartFallbackQuestions({
-          mataPelajaran,
-          kelas,
-          topik,
-          jumlahSoal: jumlahSoal - allGenerated.length,
-          tipeSoal,
-          tingkatKesulitan,
-          bobotPerSoal,
-          existingStems: allGenerated.map(q => String(q.pertanyaan || ''))
-        });
-        allGenerated.push(...extra);
-      }
-      return res.json({ success: true, soalList: allGenerated.slice(0, jumlahSoal), source: 'gemini-ai' });
+    if (allGenerated.length === 0) {
+      throw new Error('Tidak ada soal yang berhasil dirumuskan oleh AI.');
     }
-    throw new Error('Format respon Gemini bukan array valid.');
 
+    return res.json({
+      success: true,
+      soalList: sortAiSoalByTipeOrder(allGenerated.slice(0, jumlahSoal)),
+      source: 'gemini-ai'
+    });
   } catch (error: any) {
-    const isKeyIssue = error?.isKeyConfigError || (error?.message && (error.message.includes('API key') || error.message.includes('API_KEY')));
+    const errMsg = error?.message || String(error);
+    const isKeyIssue =
+      error?.isKeyConfigError ||
+      errMsg.includes('GEMINI_API_KEY') ||
+      errMsg.includes('API key not valid') ||
+      errMsg.includes('API_KEY_INVALID') ||
+      errMsg.includes('PERMISSION_DENIED');
+
     if (isKeyIssue) {
-      console.log('[CBT AI Generator] Gemini API key not configured or needs activation in Settings > Secrets. Using Kurikulum Merdeka smart template generator.');
-    } else {
-      console.log('[CBT AI Generator] Using Kurikulum Merdeka smart generator fallback:', error?.message || 'Standard fallback');
+      console.warn('[CBT AI Generator] GEMINI_API_KEY needs verification in Settings > Secrets:', errMsg);
+      return res.status(400).json({
+        success: false,
+        code: 'GEMINI_KEY_MISSING',
+        message: 'GEMINI_API_KEY belum dikonfigurasi atau tidak valid. Silakan periksa atau pilih kunci API pada menu Settings > Secrets di AI Studio.'
+      });
     }
 
-    const result = generateSmartFallbackQuestions({
-      mataPelajaran,
-      kelas,
-      topik,
-      jumlahSoal,
-      tipeSoal,
-      tingkatKesulitan,
-      bobotPerSoal
+    console.warn('[CBT AI Generator] Upstream error:', errMsg);
+    return res.status(502).json({
+      success: false,
+      code: 'GEMINI_API_ERROR',
+      message: `Gagal menghasilkan soal dari Gemini AI: ${errMsg}`
+    });
+  }
+});
+
+// 2b. Dedicated Gemini AI Endpoint to generate/regenerate an educational SVG illustration for a single question
+app.post('/api/ai/generate-question-illustration', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const pertanyaan = String(body.pertanyaan || '').trim();
+    const mataPelajaran = String(body.mataPelajaran || 'Umum').trim();
+    const topik = String(body.topik || '').trim();
+    const instruksiGambar = String(body.instruksiGambar || '').trim();
+
+    if (!pertanyaan) {
+      return res.status(400).json({
+        success: false,
+        message: 'Teks pertanyaan diperlukan untuk membuat gambar ilustrasi AI.'
+      });
+    }
+
+    const prompt = `Buatkan satu ilustrasi diagram/skema/grafik/gambar edukatif dalam bentuk kode SVG untuk mendampingi soal ujian berikut:
+- Mata Pelajaran: ${mataPelajaran}
+${topik ? `- Topik: ${topik}` : ''}
+- Pertanyaan Soal: "${pertanyaan}"
+${instruksiGambar ? `- Permintaan Tambahan Guru: "${instruksiGambar}"` : ''}
+
+Ketentuan SVG:
+1. Gunakan <svg viewBox="0 0 480 260" xmlns="http://www.w3.org/2000/svg">...</svg>.
+2. Sertakan background putih bersih <rect width="480" height="260" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>.
+3. Buat ilustrasi yang sangat jelas, rapi, informatif, memakai label teks bahasa Indonesia yang mudah terbaca (font-family="sans-serif"), warna kontras modern (#0284c7, #059669, #4f46e5, #d97706, #0f172a).
+4. Jangan menuliskan langsung kunci jawaban secara eksplisit pada label gambar jika gambar tersebut ditanyakan sebagai bagian yang harus dicari/tebak oleh siswa (gunakan "?" atau label netral).`;
+
+    const response = await generateContentWithFallback({
+      model: 'gemini-4-hydrogen',
+      contents: prompt,
+      config: {
+        systemInstruction: 'Anda adalah ilustrator grafis edukasi SVG untuk soal ujian sekolah Indonesia. Kembalikan JSON valid berisi deskripsiGambar dan ilustrasiSvg.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            deskripsiGambar: { type: Type.STRING, description: 'Judul/penjelasan singkat gambar' },
+            ilustrasiSvg: { type: Type.STRING, description: 'Kode SVG lengkap <svg viewBox="0 0 480 260" xmlns="http://www.w3.org/2000/svg">...</svg>' }
+          },
+          required: ['deskripsiGambar', 'ilustrasiSvg']
+        }
+      }
     });
 
-    return res.json({ success: true, soalList: result, isFallback: true, source: 'smart-template' });
+    const parsed = JSON.parse((response.text || '').replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim());
+    const imageUrl = svgToSafeDataUrl(parsed?.ilustrasiSvg);
+
+    if (!imageUrl) {
+      throw new Error('AI gagal menghasilkan SVG yang valid.');
+    }
+
+    return res.json({
+      success: true,
+      imageUrl,
+      deskripsiGambar: String(parsed?.deskripsiGambar || 'Ilustrasi Soal AI').trim()
+    });
+  } catch (error: any) {
+    const errMsg = error?.message || String(error);
+    const isKeyIssue =
+      error?.isKeyConfigError ||
+      errMsg.includes('GEMINI_API_KEY') ||
+      errMsg.includes('API key not valid') ||
+      errMsg.includes('API_KEY_INVALID') ||
+      errMsg.includes('PERMISSION_DENIED');
+
+    if (isKeyIssue) {
+      console.warn('[CBT AI Illustration] GEMINI_API_KEY needs verification in Settings > Secrets:', errMsg);
+      return res.status(400).json({
+        success: false,
+        code: 'GEMINI_KEY_MISSING',
+        message: 'GEMINI_API_KEY belum dikonfigurasi atau tidak valid. Silakan periksa atau pilih kunci API pada menu Settings > Secrets di AI Studio.'
+      });
+    }
+
+    console.warn('[CBT AI Illustration] Upstream error:', errMsg);
+    return res.status(502).json({
+      success: false,
+      message: `Gagal membuat ilustrasi gambar AI: ${errMsg}`
+    });
+  }
+});
+
+// 2c. Dedicated Gemini AI Endpoint to evaluate/grade student essay & short-answer responses
+app.post('/api/ai/grade-answers', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const mataPelajaran = String(body.mataPelajaran || 'Umum').trim();
+    const items = Array.isArray(body.items) ? body.items : [];
+
+    if (items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tidak ada butir jawaban yang dikirim untuk dikoreksi.'
+      });
+    }
+
+    const sanitizedItems = items.slice(0, 30).map((item: any, idx: number) => ({
+      itemKey: String(item.itemKey || item.soalId || `item-${idx}`),
+      tipe: String(item.tipe || 'esai'),
+      pertanyaan: String(item.pertanyaan || '').slice(0, 1000),
+      kunciJawaban: String(item.kunciJawaban || '').slice(0, 1000),
+      pembahasan: String(item.pembahasan || '').slice(0, 600),
+      bobot: Math.max(1, Number(item.bobot) || 10),
+      jawabanSiswa: String(item.jawabanSiswa || '').slice(0, 1500)
+    }));
+
+    const prompt = `Anda adalah guru pemeriksa ujian CBT mata pelajaran "${mataPelajaran}" di SMP/MTs Indonesia.
+Tugas Anda: Koreksi dan berikan skor yang adil serta objektif (0 hingga bobot maksimal tiap butir soal) berdasarkan kecocokan makna, ketepatan konsep, dan kelengkapan jawaban siswa dibanding kunci/pedoman jawaban.
+
+Aturan penilaian:
+1. Jika jawaban siswa kosong atau tidak relevan sama sekali, berikan skor 0.
+2. Untuk isian singkat: terima sinonim, perbedaan huruf besar/kecil, atau variasi ejaan kecil yang masih bermakna benar (berikan skor penuh atau proporsional).
+3. Untuk esai: berikan skor proporsional (0 sampai bobot maksimal) sesuai poin-poin utama dalam kunci jawaban / pedoman.
+4. Sertakan alasanPenilaian singkat (1 kalimat Bahasa Indonesia) untuk setiap itemKey.
+
+Daftar butir jawaban yang harus dikoreksi:
+${JSON.stringify(sanitizedItems, null, 2)}`;
+
+    const response = await generateContentWithFallback({
+      model: 'gemini-4-hydrogen',
+      contents: prompt,
+      config: {
+        systemInstruction:
+          'Anda adalah guru korektor ujian sekolah yang objektif dan konstruktif. Keluarkan JSON array sesuai skema tanpa teks tambahan.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              itemKey: { type: Type.STRING },
+              skorDisarankan: { type: Type.NUMBER },
+              alasanPenilaian: { type: Type.STRING }
+            },
+            required: ['itemKey', 'skorDisarankan', 'alasanPenilaian']
+          }
+        }
+      }
+    });
+
+    const cleanedJson = (response.text || '')
+      .replace(/^```json\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+    const parsed = JSON.parse(cleanedJson);
+
+    if (!Array.isArray(parsed)) {
+      throw new Error('Respons AI tidak berbentuk daftar hasil koreksi.');
+    }
+
+    const bobotByKey = new Map<string, number>();
+    sanitizedItems.forEach(it => bobotByKey.set(it.itemKey, it.bobot));
+
+    const results = parsed.map((entry: any) => {
+      const itemKey = String(entry.itemKey || '');
+      const maxBobot = bobotByKey.get(itemKey) ?? 10;
+      const rawScore = Number(entry.skorDisarankan);
+      const clampedScore = Number.isFinite(rawScore)
+        ? Math.max(0, Math.min(maxBobot, Math.round(rawScore)))
+        : 0;
+      return {
+        itemKey,
+        skorDisarankan: clampedScore,
+        alasanPenilaian: String(entry.alasanPenilaian || '').trim()
+      };
+    });
+
+    return res.json({
+      success: true,
+      results
+    });
+  } catch (error: any) {
+    const errMsg = error?.message || String(error);
+    const isKeyIssue =
+      error?.isKeyConfigError ||
+      errMsg.includes('GEMINI_API_KEY') ||
+      errMsg.includes('API key not valid') ||
+      errMsg.includes('API_KEY_INVALID') ||
+      errMsg.includes('PERMISSION_DENIED');
+
+    if (isKeyIssue) {
+      console.warn('[CBT AI Grading] GEMINI_API_KEY needs verification in Settings > Secrets:', errMsg);
+      return res.status(400).json({
+        success: false,
+        code: 'GEMINI_KEY_MISSING',
+        message:
+          'GEMINI_API_KEY belum dikonfigurasi atau tidak valid. Silakan periksa atau pilih kunci API pada menu Settings > Secrets di AI Studio.'
+      });
+    }
+
+    console.warn('[CBT AI Grading] Upstream error:', errMsg);
+    return res.status(502).json({
+      success: false,
+      message: `Gagal menjalankan koreksi otomatis AI: ${errMsg}`
+    });
   }
 });
 

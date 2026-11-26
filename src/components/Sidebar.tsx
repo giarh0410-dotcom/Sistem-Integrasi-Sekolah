@@ -37,7 +37,10 @@ import {
   Award,
   Printer,
   LayoutGrid,
-  ClipboardList
+  ClipboardList,
+  ClipboardCheck,
+  Edit3,
+  BarChart3
 } from 'lucide-react';
 import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab, AdministrasiSubTab, PengaturanSubTab, RaporSubTab } from '../types/school';
 
@@ -757,6 +760,86 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <div className="flex items-center gap-2">
                             <Play className="w-3.5 h-3.5 text-emerald-400" />
                             <span>Simulasi CBT Anti-Cheat</span>
+                          </div>
+                        </button>
+                      )}
+
+                      {/* 3b. Koreksi Soal CBT */}
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('koreksi_soal');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'koreksi_soal'
+                              ? 'bg-emerald-600/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Koreksi Soal CBT</span>
+                          </div>
+                        </button>
+                      )}
+
+                      {/* 3c. Input Nilai CBT */}
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('input_nilai');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'input_nilai'
+                              ? 'bg-cyan-600/15 text-cyan-300 border border-cyan-500/30 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>Input Nilai CBT</span>
+                          </div>
+                        </button>
+                      )}
+
+                      {/* 3d. Rekap Nilai CBT */}
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('rekap_nilai');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'rekap_nilai'
+                              ? 'bg-indigo-600/15 text-indigo-300 border border-indigo-500/30 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <ClipboardList className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Rekap Nilai CBT</span>
+                          </div>
+                        </button>
+                      )}
+
+                      {/* 3e. Analisis Nilai CBT */}
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('analisis_nilai');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'analisis_nilai'
+                              ? 'bg-violet-600/15 text-violet-300 border border-violet-500/30 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <BarChart3 className="w-3.5 h-3.5 text-violet-400" />
+                            <span>Analisis Nilai CBT</span>
                           </div>
                         </button>
                       )}

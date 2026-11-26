@@ -16,7 +16,7 @@ export interface RombelKelas {
 export type Role = 'admin' | 'guru' | 'siswa' | 'staf' | 'kepsek' | 'petugas_absensi' | 'guru_bk';
 export type SubTab = 'siswa' | 'guru' | 'staf' | 'rombel' | 'mapel' | 'ekskul';
 export type AbsensiSubTab = 'scan_barcode' | 'harian_siswa' | 'absensi_guru' | 'rekap_absensi' | 'redaksi' | 'perizinan' | 'jurnal_guru';
-export type CbtSubTab = 'bank_soal' | 'kisi_kisi' | 'jadwal_kartu' | 'denah_ruang' | 'daftar_peserta' | 'daftar_pengawas' | 'berita_acara' | 'ai_generator' | 'simulasi_ujian' | 'hasil_ujian' | 'pengaturan_cbt';
+export type CbtSubTab = 'bank_soal' | 'kisi_kisi' | 'jadwal_kartu' | 'denah_ruang' | 'daftar_peserta' | 'daftar_pengawas' | 'berita_acara' | 'ai_generator' | 'simulasi_ujian' | 'koreksi_soal' | 'input_nilai' | 'rekap_nilai' | 'analisis_nilai' | 'hasil_ujian' | 'pengaturan_cbt';
 export type KeuanganSubTab = 'pembayaran' | 'pengaturan_biaya' | 'rekap' | 'redaksi' | 'gaji';
 export type AdministrasiSubTab = 'modul_ajar' | 'cp' | 'atp' | 'kktp' | 'prota' | 'prosem' | 'jadwal' | 'kalender' | 'jurnal_guru';
 export type PengaturanSubTab = 'identitas' | 'logo' | 'fonnte' | 'jadwal' | 'sistem';
@@ -439,7 +439,9 @@ export interface JawabanSiswa {
   soalId: string;
   jawaban: string | string[]; // String atau array of IDs
   raguRagu?: boolean;
-  nilai?: number; // Diisi otomatis/manual
+  nilai?: number; // Skor per butir soal (0 .. bobot)
+  catatanGuru?: string; // Catatan/umpan balik korektor per soal
+  sudahDikoreksi?: boolean; // Status koreksi butir soal
 }
 
 export interface HasilUjian {
@@ -457,6 +459,9 @@ export interface HasilUjian {
   waktuSubmit: string;
   pelanggaranCount?: number;
   logKecurangan?: string[];
+  dikoreksiOleh?: string;
+  waktuKoreksi?: string;
+  catatanKorektor?: string;
 }
 
 export interface AyatAlQuranIntegrasi {

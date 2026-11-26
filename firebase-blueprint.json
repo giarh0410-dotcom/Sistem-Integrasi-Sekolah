@@ -573,6 +573,40 @@
       },
       "description": "Scheduled counseling appointments between students and BK counselors"
     },
+    "edu_cbtSesiAktifList": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "ujianId": { "type": "string" },
+          "judulUjian": { "type": "string" },
+          "mataPelajaran": { "type": "string" },
+          "siswaId": { "type": "string" },
+          "siswaNama": { "type": "string" },
+          "nis": { "type": "string" },
+          "kelas": { "type": "string" },
+          "ruang": { "type": "string" },
+          "status": { "type": "string", "enum": ["Mengerjakan", "Peringatan Pelanggaran", "Dikunci Pengawas", "Selesai"] },
+          "soalAktifNo": { "type": "number" },
+          "totalSoal": { "type": "number" },
+          "terjawabCount": { "type": "number" },
+          "raguCount": { "type": "number" },
+          "pelanggaranCount": { "type": "number" },
+          "logKecurangan": { "type": "array" },
+          "sisaDetik": { "type": "number" },
+          "durasiMenit": { "type": "number" },
+          "waktuMulai": { "type": "string" },
+          "lastHeartbeat": { "type": "string" },
+          "waktuSelesai": { "type": "string" },
+          "nilaiSementara": { "type": "number" },
+          "instruksiPengawas": { "type": "string", "enum": ["lanjut", "paksa_submit", "reset_pelanggaran", "kunci"] },
+          "pesanPengawas": { "type": "string" },
+          "updatedAt": { "type": "string" }
+        },
+        "required": ["id", "ujianId", "mataPelajaran", "siswaId", "siswaNama", "kelas", "status", "soalAktifNo", "totalSoal", "terjawabCount", "pelanggaranCount", "sisaDetik", "waktuMulai", "lastHeartbeat"]
+      },
+      "description": "Live CBT student exam sessions for real-time proctor monitoring"
+    },
     "edu_schoolSettings": {
       "schema": { "$ref": "#/entities/SchoolSettings" },
       "description": "General school profile settings document"

@@ -471,9 +471,11 @@ export async function downloadDaftarPengawasPdf(options: DownloadDaftarPengawasP
     });
     const slots = Array.from(slotMap.values());
 
-    // Chunk rooms if there are many rooms (max 10 room columns per page)
-    const maxRoomsPerPage = 10;
-    const activeRooms = rooms.length > 0 ? rooms : Array.from(new Set(sortedItems.map(i => i.ruang)));
+    // Fit up to 12 room columns on a single A4 landscape matrix page
+    const maxRoomsPerPage = 12;
+    const activeRooms = (rooms.length > 0 ? rooms : Array.from(new Set(sortedItems.map(i => i.ruang)))).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true })
+    );
     const roomChunks: string[][] = [];
     for (let i = 0; i < activeRooms.length; i += maxRoomsPerPage) {
       roomChunks.push(activeRooms.slice(i, i + maxRoomsPerPage));
@@ -493,9 +495,10 @@ export async function downloadDaftarPengawasPdf(options: DownloadDaftarPengawasP
         contentW
       });
 
-      const dateW = 30;
-      const timeW = 24;
-      const mapelW = 46;
+      const isDenseRooms = chunkRooms.length > 10;
+      const dateW = isDenseRooms ? 27 : 30;
+      const timeW = isDenseRooms ? 21 : 24;
+      const mapelW = isDenseRooms ? 41 : 46;
       const fixedW = dateW + timeW + mapelW;
       const roomColW = (contentW - fixedW) / Math.max(1, chunkRooms.length);
 
@@ -503,7 +506,7 @@ export async function downloadDaftarPengawasPdf(options: DownloadDaftarPengawasP
         doc.setFillColor(10, 54, 107);
         doc.rect(marginX, currY, contentW, 8, 'F');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.2);
+        doc.setFontSize(isDenseRooms ? 6.8 : 7.2);
         doc.setTextColor(255, 255, 255);
         doc.text('HARI / TANGGAL', marginX + 2, currY + 5.1);
         doc.text('WAKTU', marginX + dateW + timeW / 2, currY + 5.1, { align: 'center' });
@@ -511,7 +514,7 @@ export async function downloadDaftarPengawasPdf(options: DownloadDaftarPengawasP
 
         let rx = marginX + fixedW;
         chunkRooms.forEach(r => {
-          doc.text(clipText(doc, r.replace(/^Ruang\s*/i, 'R.'), roomColW - 2), rx + roomColW / 2, currY + 5.1, {
+          doc.text(clipText(doc, r.replace(/^Ruang\s*/i, 'R.'), roomColW - 1.5), rx + roomColW / 2, currY + 5.1, {
             align: 'center'
           });
           rx += roomColW;
@@ -538,16 +541,17 @@ export async function downloadDaftarPengawasPdf(options: DownloadDaftarPengawasP
         doc.rect(marginX, y, contentW, rowH, 'S');
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7);
+        doc.setFontSize(isDenseRooms ? 6.7 : 7);
         doc.setTextColor(15, 23, 42);
-        doc.text(clipText(doc, formatDateCompactId(slot.tanggal), dateW - 3), marginX + 2, y + 5.1);
+        doc.text(clipText(doc, formatDateCompactId(slot.tanggal), dateW - 2.5), marginX + 1.8, y + 5.1);
 
         doc.line(marginX + dateW, y, marginX + dateW, y + rowH);
         doc.setFont('helvetica', 'normal');
+        doc.setFontSize(isDenseRooms ? 6.6 : 7);
         doc.text(`${slot.jamMulai}-${slot.jamSelesai}`, marginX + dateW + timeW / 2, y + 5.1, { align: 'center' });
 
         doc.line(marginX + dateW + timeW, y, marginX + dateW + timeW, y + rowH);
-        doc.text(clipText(doc, slot.mataPelajaran, mapelW - 3), marginX + dateW + timeW + 2, y + 5.1);
+        doc.text(clipText(doc, slot.mataPelajaran, mapelW - 2.5), marginX + dateW + timeW + 1.8, y + 5.1);
 
         let rx = marginX + fixedW;
         chunkRooms.forEach(r => {
@@ -556,13 +560,15 @@ export async function downloadDaftarPengawasPdf(options: DownloadDaftarPengawasP
           if (cell) {
             const c1 = getCode(cell.pengawas1Nama, cell.kodePengawas);
             const c2 = cell.pengawas2Nama ? getCode(cell.pengawas2Nama) : '';
-            const label = c2 && c2 !== '-' ? `${c1} / ${c2}` : c1;
+            const hasPair = Boolean(c2 && c2 !== '-');
+            const label = hasPair ? `${c1}/${c2}` : c1;
             doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7.4);
+            doc.setFontSize(hasPair && isDenseRooms ? 5.9 : isDenseRooms ? 6.9 : 7.4);
             doc.setTextColor(10, 54, 107);
-            doc.text(clipText(doc, label, roomColW - 2), rx + roomColW / 2, y + 5.1, { align: 'center' });
+            doc.text(clipText(doc, label, roomColW - 1.5), rx + roomColW / 2, y + 5.1, { align: 'center' });
           } else {
             doc.setFont('helvetica', 'normal');
+            doc.setFontSize(isDenseRooms ? 6.8 : 7.2);
             doc.setTextColor(148, 163, 184);
             doc.text('-', rx + roomColW / 2, y + 5.1, { align: 'center' });
           }
@@ -575,7 +581,7 @@ export async function downloadDaftarPengawasPdf(options: DownloadDaftarPengawasP
       // Legend of Invigilator Codes on the last chunk
       if (chunkIdx === roomChunks.length - 1) {
         y += 5;
-        const colsLegend = 3;
+        const colsLegend = directory.length > 15 ? 4 : 3;
         const rowsLegend = Math.ceil(directory.length / colsLegend);
         const legendH = 7 + rowsLegend * 4.6 + 2;
 

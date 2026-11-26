@@ -120,6 +120,9 @@ service cloud.firestore {
     match /edu_bkJanjiTemuList/{janjiId} {
       allow read, write: if isSignedIn();
     }
+    match /edu_cbtSesiAktifList/{sesiId} {
+      allow read, write: if isSignedIn();
+    }
     
     // Test collection for connectivity check
     match /test/connection {

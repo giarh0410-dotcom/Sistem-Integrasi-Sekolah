@@ -5,7 +5,8 @@ import {
   setDoc, 
   deleteDoc, 
   writeBatch,
-  getDocFromServer
+  getDocFromServer,
+  onSnapshot
 } from 'firebase/firestore';
 import { db, OperationType, handleFirestoreError } from './firebase';
 
@@ -119,6 +120,43 @@ export async function dbFetchCollection<T>(collectionName: string): Promise<T[]>
     handleFirestoreError(error, OperationType.GET, collectionName);
     return [];
   }
+}
+
+/**
+ * Subscribes to real-time updates for a Firestore collection
+ */
+export function dbSubscribeCollection<T>(
+  collectionName: string,
+  onData: (items: T[]) => void,
+  onError?: (error: unknown) => void
+): () => void {
+  const colRef = collection(db, collectionName);
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const items: T[] = [];
+      const cacheMap = new Map<string, string>();
+      snapshot.forEach((d) => {
+        const docData = d.data();
+        const data = { id: d.id, ...docData } as unknown as T;
+        items.push(data);
+        cacheMap.set(d.id, JSON.stringify(data));
+      });
+      collectionCache.set(collectionName, cacheMap);
+      onData(items);
+    },
+    (error) => {
+      if (onError) {
+        onError(error);
+        return;
+      }
+      try {
+        handleFirestoreError(error, OperationType.GET, collectionName);
+      } catch (e) {
+        console.warn(`Realtime listener warning (${collectionName}):`, e);
+      }
+    }
+  );
 }
 
 /**

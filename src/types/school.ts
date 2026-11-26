@@ -16,7 +16,7 @@ export interface RombelKelas {
 export type Role = 'admin' | 'guru' | 'siswa' | 'staf' | 'kepsek' | 'petugas_absensi' | 'guru_bk';
 export type SubTab = 'siswa' | 'guru' | 'staf' | 'rombel' | 'mapel' | 'ekskul';
 export type AbsensiSubTab = 'scan_barcode' | 'harian_siswa' | 'absensi_guru' | 'rekap_absensi' | 'redaksi' | 'perizinan' | 'jurnal_guru';
-export type CbtSubTab = 'bank_soal' | 'kisi_kisi' | 'jadwal_kartu' | 'denah_ruang' | 'daftar_peserta' | 'daftar_pengawas' | 'berita_acara' | 'ai_generator' | 'simulasi_ujian' | 'koreksi_soal' | 'input_nilai' | 'rekap_nilai' | 'analisis_nilai' | 'hasil_ujian' | 'pengaturan_cbt';
+export type CbtSubTab = 'bank_soal' | 'kisi_kisi' | 'jadwal_kartu' | 'denah_ruang' | 'daftar_peserta' | 'daftar_pengawas' | 'berita_acara' | 'ai_generator' | 'simulasi_ujian' | 'monitoring_ujian' | 'koreksi_soal' | 'input_nilai' | 'rekap_nilai' | 'analisis_nilai' | 'hasil_ujian' | 'pengaturan_cbt';
 export type KeuanganSubTab = 'pembayaran' | 'pengaturan_biaya' | 'rekap' | 'redaksi' | 'gaji';
 export type AdministrasiSubTab = 'modul_ajar' | 'cp' | 'atp' | 'kktp' | 'prota' | 'prosem' | 'jadwal' | 'kalender' | 'jurnal_guru';
 export type PengaturanSubTab = 'identitas' | 'logo' | 'fonnte' | 'jadwal' | 'sistem';
@@ -462,6 +462,40 @@ export interface HasilUjian {
   dikoreksiOleh?: string;
   waktuKoreksi?: string;
   catatanKorektor?: string;
+}
+
+export type StatusSesiCbt =
+  | 'Mengerjakan'
+  | 'Peringatan Pelanggaran'
+  | 'Dikunci Pengawas'
+  | 'Selesai';
+
+export interface CbtSesiAktif {
+  id: string;
+  ujianId: string;
+  judulUjian: string;
+  mataPelajaran: string;
+  siswaId: string;
+  siswaNama: string;
+  nis: string;
+  kelas: string;
+  ruang?: string;
+  status: StatusSesiCbt;
+  soalAktifNo: number;
+  totalSoal: number;
+  terjawabCount: number;
+  raguCount: number;
+  pelanggaranCount: number;
+  logKecurangan?: string[];
+  sisaDetik: number;
+  durasiMenit: number;
+  waktuMulai: string;
+  lastHeartbeat: string;
+  waktuSelesai?: string;
+  nilaiSementara?: number;
+  instruksiPengawas?: 'lanjut' | 'paksa_submit' | 'reset_pelanggaran' | 'kunci';
+  pesanPengawas?: string;
+  updatedAt: string;
 }
 
 export interface AyatAlQuranIntegrasi {

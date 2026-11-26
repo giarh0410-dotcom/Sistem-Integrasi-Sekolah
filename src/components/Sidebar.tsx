@@ -40,7 +40,8 @@ import {
   ClipboardList,
   ClipboardCheck,
   Edit3,
-  BarChart3
+  BarChart3,
+  Activity
 } from 'lucide-react';
 import { Role, SubTab, AbsensiSubTab, CbtSubTab, KeuanganSubTab, AdministrasiSubTab, PengaturanSubTab, RaporSubTab } from '../types/school';
 
@@ -761,6 +762,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <Play className="w-3.5 h-3.5 text-emerald-400" />
                             <span>Simulasi CBT Anti-Cheat</span>
                           </div>
+                        </button>
+                      )}
+
+                      {/* 3a. Monitoring Ujian Live */}
+                      {currentRole !== 'siswa' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('cbt');
+                            if (setCbtSubTab) setCbtSubTab('monitoring_ujian');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-semibold flex items-center justify-between transition-all ${
+                            cbtSubTab === 'monitoring_ujian'
+                              ? 'bg-cyan-600/15 text-cyan-300 border border-cyan-500/30 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>Monitoring Ujian Live</span>
+                          </div>
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-extrabold uppercase">
+                            Live
+                          </span>
                         </button>
                       )}
 

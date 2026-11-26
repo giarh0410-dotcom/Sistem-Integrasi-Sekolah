@@ -43,7 +43,10 @@ import {
   Search,
   Filter,
   ListOrdered,
-  ClipboardCheck
+  ClipboardCheck,
+  Activity,
+  Lock,
+  MessageSquare
 } from 'lucide-react';
 import { 
   BankSoal, 
@@ -61,9 +64,11 @@ import {
   MataPelajaranItem,
   Role,
   CbtSubTab,
-  SchoolSettings
+  SchoolSettings,
+  CbtSesiAktif,
+  StatusSesiCbt
 } from '../types/school';
-import { dbFetchCollection, dbSaveCollection, dbSaveItem } from '../lib/firebaseSync';
+import { dbFetchCollection, dbSaveCollection, dbSaveItem, dbSubscribeCollection } from '../lib/firebaseSync';
 import { safeSetStorageJson } from '../utils/safeStorage';
 import { DenahRuangUjian } from './cbt/DenahRuangUjian';
 import { DaftarPesertaKelas } from './cbt/DaftarPesertaKelas';
@@ -74,6 +79,11 @@ import { JadwalUjianSection } from './cbt/JadwalUjianSection';
 import { PengaturanCbtSection } from './cbt/PengaturanCbtSection';
 import { KoreksiSoalCbt } from './cbt/KoreksiSoalCbt';
 import { NilaiCbtSection, NilaiCbtMode } from './cbt/NilaiCbtSection';
+import {
+  MonitoringUjianCbt,
+  CBT_SESI_AKTIF_STORAGE_KEY,
+  CBT_MONITOR_CHANNEL_NAME
+} from './cbt/MonitoringUjianCbt';
 import {
   KartuPesertaCard,
   KartuPesertaBatchModal,
@@ -202,6 +212,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
         subTab === 'daftar_pengawas' ||
         subTab === 'berita_acara' ||
         subTab === 'koreksi_soal' ||
+        subTab === 'monitoring_ujian' ||
         subTab === 'input_nilai' ||
         subTab === 'rekap_nilai' ||
         subTab === 'analisis_nilai'
@@ -2585,21 +2596,27 @@ export const CbtView: React.FC<CbtViewProps> = ({
   
   // Real dynamic timer matching the mockup image (1 Jam 49 Menit 51 Detik)
   const [timeLeft, setTimeLeft] = useState(1 * 3600 + 49 * 60 + 51);
+  const [examStartedAt, setExamStartedAt] = useState<string>('');
+  const [isLockedByProctor, setIsLockedByProctor] = useState(false);
+  const [proctorLockMessage, setProctorLockMessage] = useState('');
+  const [proctorBannerMessage, setProctorBannerMessage] = useState('');
+  const lastRemoteCmdTimestampRef = useRef<string>('');
+  const handleFinishExamRef = useRef<() => void>(() => {});
 
   useEffect(() => {
-    if (subTab !== 'simulasi_ujian' || examFinished) return;
+    if (subTab !== 'simulasi_ujian' || !isExamStarted || examFinished || isLockedByProctor) return;
     const interval = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(interval);
-          handleFinishExam();
+          setTimeout(() => handleFinishExamRef.current(), 0);
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [subTab, examFinished]);
+  }, [subTab, isExamStarted, examFinished, isLockedByProctor]);
 
   const getFormattedTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -2674,7 +2691,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
   // Window Focus / Tab Switch Detection Effect
   useEffect(() => {
-    if (subTab !== 'simulasi_ujian' || examFinished) return;
+    if (subTab !== 'simulasi_ujian' || !isExamStarted || examFinished) return;
 
     const handleWindowBlur = () => {
       setCheatCount(prev => {
@@ -2685,26 +2702,197 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
         if (next >= 3) {
           setTimeout(() => {
-            handleFinishExam();
-            alert('PERINGATAN KRITIS: Anda telah melakukan pelanggaran batas 3x keluar aplikasi! Ujian di-submit otomatis oleh Sistem Anti-Cheat.');
+            handleFinishExamRef.current();
+            showToast(
+              'PERINGATAN KRITIS: Batas 3x keluar aplikasi terlampaui. Ujian disubmit otomatis oleh Sistem Anti-Cheat.',
+              'error'
+            );
           }, 1000);
         }
         return next;
       });
     };
 
-    window.addEventListener('blur', handleWindowBlur);
-    document.addEventListener('visibilitychange', () => {
+    const handleVisibilityChange = () => {
       if (document.hidden) handleWindowBlur();
-    });
+    };
+
+    window.addEventListener('blur', handleWindowBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('blur', handleWindowBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [subTab, examFinished]);
+  }, [subTab, isExamStarted, examFinished]);
 
   const currentExam = selectedExamBank || activeBank;
   const currentSoal = currentExam?.daftarSoal[soalIndex];
+
+  // --- Live Monitoring Telemetry Publisher & Remote Proctor Listener ---
+  const buildLiveSesiPayload = (overrides?: Partial<CbtSesiAktif>): CbtSesiAktif | null => {
+    if (!currentExam) return null;
+    const nowIso = new Date().toISOString();
+    const soalList = currentExam.daftarSoal || [];
+    let terjawab = 0;
+    let ragu = 0;
+    soalList.forEach(s => {
+      const entry = siswaJawaban[s.id];
+      if (!entry) return;
+      if (entry.raguRagu) ragu += 1;
+      const val = entry.jawaban;
+      const isFilled = Array.isArray(val) ? val.length > 0 : String(val || '').trim().length > 0;
+      if (isFilled) terjawab += 1;
+    });
+
+    const computedStatus: StatusSesiCbt = examFinished
+      ? 'Selesai'
+      : isLockedByProctor
+      ? 'Dikunci Pengawas'
+      : cheatCount > 0
+      ? 'Peringatan Pelanggaran'
+      : 'Mengerjakan';
+
+    return {
+      id: `${currentExam.id}__${activeSiswa.id}`,
+      ujianId: currentExam.id,
+      judulUjian: currentExam.judul,
+      mataPelajaran: currentExam.mataPelajaran,
+      siswaId: activeSiswa.id,
+      siswaNama: activeSiswa.nama,
+      nis: activeSiswa.nis || activeSiswa.nisn || '-',
+      kelas: activeSiswa.kelas || '-',
+      status: computedStatus,
+      soalAktifNo: Math.min(Math.max(1, soalIndex + 1), Math.max(1, soalList.length)),
+      totalSoal: soalList.length,
+      terjawabCount: terjawab,
+      raguCount: ragu,
+      pelanggaranCount: cheatCount,
+      logKecurangan: cheatLogs,
+      sisaDetik: timeLeft,
+      durasiMenit: currentExam.durasiMenit || 60,
+      waktuMulai: examStartedAt || nowIso,
+      lastHeartbeat: nowIso,
+      updatedAt: nowIso,
+      ...overrides
+    };
+  };
+
+  const publishLiveExamSession = (overrides?: Partial<CbtSesiAktif>) => {
+    const payload = buildLiveSesiPayload(overrides);
+    if (!payload) return;
+
+    try {
+      const raw = localStorage.getItem(CBT_SESI_AKTIF_STORAGE_KEY);
+      const parsed: CbtSesiAktif[] = raw ? JSON.parse(raw) : [];
+      const list = Array.isArray(parsed) ? parsed : [];
+      const idx = list.findIndex(item => item.id === payload.id);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...payload };
+      } else {
+        list.unshift(payload);
+      }
+      safeSetStorageJson(CBT_SESI_AKTIF_STORAGE_KEY, list);
+    } catch {
+      // ignore storage errors
+    }
+
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel(CBT_MONITOR_CHANNEL_NAME);
+        bc.postMessage({ type: 'SESI_UPSERT', payload });
+        bc.close();
+      } catch {
+        // ignore
+      }
+    }
+
+    dbSaveItem('edu_cbtSesiAktifList', payload).catch(() => {});
+  };
+
+  const latestPublishSessionRef = useRef(publishLiveExamSession);
+  latestPublishSessionRef.current = publishLiveExamSession;
+
+  // Immediate live sync when active question, answers, violation count, or lock state changes
+  useEffect(() => {
+    if (subTab !== 'simulasi_ujian' || !isExamStarted || examFinished) return;
+    latestPublishSessionRef.current();
+  }, [subTab, isExamStarted, examFinished, soalIndex, siswaJawaban, cheatCount, isLockedByProctor]);
+
+  // 10-second live heartbeat without recreating interval on every timeLeft tick
+  useEffect(() => {
+    if (subTab !== 'simulasi_ujian' || !isExamStarted || examFinished) return;
+    const heartbeatInterval = setInterval(() => {
+      latestPublishSessionRef.current();
+    }, 10000);
+    return () => clearInterval(heartbeatInterval);
+  }, [subTab, isExamStarted, examFinished, currentExam?.id, activeSiswa.id]);
+
+  // Remote proctor command listener (lock, unlock, reset violations, force submit, proctor message)
+  useEffect(() => {
+    if (subTab !== 'simulasi_ujian' || !isExamStarted || examFinished || !currentExam) return;
+    const sessionId = `${currentExam.id}__${activeSiswa.id}`;
+
+    const applyRemoteCommand = (remote: CbtSesiAktif) => {
+      if (!remote || remote.id !== sessionId) return;
+      const stamp = `${remote.updatedAt}|${remote.instruksiPengawas || ''}|${remote.pesanPengawas || ''}`;
+      if (lastRemoteCmdTimestampRef.current === stamp) return;
+
+      if (remote.pesanPengawas) {
+        setProctorBannerMessage(remote.pesanPengawas);
+      }
+
+      if (remote.instruksiPengawas === 'kunci' || remote.status === 'Dikunci Pengawas') {
+        lastRemoteCmdTimestampRef.current = stamp;
+        setIsLockedByProctor(true);
+        setProctorLockMessage(remote.pesanPengawas || 'Layar ujian dikunci sementara oleh pengawas.');
+      } else if (remote.instruksiPengawas === 'lanjut') {
+        lastRemoteCmdTimestampRef.current = stamp;
+        setIsLockedByProctor(false);
+        setProctorLockMessage('');
+        showToast(remote.pesanPengawas || 'Pengawas membuka kembali sesi ujian Anda.');
+      } else if (remote.instruksiPengawas === 'reset_pelanggaran') {
+        lastRemoteCmdTimestampRef.current = stamp;
+        setCheatCount(0);
+        setCheatLogs([]);
+        setShowCheatAlert(false);
+        showToast(remote.pesanPengawas || 'Hitungan pelanggaran direset oleh pengawas.');
+      } else if (remote.instruksiPengawas === 'paksa_submit') {
+        lastRemoteCmdTimestampRef.current = stamp;
+        setIsLockedByProctor(false);
+        showToast(remote.pesanPengawas || 'Ujian diselesaikan oleh pengawas.', 'error');
+        handleFinishExamRef.current();
+      } else if (remote.pesanPengawas) {
+        lastRemoteCmdTimestampRef.current = stamp;
+        showToast(`Pesan Pengawas: ${remote.pesanPengawas}`);
+      }
+    };
+
+    const unsubscribe = dbSubscribeCollection<CbtSesiAktif>(
+      'edu_cbtSesiAktifList',
+      items => {
+        const match = items.find(i => i.id === sessionId);
+        if (match) applyRemoteCommand(match);
+      },
+      () => {}
+    );
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      bc = new BroadcastChannel(CBT_MONITOR_CHANNEL_NAME);
+      bc.onmessage = event => {
+        const data = event.data;
+        if (data?.type === 'SESI_UPSERT' && data.payload?.id === sessionId) {
+          applyRemoteCommand(data.payload as CbtSesiAktif);
+        }
+      };
+    }
+
+    return () => {
+      unsubscribe();
+      if (bc) bc.close();
+    };
+  }, [subTab, isExamStarted, examFinished, currentExam?.id, activeSiswa.id]);
 
   const handleAnswerSelect = (soalId: string, answer: string | string[]) => {
     setSiswaJawaban(prev => ({
@@ -2788,6 +2976,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
 
     const normalizedScore =
       maxBobot > 0 ? Math.min(100, Math.max(0, Math.round((earned / maxBobot) * 100))) : 0;
+    const submittedAt = new Date().toISOString();
 
     const newHasil: HasilUjian = {
       id: `hsl-${Date.now()}`,
@@ -2801,7 +2990,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
       jawaban: enrichedJawaban,
       nilaiTotal: normalizedScore,
       statusPenilaian: needsManualCorrection ? 'Perlu Koreksi Manual' : 'Selesai',
-      waktuSubmit: new Date().toISOString(),
+      waktuSubmit: submittedAt,
       pelanggaranCount: cheatCount,
       logKecurangan: cheatLogs
     };
@@ -2810,9 +2999,19 @@ export const CbtView: React.FC<CbtViewProps> = ({
       setHasilUjianList(prev => [...prev, newHasil]);
     }
 
+    publishLiveExamSession({
+      status: 'Selesai',
+      sisaDetik: 0,
+      waktuSelesai: submittedAt,
+      nilaiSementara: normalizedScore,
+      instruksiPengawas: undefined
+    });
+
+    setIsLockedByProctor(false);
     setFinalScore(normalizedScore);
     setExamFinished(true);
   };
+  handleFinishExamRef.current = handleFinishExam;
 
   return (
     <div className="space-y-6">
@@ -2881,6 +3080,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
             {subTab === 'daftar_pengawas' && 'Daftar Pengawas Ujian'}
             {subTab === 'berita_acara' && 'Berita Acara Ujian'}
             {subTab === 'simulasi_ujian' && 'Simulasi CBT Anti-Cheat'}
+            {subTab === 'monitoring_ujian' && 'Monitoring Ujian Live'}
             {subTab === 'koreksi_soal' && 'Koreksi Soal CBT'}
             {subTab === 'input_nilai' && 'Input Nilai CBT'}
             {subTab === 'rekap_nilai' && 'Rekap Nilai CBT'}
@@ -3916,6 +4116,49 @@ export const CbtView: React.FC<CbtViewProps> = ({
       {subTab === 'simulasi_ujian' && (
         <div className="space-y-4">
           
+          {/* Proctor Message Banner */}
+          {!examFinished && isExamStarted && proctorBannerMessage && (
+            <div className="p-3.5 bg-cyan-950/90 border border-cyan-500/50 rounded-2xl flex items-center justify-between gap-3 text-cyan-100 text-xs shadow-lg">
+              <div className="flex items-center gap-2.5">
+                <MessageSquare className="w-4 h-4 text-cyan-400 shrink-0" />
+                <div>
+                  <span className="font-extrabold text-cyan-300 uppercase tracking-wider text-[10px] block">
+                    Pesan Pengawas Ujian
+                  </span>
+                  <span className="font-medium">{proctorBannerMessage}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProctorBannerMessage('')}
+                className="p-1 rounded-lg hover:bg-cyan-500/20 text-cyan-300 cursor-pointer"
+                title="Tutup pesan"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Proctor Screen Lock Overlay */}
+          {!examFinished && isExamStarted && isLockedByProctor && (
+            <div className="fixed inset-0 z-[90] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="bg-[#121212] border border-rose-500/60 rounded-2xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl">
+                <div className="w-14 h-14 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mx-auto text-rose-400">
+                  <Lock className="w-7 h-7" />
+                </div>
+                <h3 className="text-lg font-extrabold text-white uppercase tracking-wide">
+                  Sesi Ujian Dikunci Pengawas
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {proctorLockMessage || 'Layar pengerjaan ujian Anda sedang dikunci sementara oleh pengawas. Timer dijeda sampai pengawas membuka kunci sesi Anda.'}
+                </p>
+                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] text-amber-300 font-semibold">
+                  Harap tetap berada di halaman ini dan ikuti arahan pengawas ruang.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Anti-Cheat Proctored Warning Banner */}
           {!examFinished && (
             <div className="p-4 bg-amber-950/80 border border-amber-500/50 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-200 text-xs">
@@ -4079,10 +4322,44 @@ export const CbtView: React.FC<CbtViewProps> = ({
                     <button
                       disabled={!selectedExamBank}
                       onClick={() => {
+                        const initialSeconds = (selectedExamBank?.durasiMenit || 60) * 60;
+                        const nowIso = new Date().toISOString();
                         setIsExamStarted(true);
+                        setExamStartedAt(nowIso);
+                        setIsLockedByProctor(false);
+                        setProctorLockMessage('');
+                        setProctorBannerMessage('');
+                        setCheatCount(0);
+                        setCheatLogs([]);
+                        setShowCheatAlert(false);
                         setSoalIndex(0);
                         setSiswaJawaban({});
-                        setTimeLeft((selectedExamBank?.durasiMenit || 60) * 60);
+                        setTimeLeft(initialSeconds);
+
+                        if (selectedExamBank) {
+                          publishLiveExamSession({
+                            id: `${selectedExamBank.id}__${activeSiswa.id}`,
+                            ujianId: selectedExamBank.id,
+                            judulUjian: selectedExamBank.judul,
+                            mataPelajaran: selectedExamBank.mataPelajaran,
+                            siswaId: activeSiswa.id,
+                            siswaNama: activeSiswa.nama,
+                            nis: activeSiswa.nis || activeSiswa.nisn || '-',
+                            kelas: activeSiswa.kelas || '-',
+                            status: 'Mengerjakan',
+                            soalAktifNo: 1,
+                            totalSoal: selectedExamBank.daftarSoal.length,
+                            terjawabCount: 0,
+                            raguCount: 0,
+                            pelanggaranCount: 0,
+                            logKecurangan: [],
+                            sisaDetik: initialSeconds,
+                            durasiMenit: selectedExamBank.durasiMenit || 60,
+                            waktuMulai: nowIso,
+                            lastHeartbeat: nowIso,
+                            updatedAt: nowIso
+                          });
+                        }
                       }}
                       className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-blue-600/20 disabled:opacity-50 disabled:grayscale disabled:pointer-events-none flex items-center justify-center gap-3 uppercase tracking-widest cursor-pointer group"
                     >
@@ -4415,6 +4692,20 @@ export const CbtView: React.FC<CbtViewProps> = ({
           )}
 
         </div>
+      )}
+
+      {/* SUBTAB MONITORING UJIAN LIVE */}
+      {subTab === 'monitoring_ujian' && currentRole !== 'siswa' && (
+        <MonitoringUjianCbt
+          siswaList={siswaList}
+          bankSoalList={bankSoalList}
+          hasilUjianList={hasilUjianList}
+          availableKelasList={availableKelasList}
+          availableMapelList={availableMapelList}
+          cbtSettings={cbtSettings}
+          showToast={showToast}
+          onNavigateSubTab={next => setSubTab(next)}
+        />
       )}
 
       {/* SUBTAB KOREKSI SOAL & PENILAIAN CBT */}

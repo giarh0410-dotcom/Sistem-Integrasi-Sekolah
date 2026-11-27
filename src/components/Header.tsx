@@ -28,6 +28,7 @@ interface HeaderProps {
   theme: 'dark' | 'light';
   setTheme: (theme: 'dark' | 'light') => void;
   firebaseSyncStatus?: 'idle' | 'saving' | 'saved' | 'error';
+  onRefreshFromCloud?: () => void | Promise<void>;
   colorTheme?: string;
   setColorTheme?: (theme: string) => void;
 }
@@ -42,7 +43,8 @@ export const Header: React.FC<HeaderProps> = ({
   schoolSettings,
   onLogout,
   theme,
-  firebaseSyncStatus = 'idle'
+  firebaseSyncStatus = 'idle',
+  onRefreshFromCloud
 }) => {
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
@@ -116,8 +118,14 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-3">
 
           {/* Firebase Auto-save Cloud Indicator */}
-          <div 
-            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm ${
+          <button 
+            type="button"
+            onClick={() => {
+              if (onRefreshFromCloud && firebaseSyncStatus !== 'saving') {
+                onRefreshFromCloud();
+              }
+            }}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer active:scale-95 ${
               firebaseSyncStatus === 'saving'
                 ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
                 : firebaseSyncStatus === 'saved'
@@ -125,10 +133,10 @@ export const Header: React.FC<HeaderProps> = ({
                 : firebaseSyncStatus === 'error'
                 ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
                 : theme === 'light'
-                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                : 'bg-blue-500/5 text-blue-400 border-blue-500/10'
+                ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                : 'bg-blue-500/5 text-blue-400 border-blue-500/10 hover:bg-blue-500/10'
             }`}
-            title="Sistem Sinkronisasi Otomatis Cloud Firebase"
+            title="Sistem Sinkronisasi Otomatis Cloud Firebase (Klik untuk muat ulang data terbaru)"
           >
             {firebaseSyncStatus === 'saving' ? (
               <>
@@ -171,7 +179,7 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'bg-emerald-500'
               }`}></span>
             </span>
-          </div>
+          </button>
 
             {/* Logout Button */}
             {onLogout && (

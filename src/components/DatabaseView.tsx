@@ -79,6 +79,7 @@ interface DatabaseViewProps {
   absensiHarian?: any[];
   absensiKelasList?: any[];
   currentRole?: string;
+  onRefreshFromCloud?: () => Promise<void>;
 }
 
 const normalizeDateForInput = (d: any): string => {
@@ -129,8 +130,10 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
   userEmail = '',
   absensiHarian = [],
   absensiKelasList = [],
-  currentRole = 'admin'
+  currentRole = 'admin',
+  onRefreshFromCloud
 }) => {
+  const [isRefreshingCloud, setIsRefreshingCloud] = useState(false);
   const [localSubTab, setLocalSubTab] = useState<SubTab>('siswa');
   const subTab = propsSubTab || localSubTab;
   const setSubTab = propsSetSubTab || setLocalSubTab;
@@ -1874,8 +1877,31 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
           </p>
         </div>
 
-        {/* Google Sheets Sync panel */}
+        {/* Google Sheets & Cloud Sync panel */}
         <div className="flex flex-wrap items-center gap-2">
+          {onRefreshFromCloud && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (isRefreshingCloud) return;
+                setIsRefreshingCloud(true);
+                try {
+                  await onRefreshFromCloud();
+                  showToast('Database berhasil disinkronkan dari Cloud Firebase.', 'success');
+                } catch {
+                  showToast('Gagal memuat pembaruan Cloud. Periksa koneksi internet.', 'error');
+                } finally {
+                  setIsRefreshingCloud(false);
+                }
+              }}
+              disabled={isRefreshingCloud}
+              className="px-3.5 py-2 bg-blue-600/15 hover:bg-blue-600/25 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-60"
+              title="Muat ulang database terbaru dari Cloud Firebase agar sama di semua perangkat"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingCloud ? 'animate-spin' : ''}`} />
+              <span>{isRefreshingCloud ? 'Menyinkronkan...' : 'Sinkron Cloud'}</span>
+            </button>
+          )}
           {databaseSpreadsheetUrl && (
             <a
               href={databaseSpreadsheetUrl}
@@ -1907,14 +1933,14 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
       </div>
 
       {/* Quick Sub-Tab Navigation */}
-      <div className="flex flex-wrap items-center gap-2 bg-[#121212] p-2 rounded-xl border border-slate-800 shadow-sm">
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 bg-[#121212] p-2 rounded-xl border border-slate-800 shadow-sm">
         {[
-          { id: 'siswa' as SubTab, label: 'Data Siswa', count: siswaList.length, icon: <GraduationCap className="w-3.5 h-3.5" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
-          { id: 'guru' as SubTab, label: 'Data Guru', count: guruList.length, icon: <UserCheck className="w-3.5 h-3.5" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
-          { id: 'staf' as SubTab, label: 'Data Staf', count: stafList.length, icon: <Users className="w-3.5 h-3.5" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
-          { id: 'rombel' as SubTab, label: 'Data Kelas', count: activeRombelList.length, icon: <Layers className="w-3.5 h-3.5" />, activeCls: 'bg-indigo-600/15 text-indigo-400 border-indigo-500/40' },
-          { id: 'mapel' as SubTab, label: 'Mata Pelajaran', count: activeMapelList.length, icon: <BookOpen className="w-3.5 h-3.5" />, activeCls: 'bg-amber-600/15 text-amber-400 border-amber-500/40' },
-          { id: 'ekskul' as SubTab, label: 'Ekstrakurikuler', count: activeEkskulList.length, icon: <Trophy className="w-3.5 h-3.5" />, activeCls: 'bg-emerald-600/15 text-emerald-400 border-emerald-500/40' }
+          { id: 'siswa' as SubTab, label: 'Data Siswa', count: siswaList.length, icon: <GraduationCap className="w-3.5 h-3.5 shrink-0" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
+          { id: 'guru' as SubTab, label: 'Data Guru', count: guruList.length, icon: <UserCheck className="w-3.5 h-3.5 shrink-0" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
+          { id: 'staf' as SubTab, label: 'Data Staf', count: stafList.length, icon: <Users className="w-3.5 h-3.5 shrink-0" />, activeCls: 'bg-blue-600/15 text-blue-400 border-blue-500/40' },
+          { id: 'rombel' as SubTab, label: 'Data Kelas', count: activeRombelList.length, icon: <Layers className="w-3.5 h-3.5 shrink-0" />, activeCls: 'bg-indigo-600/15 text-indigo-400 border-indigo-500/40' },
+          { id: 'mapel' as SubTab, label: 'Mata Pelajaran', count: activeMapelList.length, icon: <BookOpen className="w-3.5 h-3.5 shrink-0" />, activeCls: 'bg-amber-600/15 text-amber-400 border-amber-500/40' },
+          { id: 'ekskul' as SubTab, label: 'Ekstrakurikuler', count: activeEkskulList.length, icon: <Trophy className="w-3.5 h-3.5 shrink-0" />, activeCls: 'bg-emerald-600/15 text-emerald-400 border-emerald-500/40' }
         ].map(tab => {
           const active = subTab === tab.id;
           return (
@@ -1925,15 +1951,17 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                 setSubTab(tab.id);
                 setSearch('');
               }}
-              className={`px-3.5 py-2 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${
+              className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all flex items-center justify-between sm:justify-start gap-1.5 min-w-0 ${
                 active
                   ? `${tab.activeCls} shadow-sm`
                   : 'bg-[#181818] text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
               }`}
             >
-              {tab.icon}
-              <span>{tab.label}</span>
-              <span className="px-1.5 py-0.5 rounded bg-slate-900/90 text-[10px] font-mono text-slate-300">
+              <span className="flex items-center gap-1.5 min-w-0">
+                {tab.icon}
+                <span className="truncate">{tab.label}</span>
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-slate-900/90 text-[10px] font-mono text-slate-300 shrink-0">
                 {tab.count}
               </span>
             </button>
@@ -1955,7 +1983,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
         {/* Row 1: Search & Filters */}
         <div className="flex flex-col md:flex-row md:flex-wrap items-stretch md:items-center gap-2.5 w-full min-w-0">
           {/* Search Input */}
-          <div className="relative flex-1 min-w-[220px]">
+          <div className="relative flex-1 min-w-0 sm:min-w-[220px]">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
             <input
               type="text"
@@ -2859,479 +2887,1004 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
       <div className="bg-[#121212] rounded-xl border border-slate-800 shadow-sm overflow-hidden">
         
         {subTab === 'siswa' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-[#181818] border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-                <tr>
-                  <th className="px-3 py-3 w-10 text-center">
-                    <input 
-                      type="checkbox" 
-                      checked={isAllSiswaSelected} 
-                      ref={el => { if (el) el.indeterminate = isSomeSiswaSelected; }} 
-                      onChange={(e) => handleToggleSelectAllSiswa(e.target.checked)} 
-                      title={isAllSiswaSelected ? "Batalkan pilihan semua" : "Pilih semua data siswa"}
-                      className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer accent-blue-600" 
+          <>
+            {/* Mobile & Tablet Portrait Card Layout (< 1024px) */}
+            <div className="lg:hidden p-3 sm:p-4 space-y-3">
+              {filteredSiswa.length > 0 && (
+                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#181818] border border-slate-800">
+                  <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isAllSiswaSelected}
+                      ref={el => { if (el) el.indeterminate = isSomeSiswaSelected; }}
+                      onChange={(e) => handleToggleSelectAllSiswa(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
                     />
-                  </th>
-                  <th className="px-4 py-3">Foto & Nama Siswa</th>
-                  <th className="px-4 py-3">NISN / NIS</th>
-                  <th className="px-4 py-3">Kelas</th>
-                  <th className="px-4 py-3">L/P</th>
-                  <th className="px-4 py-3">Orang Tua / Wali</th>
-                  <th className="px-4 py-3">Telepon Wali</th>
-                  <th className="px-4 py-3 text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {filteredSiswa.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                      Tidak ada data siswa yang cocok.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredSiswa.map(s => {
+                    <span>Pilih Semua Yang Tampil ({filteredSiswa.length})</span>
+                  </label>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    {selectedSiswaIds.length > 0 ? `${selectedSiswaIds.length} dipilih` : `${filteredSiswa.length} siswa`}
+                  </span>
+                </div>
+              )}
+
+              {filteredSiswa.length === 0 ? (
+                <div className="px-4 py-10 text-center text-xs text-slate-500 bg-[#181818] rounded-xl border border-slate-800/80">
+                  Tidak ada data siswa yang cocok.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {filteredSiswa.map(s => {
                     const isSelected = selectedSiswaIds.includes(s.id);
+                    let formattedPhone = (s.teleponWali || '').trim().replace(/\D/g, '');
+                    if (formattedPhone.startsWith('0')) formattedPhone = '62' + formattedPhone.slice(1);
+                    else if (formattedPhone.startsWith('8')) formattedPhone = '62' + formattedPhone;
+                    const parentName = s.namaAyah || s.namaIbu || 'Orang Tua';
+                    const waHref = formattedPhone
+                      ? `https://wa.me/${formattedPhone}?text=${encodeURIComponent(`Halo Bapak/Ibu ${parentName}, kami dari sekolah ingin menginformasikan perihal perkembangan akademik anak Anda yang bernama *${s.nama}*...`)}`
+                      : '';
+
                     return (
-                    <tr key={s.id} className={`border-b transition-colors ${isSelected ? 'bg-blue-950/25 border-blue-500/30' : 'hover:bg-slate-800/20 border-slate-800/40'}`}>
-                      <td className="px-3 py-3 text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={isSelected} 
-                          onChange={() => handleToggleSelectSiswa(s.id)} 
-                          className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer accent-blue-600" 
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-xs">
-                        <div className="flex items-center gap-3">
-                          <div 
-                            className="relative shrink-0 group cursor-pointer" 
+                      <div
+                        key={s.id}
+                        className={`rounded-xl border p-3.5 space-y-3 transition-all min-w-0 ${
+                          isSelected
+                            ? 'bg-blue-950/25 border-blue-500/40 shadow-md'
+                            : 'bg-[#181818] border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        {/* Header: Checkbox + Avatar + Name + Badges */}
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectSiswa(s.id)}
+                            className="mt-1 w-4 h-4 rounded border-slate-700 bg-[#121212] text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600 shrink-0"
+                          />
+
+                          <div
+                            className="relative shrink-0 group cursor-pointer"
                             onClick={() => setQuickPhotoData({ type: 'siswa', data: s })}
                             title="Klik untuk ganti foto"
                           >
-                            <img 
-                              src={s.fotoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'} 
-                              alt={s.nama} 
-                              className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 group-hover:border-blue-500 transition-all shadow-md"
+                            <img
+                              src={s.fotoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'}
+                              alt={s.nama}
+                              className="w-11 h-11 rounded-full object-cover border-2 border-slate-700 group-hover:border-blue-500 transition-all shadow-sm"
                             />
-                            <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#121212] ${
-                              s.status === 'Aktif' ? 'bg-emerald-500' : 'bg-slate-500'
-                            }`} />
+                            <span
+                              className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#181818] ${
+                                s.status === 'Aktif' ? 'bg-emerald-500' : 'bg-slate-500'
+                              }`}
+                            />
                           </div>
-                          <div>
-                            <span 
-                              onClick={() => {
-                                setSelectedSiswaDetail(s);
-                                setDetailTab('biodata');
-                              }}
-                              className="text-white font-extrabold hover:text-blue-400 cursor-pointer block transition-colors hover:underline whitespace-nowrap"
-                            >
-                              {s.nama}
-                            </span>
-                            <span className="text-[10px] text-slate-500 block truncate max-w-[180px] flex items-center gap-1">
-                              <MapPin className="w-3 h-3 text-slate-600 shrink-0" /> {s.alamat || 'Alamat tidak diisi'}
-                            </span>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2 min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedSiswaDetail(s);
+                                  setDetailTab('biodata');
+                                }}
+                                className="text-left text-sm font-extrabold text-white hover:text-blue-400 transition-colors leading-snug line-clamp-2 min-w-0"
+                              >
+                                {s.nama}
+                              </button>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border shrink-0 ${
+                                  s.jenisKelamin === 'L'
+                                    ? 'bg-blue-500/15 text-blue-400 border-blue-500/20'
+                                    : 'bg-pink-500/15 text-pink-400 border-pink-500/20'
+                                }`}
+                              >
+                                {s.jenisKelamin}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              <span className="inline-block px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono text-[10px] font-bold">
+                                {s.kelas || '-'}
+                              </span>
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                                  s.status === 'Aktif'
+                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                                }`}
+                              >
+                                {s.status}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs font-medium whitespace-nowrap">
-                        <div className="font-mono text-slate-300 font-bold">{s.nisn}</div>
-                        <div className="text-[10px] text-slate-500 font-mono mt-0.5">NIS: {s.nis}</div>
-                      </td>
-                      <td className="px-4 py-3 text-xs font-semibold whitespace-nowrap">
-                        <span className="inline-block px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono text-[11px] whitespace-nowrap">
-                          {s.kelas}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-xs font-bold">
-                        {s.jenisKelamin === 'L' ? (
-                          <span className="px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20 inline-flex items-center text-[11px] font-mono">
-                            L
+
+                        {/* Address Row (Safe truncation, zero overlap) */}
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 min-w-0 bg-[#121212] px-2.5 py-1.5 rounded-lg border border-slate-800/70">
+                          <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          <span className="truncate block min-w-0 flex-1">
+                            {s.alamat || 'Alamat tidak diisi'}
                           </span>
-                        ) : (
-                          <span className="px-2.5 py-0.5 rounded-full bg-pink-500/15 text-pink-400 border border-pink-500/20 inline-flex items-center text-[11px] font-mono">
-                            P
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs font-medium whitespace-nowrap">
-                        <div className="text-slate-300 font-bold">{s.namaAyah || s.namaIbu || 'Orang Tua'}</div>
-                        <div className="text-[10px] text-slate-500 flex items-center gap-1">
-                          <User className="w-3 h-3 text-slate-600 shrink-0" /> Ayah / Ibu Kandung
                         </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs font-medium whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-slate-400">{s.teleponWali}</span>
-                          {s.teleponWali && (
-                            <button
-                              onClick={() => {
-                                let formattedPhone = s.teleponWali.trim().replace(/\D/g, '');
-                                if (formattedPhone.startsWith('0')) formattedPhone = '62' + formattedPhone.slice(1);
-                                else if (formattedPhone.startsWith('8')) formattedPhone = '62' + formattedPhone;
-                                const parentName = s.namaAyah || s.namaIbu || 'Orang Tua';
-                                const text = encodeURIComponent(`Halo Bapak/Ibu ${parentName}, kami dari sekolah ingin menginformasikan perihal perkembangan akademik anak Anda yang bernama *${s.nama}*...`);
-                                window.open(`https://wa.me/${formattedPhone}?text=${text}`, '_blank');
-                              }}
-                              title="Hubungi Orang Tua di WhatsApp"
-                              className="p-1 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 border border-emerald-500/20 rounded-md transition-all shrink-0"
-                            >
-                              <Phone className="w-3.5 h-3.5 fill-emerald-500/10" />
-                            </button>
-                          )}
+
+                        {/* Metadata Grid */}
+                        <div className="grid grid-cols-2 gap-2 text-[11px] bg-[#121212] p-2.5 rounded-lg border border-slate-800/70">
+                          <div className="min-w-0">
+                            <span className="text-[10px] text-slate-500 uppercase font-bold block">NISN / NIS</span>
+                            <div className="font-mono font-bold text-slate-200 truncate">{s.nisn || '-'}</div>
+                            <div className="font-mono text-[10px] text-slate-400 truncate">NIS: {s.nis || '-'}</div>
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-[10px] text-slate-500 uppercase font-bold block">Orang Tua / Wali</span>
+                            <div className="font-bold text-slate-200 truncate">{parentName}</div>
+                            <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                              <span className="font-mono text-[10px] text-slate-400 truncate">
+                                {s.teleponWali || '-'}
+                              </span>
+                              {waHref && (
+                                <a
+                                  href={waHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Hubungi Orang Tua di WhatsApp"
+                                  className="p-0.5 text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded shrink-0"
+                                >
+                                  <Phone className="w-3 h-3" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </td>
-                      <td className="px-4 py-3 text-right text-xs whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
-                          <button 
+
+                        {/* Action Footer */}
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <button
+                            type="button"
                             onClick={() => {
                               setSelectedSiswaDetail(s);
                               setDetailTab('biodata');
                             }}
-                            title="Lihat Profil Lengkap"
-                            className="p-1.5 text-blue-400 hover:text-blue-300 hover:bg-blue-600/15 border border-blue-500/20 rounded-lg transition-all"
+                            className="flex-1 py-1.5 px-2.5 bg-blue-600/15 hover:bg-blue-600/25 text-blue-300 border border-blue-500/30 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-3.5 h-3.5" /> Detail
                           </button>
-                          <button 
+                          <button
+                            type="button"
                             onClick={() => setCardModalData({ type: 'siswa', data: s })}
+                            className="py-1.5 px-2.5 bg-purple-600/15 hover:bg-purple-600/25 text-purple-300 border border-purple-500/30 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
                             title="Cetak Kartu Digital & Barcode"
-                            className="p-1.5 text-purple-400 hover:text-purple-300 hover:bg-purple-600/15 border border-purple-500/20 rounded-lg transition-all"
                           >
-                            <CreditCard className="w-4 h-4" />
+                            <CreditCard className="w-3.5 h-3.5" /> Kartu
                           </button>
-                           <>
-                              <button 
-                                onClick={() => {
-                                  setEditingId(s.id);
-                                  setFormSiswa({
-                                    ...s,
-                                    tanggalLahir: normalizeDateForInput(s.tanggalLahir),
-                                    email: s.email || '',
-                                    asalSekolah: s.asalSekolah || '',
-                                    anakKe: s.anakKe !== undefined ? s.anakKe : 1,
-                                    jumlahSaudara: s.jumlahSaudara !== undefined ? s.jumlahSaudara : 0,
-                                    beratBadan: s.beratBadan !== undefined ? s.beratBadan : 0,
-                                    tinggiBadan: s.tinggiBadan !== undefined ? s.tinggiBadan : 0,
-                                    namaAyah: s.namaAyah || '',
-                                    namaIbu: s.namaIbu || '',
-                                    tempatLahirOrtu: s.tempatLahirOrtu || '',
-                                    tanggalLahirOrtu: normalizeDateForInput(s.tanggalLahirOrtu || ''),
-                                    pendidikanOrtu: s.pendidikanOrtu || '',
-                                    pekerjaanOrtu: s.pekerjaanOrtu || '',
-                                    nikOrtu: s.nikOrtu || ''
-                                  });
-                                  setModalMode('edit');
-                                  setIsModalOpen(true);
-                                }}
-                                title="Ubah Biodata Siswa"
-                                className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button 
-                                onClick={() => handleDelete(s.id, s.nama, 'siswa')}
-                                title="Hapus Data Siswa"
-                                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(s.id);
+                              setFormSiswa({
+                                ...s,
+                                tanggalLahir: normalizeDateForInput(s.tanggalLahir),
+                                email: s.email || '',
+                                asalSekolah: s.asalSekolah || '',
+                                anakKe: s.anakKe !== undefined ? s.anakKe : 1,
+                                jumlahSaudara: s.jumlahSaudara !== undefined ? s.jumlahSaudara : 0,
+                                beratBadan: s.beratBadan !== undefined ? s.beratBadan : 0,
+                                tinggiBadan: s.tinggiBadan !== undefined ? s.tinggiBadan : 0,
+                                namaAyah: s.namaAyah || '',
+                                namaIbu: s.namaIbu || '',
+                                tempatLahirOrtu: s.tempatLahirOrtu || '',
+                                tanggalLahirOrtu: normalizeDateForInput(s.tanggalLahirOrtu || ''),
+                                pendidikanOrtu: s.pendidikanOrtu || '',
+                                pekerjaanOrtu: s.pekerjaanOrtu || '',
+                                nikOrtu: s.nikOrtu || ''
+                              });
+                              setModalMode('edit');
+                              setIsModalOpen(true);
+                            }}
+                            title="Ubah Biodata Siswa"
+                            className="p-1.5 text-slate-300 hover:text-blue-400 bg-slate-800/80 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(s.id, s.nama, 'siswa')}
+                            title="Hapus Data Siswa"
+                            className="p-1.5 text-slate-300 hover:text-rose-400 bg-slate-800/80 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Laptop & Wide Tablet Landscape Table Layout (>= 1024px) */}
+            <div className="hidden lg:block overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-[#181818] border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                  <tr>
+                    <th className="px-3 py-3 w-10 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={isAllSiswaSelected} 
+                        ref={el => { if (el) el.indeterminate = isSomeSiswaSelected; }} 
+                        onChange={(e) => handleToggleSelectAllSiswa(e.target.checked)} 
+                        title={isAllSiswaSelected ? "Batalkan pilihan semua" : "Pilih semua data siswa"}
+                        className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer accent-blue-600" 
+                      />
+                    </th>
+                    <th className="px-4 py-3 min-w-[230px]">Foto & Nama Siswa</th>
+                    <th className="px-4 py-3 whitespace-nowrap">NISN / NIS</th>
+                    <th className="px-4 py-3 whitespace-nowrap">Kelas</th>
+                    <th className="px-4 py-3 whitespace-nowrap">L/P</th>
+                    <th className="px-4 py-3 min-w-[140px]">Orang Tua / Wali</th>
+                    <th className="px-4 py-3 whitespace-nowrap">Telepon Wali</th>
+                    <th className="px-4 py-3 text-right whitespace-nowrap">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {filteredSiswa.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                        Tidak ada data siswa yang cocok.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSiswa.map(s => {
+                      const isSelected = selectedSiswaIds.includes(s.id);
+                      let formattedPhone = (s.teleponWali || '').trim().replace(/\D/g, '');
+                      if (formattedPhone.startsWith('0')) formattedPhone = '62' + formattedPhone.slice(1);
+                      else if (formattedPhone.startsWith('8')) formattedPhone = '62' + formattedPhone;
+                      const parentName = s.namaAyah || s.namaIbu || 'Orang Tua';
+                      const waHref = formattedPhone
+                        ? `https://wa.me/${formattedPhone}?text=${encodeURIComponent(`Halo Bapak/Ibu ${parentName}, kami dari sekolah ingin menginformasikan perihal perkembangan akademik anak Anda yang bernama *${s.nama}*...`)}`
+                        : '';
+
+                      return (
+                      <tr key={s.id} className={`border-b transition-colors ${isSelected ? 'bg-blue-950/25 border-blue-500/30' : 'hover:bg-slate-800/20 border-slate-800/40'}`}>
+                        <td className="px-3 py-3 text-center">
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected} 
+                            onChange={() => handleToggleSelectSiswa(s.id)} 
+                            className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer accent-blue-600" 
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div 
+                              className="relative shrink-0 group cursor-pointer" 
+                              onClick={() => setQuickPhotoData({ type: 'siswa', data: s })}
+                              title="Klik untuk ganti foto"
+                            >
+                              <img 
+                                src={s.fotoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'} 
+                                alt={s.nama} 
+                                className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 group-hover:border-blue-500 transition-all shadow-md"
+                              />
+                              <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#121212] ${
+                                s.status === 'Aktif' ? 'bg-emerald-500' : 'bg-slate-500'
+                              }`} />
+                            </div>
+                            <div className="min-w-0 max-w-[200px] xl:max-w-[250px]">
+                              <span 
+                                onClick={() => {
+                                  setSelectedSiswaDetail(s);
+                                  setDetailTab('biodata');
+                                }}
+                                title={s.nama}
+                                className="text-white font-extrabold hover:text-blue-400 cursor-pointer block truncate transition-colors hover:underline"
+                              >
+                                {s.nama}
+                              </span>
+                              <div className="flex items-center gap-1 min-w-0 text-[10px] text-slate-500 mt-0.5" title={s.alamat || 'Alamat tidak diisi'}>
+                                <MapPin className="w-3 h-3 text-slate-600 shrink-0" />
+                                <span className="truncate block min-w-0">{s.alamat || 'Alamat tidak diisi'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs font-medium whitespace-nowrap">
+                          <div className="font-mono text-slate-300 font-bold">{s.nisn}</div>
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">NIS: {s.nis}</div>
+                        </td>
+                        <td className="px-4 py-3 text-xs font-semibold whitespace-nowrap">
+                          <span className="inline-block px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono text-[11px] whitespace-nowrap">
+                            {s.kelas}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs font-bold whitespace-nowrap">
+                          {s.jenisKelamin === 'L' ? (
+                            <span className="px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20 inline-flex items-center text-[11px] font-mono">
+                              L
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full bg-pink-500/15 text-pink-400 border border-pink-500/20 inline-flex items-center text-[11px] font-mono">
+                              P
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs font-medium">
+                          <div className="text-slate-300 font-bold truncate max-w-[170px]" title={parentName}>{parentName}</div>
+                          <div className="text-[10px] text-slate-500 flex items-center gap-1 whitespace-nowrap">
+                            <User className="w-3 h-3 text-slate-600 shrink-0" /> Ayah / Ibu Kandung
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs font-medium whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-slate-400">{s.teleponWali}</span>
+                            {waHref && (
+                              <a
+                                href={waHref}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Hubungi Orang Tua di WhatsApp"
+                                className="p-1 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 border border-emerald-500/20 rounded-md transition-all shrink-0"
+                              >
+                                <Phone className="w-3.5 h-3.5 fill-emerald-500/10" />
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-xs whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            <button 
+                              onClick={() => {
+                                setSelectedSiswaDetail(s);
+                                setDetailTab('biodata');
+                              }}
+                              title="Lihat Profil Lengkap"
+                              className="p-1.5 text-blue-400 hover:text-blue-300 hover:bg-blue-600/15 border border-blue-500/20 rounded-lg transition-all"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => setCardModalData({ type: 'siswa', data: s })}
+                              title="Cetak Kartu Digital & Barcode"
+                              className="p-1.5 text-purple-400 hover:text-purple-300 hover:bg-purple-600/15 border border-purple-500/20 rounded-lg transition-all"
+                            >
+                              <CreditCard className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setEditingId(s.id);
+                                setFormSiswa({
+                                  ...s,
+                                  tanggalLahir: normalizeDateForInput(s.tanggalLahir),
+                                  email: s.email || '',
+                                  asalSekolah: s.asalSekolah || '',
+                                  anakKe: s.anakKe !== undefined ? s.anakKe : 1,
+                                  jumlahSaudara: s.jumlahSaudara !== undefined ? s.jumlahSaudara : 0,
+                                  beratBadan: s.beratBadan !== undefined ? s.beratBadan : 0,
+                                  tinggiBadan: s.tinggiBadan !== undefined ? s.tinggiBadan : 0,
+                                  namaAyah: s.namaAyah || '',
+                                  namaIbu: s.namaIbu || '',
+                                  tempatLahirOrtu: s.tempatLahirOrtu || '',
+                                  tanggalLahirOrtu: normalizeDateForInput(s.tanggalLahirOrtu || ''),
+                                  pendidikanOrtu: s.pendidikanOrtu || '',
+                                  pekerjaanOrtu: s.pekerjaanOrtu || '',
+                                  nikOrtu: s.nikOrtu || ''
+                                });
+                                setModalMode('edit');
+                                setIsModalOpen(true);
+                              }}
+                              title="Ubah Biodata Siswa"
+                              className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleDelete(s.id, s.nama, 'siswa')}
+                              title="Hapus Data Siswa"
+                              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {subTab === 'guru' && (
+          <>
+            {/* Mobile & Tablet Portrait Card Layout (< 1024px) */}
+            <div className="lg:hidden p-3 sm:p-4 space-y-3">
+              {filteredGuru.length > 0 && (
+                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#181818] border border-slate-800">
+                  <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isAllGuruSelected}
+                      ref={el => { if (el) el.indeterminate = isSomeGuruSelected; }}
+                      onChange={(e) => handleToggleSelectAllGuru(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600"
+                    />
+                    <span>Pilih Semua Yang Tampil ({filteredGuru.length})</span>
+                  </label>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    {selectedGuruIds.length > 0 ? `${selectedGuruIds.length} dipilih` : `${filteredGuru.length} guru`}
+                  </span>
+                </div>
+              )}
+
+              {filteredGuru.length === 0 ? (
+                <div className="px-4 py-10 text-center text-xs text-slate-500 bg-[#181818] rounded-xl border border-slate-800/80">
+                  Tidak ada data guru yang cocok.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {filteredGuru.map(g => {
+                    const isSelected = selectedGuruIds.includes(g.id);
+                    return (
+                      <div
+                        key={g.id}
+                        className={`rounded-xl border p-3.5 space-y-3 transition-all min-w-0 ${
+                          isSelected
+                            ? 'bg-purple-950/25 border-purple-500/40 shadow-md'
+                            : 'bg-[#181818] border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectGuru(g.id)}
+                            className="mt-1 w-4 h-4 rounded border-slate-700 bg-[#121212] text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600 shrink-0"
+                          />
+                          <div
+                            className="relative shrink-0 group cursor-pointer"
+                            onClick={() => setQuickPhotoData({ type: 'guru', data: g })}
+                            title="Klik untuk Upload / Ganti Foto"
+                          >
+                            <img
+                              src={g.fotoUrl || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=100&auto=format&fit=crop&q=80'}
+                              alt={g.nama}
+                              className="w-11 h-11 rounded-full object-cover border-2 border-slate-700 group-hover:border-purple-400 transition-all shadow-sm"
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2 min-w-0">
+                              <div className="text-sm font-extrabold text-white leading-snug line-clamp-2 min-w-0">{g.nama}</div>
+                              <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-bold text-[10px] shrink-0">
+                                {g.status}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 truncate mt-0.5">{g.jabatan || 'Guru Mata Pelajaran'}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1">
+                          {g.mataPelajaran ? (
+                            g.mataPelajaran.split(',').map(m => m.trim()).filter(Boolean).map((mapelItem, mIdx) => (
+                              <span
+                                key={mIdx}
+                                className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-semibold text-[10px]"
+                              >
+                                {mapelItem}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-slate-500 italic text-[11px]">- Belum diatur -</span>
+                          )}
+                        </div>
+
+                        <div className="bg-[#121212] p-2.5 rounded-lg border border-slate-800/70 space-y-1 text-[11px] min-w-0">
+                          <div className="flex items-center gap-1.5 text-slate-200 min-w-0">
+                            <Mail className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            <span className="truncate block min-w-0">{g.email || '-'}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400 font-mono">
+                            <span className="truncate">Telp: {g.telepon || '-'}</span>
+                            <span className="truncate">NIP: {g.nip || '-'}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setQuickPhotoData({ type: 'guru', data: g })}
+                            className="p-1.5 text-slate-300 hover:text-emerald-400 bg-slate-800/80 hover:bg-slate-800 rounded-lg border border-slate-700 transition-colors"
+                            title="Upload / Ganti Foto Guru"
+                          >
+                            <Camera className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCardModalData({ type: 'guru', data: g })}
+                            className="flex-1 py-1.5 px-2.5 text-purple-300 hover:bg-purple-600/25 bg-purple-600/15 border border-purple-500/30 rounded-lg transition-colors text-[11px] font-bold flex items-center justify-center gap-1"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" /> Kartu ID
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(g.id);
+                              setFormGuru({
+                                nip: g.nip || '',
+                                nik: g.nik || '',
+                                nama: g.nama || '',
+                                gelarDepan: g.gelarDepan || '',
+                                gelarBelakang: g.gelarBelakang || '',
+                                mataPelajaran: g.mataPelajaran || '',
+                                jabatan: g.jabatan || 'Guru Mata Pelajaran',
+                                email: g.email || '',
+                                telepon: g.telepon || '',
+                                jenisKelamin: g.jenisKelamin || 'L',
+                                tempatLahir: g.tempatLahir || 'Jakarta',
+                                tanggalLahir: normalizeDateForInput(g.tanggalLahir || '1985-01-01'),
+                                agama: g.agama || 'Islam',
+                                alamatLengkap: g.alamatLengkap || '',
+                                pendidikanTerakhir: g.pendidikanTerakhir || 'S1 Pendidikan',
+                                sertifikasiGuru: g.sertifikasiGuru ?? true,
+                                status: g.status || 'PNS',
+                                kodeBarcode: g.kodeBarcode || `GUR-${g.nip}`,
+                                fotoUrl: g.fotoUrl || '',
+                                username: g.username || '',
+                                password: g.password || ''
+                              });
+                              setModalMode('edit');
+                              setIsModalOpen(true);
+                            }}
+                            title="Edit Data Guru"
+                            className="p-1.5 text-slate-300 hover:text-blue-400 bg-slate-800/80 hover:bg-slate-800 rounded-lg border border-slate-700 transition-colors"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(g.id, g.nama, 'guru')}
+                            title="Hapus Data Guru"
+                            className="p-1.5 text-slate-300 hover:text-rose-400 bg-slate-800/80 hover:bg-slate-800 rounded-lg border border-slate-700 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Laptop & Wide Tablet Landscape Table Layout (>= 1024px) */}
+            <div className="hidden lg:block overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-[#181818] border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                  <tr>
+                    <th className="px-3 py-3 w-10 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={isAllGuruSelected} 
+                        ref={el => { if (el) el.indeterminate = isSomeGuruSelected; }} 
+                        onChange={(e) => handleToggleSelectAllGuru(e.target.checked)} 
+                        title={isAllGuruSelected ? "Batalkan pilihan semua" : "Pilih semua data guru"}
+                        className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-purple-600 focus:ring-purple-500 focus:ring-offset-0 cursor-pointer accent-purple-600" 
+                      />
+                    </th>
+                    <th className="px-4 py-3">Foto & Nama Guru</th>
+                    <th className="px-4 py-3">Mata Pelajaran</th>
+                    <th className="px-4 py-3">Kontak Email / Telp</th>
+                    <th className="px-4 py-3">Status Pegawai</th>
+                    <th className="px-4 py-3 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {filteredGuru.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                        Tidak ada data guru yang cocok.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredGuru.map(g => {
+                      const isSelected = selectedGuruIds.includes(g.id);
+                      return (
+                      <tr key={g.id} className={`border-b transition-colors ${isSelected ? 'bg-purple-950/25 border-purple-500/30' : 'hover:bg-slate-800/30 border-slate-800/40'}`}>
+                        <td className="px-3 py-3 text-center">
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected} 
+                            onChange={() => handleToggleSelectGuru(g.id)} 
+                            className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-purple-600 focus:ring-purple-500 focus:ring-offset-0 cursor-pointer accent-purple-600" 
+                          />
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-white">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div 
+                            className="relative group cursor-pointer shrink-0" 
+                            onClick={() => setQuickPhotoData({ type: 'guru', data: g })}
+                            title="Klik untuk Upload / Ganti Foto"
+                          >
+                            <img 
+                              src={g.fotoUrl || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=100&auto=format&fit=crop&q=80'} 
+                              alt={g.nama} 
+                              className="w-10 h-10 shrink-0 aspect-square rounded-full object-cover border-2 border-slate-700/80 group-hover:border-purple-400 transition-all shadow-sm"
+                            />
+                            <div className="absolute inset-0 bg-slate-950/60 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-purple-400 transition-opacity">
+                              <Camera className="w-4 h-4" />
+                            </div>
+                          </div>
+                          <div className="text-white font-bold leading-tight truncate max-w-[200px]" title={g.nama}>{g.nama}</div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1 max-w-[240px]">
+                          {g.mataPelajaran ? (
+                            g.mataPelajaran.split(',').map(m => m.trim()).filter(Boolean).map((mapelItem, mIdx) => (
+                              <span 
+                                key={mIdx} 
+                                className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-semibold text-[11px] whitespace-nowrap shadow-sm inline-block"
+                              >
+                                {mapelItem}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-slate-500 italic text-[11px]">- Belum diatur -</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-slate-200 truncate max-w-[200px]" title={g.email}>{g.email}</div>
+                        <div className="text-[10px] text-slate-500 font-mono">{g.telepon}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-bold text-[10px] whitespace-nowrap">
+                          {g.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
+                        <button 
+                          onClick={() => setQuickPhotoData({ type: 'guru', data: g })}
+                          title="Upload / Ganti Foto Guru"
+                          className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                          <Camera className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => setCardModalData({ type: 'guru', data: g })}
+                          title="Cetak Kartu Digital & Barcode"
+                          className="px-2 py-1 text-purple-400 hover:bg-purple-600/20 bg-purple-600/10 border border-purple-500/30 rounded-lg transition-colors text-[10px] font-bold inline-flex items-center gap-1"
+                        >
+                          <CreditCard className="w-3.5 h-3.5" /> Kartu ID
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setEditingId(g.id);
+                            setFormGuru({
+                              nip: g.nip || '',
+                              nik: g.nik || '',
+                              nama: g.nama || '',
+                              gelarDepan: g.gelarDepan || '',
+                              gelarBelakang: g.gelarBelakang || '',
+                              mataPelajaran: g.mataPelajaran || '',
+                              jabatan: g.jabatan || 'Guru Mata Pelajaran',
+                              email: g.email || '',
+                              telepon: g.telepon || '',
+                              jenisKelamin: g.jenisKelamin || 'L',
+                              tempatLahir: g.tempatLahir || 'Jakarta',
+                              tanggalLahir: normalizeDateForInput(g.tanggalLahir || '1985-01-01'),
+                              agama: g.agama || 'Islam',
+                              alamatLengkap: g.alamatLengkap || '',
+                              pendidikanTerakhir: g.pendidikanTerakhir || 'S1 Pendidikan',
+                              sertifikasiGuru: g.sertifikasiGuru ?? true,
+                              status: g.status || 'PNS',
+                              kodeBarcode: g.kodeBarcode || `GUR-${g.nip}`,
+                              fotoUrl: g.fotoUrl || '',
+                              username: g.username || '',
+                              password: g.password || ''
+                            });
+                            setModalMode('edit');
+                            setIsModalOpen(true);
+                          }}
+                          title="Edit Data Guru"
+                          className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(g.id, g.nama, 'guru')}
+                          title="Hapus Data Guru"
+                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </td>
                     </tr>
                     );
                   })
                 )}
               </tbody>
-            </table>
-          </div>
-        )}
-
-        {subTab === 'guru' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-[#181818] border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-                <tr>
-                  <th className="px-3 py-3 w-10 text-center">
-                    <input 
-                      type="checkbox" 
-                      checked={isAllGuruSelected} 
-                      ref={el => { if (el) el.indeterminate = isSomeGuruSelected; }} 
-                      onChange={(e) => handleToggleSelectAllGuru(e.target.checked)} 
-                      title={isAllGuruSelected ? "Batalkan pilihan semua" : "Pilih semua data guru"}
-                      className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-purple-600 focus:ring-purple-500 focus:ring-offset-0 cursor-pointer accent-purple-600" 
-                    />
-                  </th>
-                  <th className="px-4 py-3">Foto & Nama Guru</th>
-                  <th className="px-4 py-3">Mata Pelajaran</th>
-                  <th className="px-4 py-3">Kontak Email / Telp</th>
-                  <th className="px-4 py-3">Status Pegawai</th>
-                  <th className="px-4 py-3 text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {filteredGuru.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
-                      Tidak ada data guru yang cocok.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredGuru.map(g => {
-                    const isSelected = selectedGuruIds.includes(g.id);
-                    return (
-                    <tr key={g.id} className={`border-b transition-colors ${isSelected ? 'bg-purple-950/25 border-purple-500/30' : 'hover:bg-slate-800/30 border-slate-800/40'}`}>
-                      <td className="px-3 py-3 text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={isSelected} 
-                          onChange={() => handleToggleSelectGuru(g.id)} 
-                          className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-purple-600 focus:ring-purple-500 focus:ring-offset-0 cursor-pointer accent-purple-600" 
-                        />
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-white">
-                      <div className="flex items-center gap-3">
-                        <div 
-                          className="relative group cursor-pointer shrink-0" 
-                          onClick={() => setQuickPhotoData({ type: 'guru', data: g })}
-                          title="Klik untuk Upload / Ganti Foto"
-                        >
-                          <img 
-                            src={g.fotoUrl || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=100&auto=format&fit=crop&q=80'} 
-                            alt={g.nama} 
-                            className="w-10 h-10 shrink-0 aspect-square rounded-full object-cover border-2 border-slate-700/80 group-hover:border-purple-400 transition-all shadow-sm"
-                          />
-                          <div className="absolute inset-0 bg-slate-950/60 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-purple-400 transition-opacity">
-                            <Camera className="w-4 h-4" />
-                          </div>
-                        </div>
-                        <div className="text-white font-bold leading-tight">{g.nama}</div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1 max-w-[240px]">
-                        {g.mataPelajaran ? (
-                          g.mataPelajaran.split(',').map(m => m.trim()).filter(Boolean).map((mapelItem, mIdx) => (
-                            <span 
-                              key={mIdx} 
-                              className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-semibold text-[11px] whitespace-nowrap shadow-sm inline-block"
-                            >
-                              {mapelItem}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-slate-500 italic text-[11px]">- Belum diatur -</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="text-slate-200">{g.email}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">{g.telepon}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-bold text-[10px]">
-                        {g.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
-                      <button 
-                        onClick={() => setQuickPhotoData({ type: 'guru', data: g })}
-                        title="Upload / Ganti Foto Guru"
-                        className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors"
-                      >
-                        <Camera className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => setCardModalData({ type: 'guru', data: g })}
-                        title="Cetak Kartu Digital & Barcode"
-                        className="px-2 py-1 text-purple-400 hover:bg-purple-600/20 bg-purple-600/10 border border-purple-500/30 rounded-lg transition-colors text-[10px] font-bold inline-flex items-center gap-1"
-                      >
-                        <CreditCard className="w-3.5 h-3.5" /> Kartu ID
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setEditingId(g.id);
-                          setFormGuru({
-                            nip: g.nip || '',
-                            nik: g.nik || '',
-                            nama: g.nama || '',
-                            gelarDepan: g.gelarDepan || '',
-                            gelarBelakang: g.gelarBelakang || '',
-                            mataPelajaran: g.mataPelajaran || '',
-                            jabatan: g.jabatan || 'Guru Mata Pelajaran',
-                            email: g.email || '',
-                            telepon: g.telepon || '',
-                            jenisKelamin: g.jenisKelamin || 'L',
-                            tempatLahir: g.tempatLahir || 'Jakarta',
-                            tanggalLahir: normalizeDateForInput(g.tanggalLahir || '1985-01-01'),
-                            agama: g.agama || 'Islam',
-                            alamatLengkap: g.alamatLengkap || '',
-                            pendidikanTerakhir: g.pendidikanTerakhir || 'S1 Pendidikan',
-                            sertifikasiGuru: g.sertifikasiGuru ?? true,
-                            status: g.status || 'PNS',
-                            kodeBarcode: g.kodeBarcode || `GUR-${g.nip}`,
-                            fotoUrl: g.fotoUrl || '',
-                            username: g.username || '',
-                            password: g.password || ''
-                          });
-                          setModalMode('edit');
-                          setIsModalOpen(true);
-                        }}
-                        title="Edit Data Guru"
-                        className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(g.id, g.nama, 'guru')}
-                        title="Hapus Data Guru"
-                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                  );
-                })
-              )}
-            </tbody>
-            </table>
-          </div>
+              </table>
+            </div>
+          </>
         )}
 
         {subTab === 'staf' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-[#181818] border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-                <tr>
-                  <th className="px-3 py-3 w-10 text-center">
-                    <input 
-                      type="checkbox" 
-                      checked={isAllStafSelected} 
-                      ref={el => { if (el) el.indeterminate = isSomeStafSelected; }} 
-                      onChange={(e) => handleToggleSelectAllStaf(e.target.checked)} 
-                      title={isAllStafSelected ? "Batalkan pilihan semua" : "Pilih semua data staf"}
-                      className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-amber-600 focus:ring-amber-500 focus:ring-offset-0 cursor-pointer accent-amber-600" 
+          <>
+            {/* Mobile & Tablet Portrait Card Layout (< 1024px) */}
+            <div className="lg:hidden p-3 sm:p-4 space-y-3">
+              {filteredStaf.length > 0 && (
+                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#181818] border border-slate-800">
+                  <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isAllStafSelected}
+                      ref={el => { if (el) el.indeterminate = isSomeStafSelected; }}
+                      onChange={(e) => handleToggleSelectAllStaf(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-amber-600 focus:ring-amber-500 cursor-pointer accent-amber-600"
                     />
-                  </th>
-                  <th className="px-4 py-3">Foto & Nama Staf</th>
-                  <th className="px-4 py-3">NIK</th>
-                  <th className="px-4 py-3">Bagian / Divisi</th>
-                  <th className="px-4 py-3">Email & Telepon</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {filteredStaf.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                      Tidak ada data staf yang cocok.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredStaf.map(st => {
+                    <span>Pilih Semua Yang Tampil ({filteredStaf.length})</span>
+                  </label>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    {selectedStafIds.length > 0 ? `${selectedStafIds.length} dipilih` : `${filteredStaf.length} staf`}
+                  </span>
+                </div>
+              )}
+
+              {filteredStaf.length === 0 ? (
+                <div className="px-4 py-10 text-center text-xs text-slate-500 bg-[#181818] rounded-xl border border-slate-800/80">
+                  Tidak ada data staf yang cocok.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {filteredStaf.map(st => {
                     const isSelected = selectedStafIds.includes(st.id);
                     return (
-                    <tr key={st.id} className={`border-b transition-colors ${isSelected ? 'bg-amber-950/25 border-amber-500/30' : 'hover:bg-slate-800/30 border-slate-800/40'}`}>
-                      <td className="px-3 py-3 text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={isSelected} 
-                          onChange={() => handleToggleSelectStaf(st.id)} 
-                          className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-amber-600 focus:ring-amber-500 focus:ring-offset-0 cursor-pointer accent-amber-600" 
-                        />
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-white">
-                      <div className="flex items-center gap-3">
-                        <div 
-                          className="relative group cursor-pointer" 
-                          onClick={() => setQuickPhotoData({ type: 'staf', data: st })}
-                          title="Klik untuk Upload / Ganti Foto"
-                        >
-                          <img 
-                            src={st.fotoUrl || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&auto=format&fit=crop&q=80'} 
-                            alt={st.nama} 
-                            className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 group-hover:border-amber-400 transition-all shadow-sm"
+                      <div
+                        key={st.id}
+                        className={`rounded-xl border p-3.5 space-y-3 transition-all min-w-0 ${
+                          isSelected
+                            ? 'bg-amber-950/25 border-amber-500/40 shadow-md'
+                            : 'bg-[#181818] border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectStaf(st.id)}
+                            className="mt-1 w-4 h-4 rounded border-slate-700 bg-[#121212] text-amber-600 focus:ring-amber-500 cursor-pointer accent-amber-600 shrink-0"
                           />
-                          <div className="absolute inset-0 bg-slate-950/60 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-amber-400 transition-opacity">
-                            <Camera className="w-4 h-4" />
+                          <div
+                            className="relative shrink-0 group cursor-pointer"
+                            onClick={() => setQuickPhotoData({ type: 'staf', data: st })}
+                            title="Klik untuk Upload / Ganti Foto"
+                          >
+                            <img
+                              src={st.fotoUrl || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&auto=format&fit=crop&q=80'}
+                              alt={st.nama}
+                              className="w-11 h-11 rounded-full object-cover border-2 border-slate-700 group-hover:border-amber-400 transition-all shadow-sm"
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2 min-w-0">
+                              <div className="text-sm font-extrabold text-white leading-snug line-clamp-2 min-w-0">{st.nama}</div>
+                              <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-200 border border-slate-700 font-bold text-[10px] shrink-0">
+                                {st.status}
+                              </span>
+                            </div>
+                            <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold text-[10px]">
+                              {st.bagian}
+                            </span>
                           </div>
                         </div>
-                        <div className="text-white font-bold">{st.nama}</div>
+
+                        <div className="bg-[#121212] p-2.5 rounded-lg border border-slate-800/70 space-y-1 text-[11px] min-w-0">
+                          <div className="flex items-center gap-1.5 text-slate-200 min-w-0">
+                            <Mail className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            <span className="truncate block min-w-0">{st.email || '-'}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400 font-mono">
+                            <span className="truncate">Telp: {st.telepon || '-'}</span>
+                            <span className="truncate">NIK: {st.nik || '-'}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setQuickPhotoData({ type: 'staf', data: st })}
+                            className="p-1.5 text-slate-300 hover:text-emerald-400 bg-slate-800/80 hover:bg-slate-800 rounded-lg border border-slate-700 transition-colors"
+                            title="Upload / Ganti Foto Staf"
+                          >
+                            <Camera className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCardModalData({ type: 'staf', data: st })}
+                            className="flex-1 py-1.5 px-2.5 text-amber-300 hover:bg-amber-600/25 bg-amber-600/15 border border-amber-500/30 rounded-lg transition-colors text-[11px] font-bold flex items-center justify-center gap-1"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" /> Kartu ID
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(st.id);
+                              setFormStaf({
+                                nik: st.nik || '',
+                                nama: st.nama || '',
+                                bagian: st.bagian || 'Tata Usaha',
+                                email: st.email || '',
+                                telepon: st.telepon || '',
+                                jenisKelamin: st.jenisKelamin || 'L',
+                                tempatLahir: st.tempatLahir || 'Jakarta',
+                                tanggalLahir: normalizeDateForInput(st.tanggalLahir || '1990-01-01'),
+                                agama: st.agama || 'Islam',
+                                alamatLengkap: st.alamatLengkap || '',
+                                pendidikanTerakhir: st.pendidikanTerakhir || 'D3 / S1',
+                                status: st.status || 'Tetap',
+                                kodeBarcode: st.kodeBarcode || `STF-${st.nik}`,
+                                fotoUrl: st.fotoUrl || '',
+                                username: st.username || '',
+                                password: st.password || ''
+                              });
+                              setModalMode('edit');
+                              setIsModalOpen(true);
+                            }}
+                            title="Edit Data Staf"
+                            className="p-1.5 text-slate-300 hover:text-blue-400 bg-slate-800/80 hover:bg-slate-800 rounded-lg border border-slate-700 transition-colors"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(st.id, st.nama, 'staf')}
+                            title="Hapus Data Staf"
+                            className="p-1.5 text-slate-300 hover:text-rose-400 bg-slate-800/80 hover:bg-slate-800 rounded-lg border border-slate-700 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-slate-400">{st.nik}</td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold">
-                        {st.bagian}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="text-slate-200">{st.email}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">{st.telepon}</div>
-                    </td>
-                    <td className="px-4 py-3 font-bold text-slate-300">{st.status}</td>
-                    <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
-                      <button 
-                        onClick={() => setQuickPhotoData({ type: 'staf', data: st })}
-                        title="Upload / Ganti Foto Staf"
-                        className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors"
-                      >
-                        <Camera className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => setCardModalData({ type: 'staf', data: st })}
-                        title="Cetak Kartu Digital & Barcode"
-                        className="px-2 py-1 text-amber-400 hover:bg-amber-600/20 bg-amber-600/10 border border-amber-500/30 rounded-lg transition-colors text-[10px] font-bold inline-flex items-center gap-1"
-                      >
-                        <CreditCard className="w-3.5 h-3.5" /> Kartu ID
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setEditingId(st.id);
-                          setFormStaf({
-                            nik: st.nik || '',
-                            nama: st.nama || '',
-                            bagian: st.bagian || 'Tata Usaha',
-                            email: st.email || '',
-                            telepon: st.telepon || '',
-                            jenisKelamin: st.jenisKelamin || 'L',
-                            tempatLahir: st.tempatLahir || 'Jakarta',
-                            tanggalLahir: normalizeDateForInput(st.tanggalLahir || '1990-01-01'),
-                            agama: st.agama || 'Islam',
-                            alamatLengkap: st.alamatLengkap || '',
-                            pendidikanTerakhir: st.pendidikanTerakhir || 'D3 / S1',
-                            status: st.status || 'Tetap',
-                            kodeBarcode: st.kodeBarcode || `STF-${st.nik}`,
-                            fotoUrl: st.fotoUrl || '',
-                            username: st.username || '',
-                            password: st.password || ''
-                          });
-                          setModalMode('edit');
-                          setIsModalOpen(true);
-                        }}
-                        title="Edit Data Staf"
-                        className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(st.id, st.nama, 'staf')}
-                        title="Hapus Data Staf"
-                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                  );
-                })
+                    );
+                  })}
+                </div>
               )}
-            </tbody>
-            </table>
-          </div>
+            </div>
+
+            {/* Laptop & Wide Tablet Landscape Table Layout (>= 1024px) */}
+            <div className="hidden lg:block overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-[#181818] border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                  <tr>
+                    <th className="px-3 py-3 w-10 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={isAllStafSelected} 
+                        ref={el => { if (el) el.indeterminate = isSomeStafSelected; }} 
+                        onChange={(e) => handleToggleSelectAllStaf(e.target.checked)} 
+                        title={isAllStafSelected ? "Batalkan pilihan semua" : "Pilih semua data staf"}
+                        className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-amber-600 focus:ring-amber-500 focus:ring-offset-0 cursor-pointer accent-amber-600" 
+                      />
+                    </th>
+                    <th className="px-4 py-3">Foto & Nama Staf</th>
+                    <th className="px-4 py-3">NIK</th>
+                    <th className="px-4 py-3">Bagian / Divisi</th>
+                    <th className="px-4 py-3">Email & Telepon</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {filteredStaf.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                        Tidak ada data staf yang cocok.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredStaf.map(st => {
+                      const isSelected = selectedStafIds.includes(st.id);
+                      return (
+                      <tr key={st.id} className={`border-b transition-colors ${isSelected ? 'bg-amber-950/25 border-amber-500/30' : 'hover:bg-slate-800/30 border-slate-800/40'}`}>
+                        <td className="px-3 py-3 text-center">
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected} 
+                            onChange={() => handleToggleSelectStaf(st.id)} 
+                            className="w-4 h-4 rounded border-slate-700 bg-[#181818] text-amber-600 focus:ring-amber-500 focus:ring-offset-0 cursor-pointer accent-amber-600" 
+                          />
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-white">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div 
+                            className="relative group cursor-pointer shrink-0" 
+                            onClick={() => setQuickPhotoData({ type: 'staf', data: st })}
+                            title="Klik untuk Upload / Ganti Foto"
+                          >
+                            <img 
+                              src={st.fotoUrl || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&auto=format&fit=crop&q=80'} 
+                              alt={st.nama} 
+                              className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 group-hover:border-amber-400 transition-all shadow-sm"
+                            />
+                            <div className="absolute inset-0 bg-slate-950/60 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-amber-400 transition-opacity">
+                              <Camera className="w-4 h-4" />
+                            </div>
+                          </div>
+                          <div className="text-white font-bold truncate max-w-[200px]" title={st.nama}>{st.nama}</div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-slate-400 whitespace-nowrap">{st.nik}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold">
+                          {st.bagian}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-slate-200 truncate max-w-[200px]" title={st.email}>{st.email}</div>
+                        <div className="text-[10px] text-slate-500 font-mono">{st.telepon}</div>
+                      </td>
+                      <td className="px-4 py-3 font-bold text-slate-300 whitespace-nowrap">{st.status}</td>
+                      <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
+                        <button 
+                          onClick={() => setQuickPhotoData({ type: 'staf', data: st })}
+                          title="Upload / Ganti Foto Staf"
+                          className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                          <Camera className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => setCardModalData({ type: 'staf', data: st })}
+                          title="Cetak Kartu Digital & Barcode"
+                          className="px-2 py-1 text-amber-400 hover:bg-amber-600/20 bg-amber-600/10 border border-amber-500/30 rounded-lg transition-colors text-[10px] font-bold inline-flex items-center gap-1"
+                        >
+                          <CreditCard className="w-3.5 h-3.5" /> Kartu ID
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setEditingId(st.id);
+                            setFormStaf({
+                              nik: st.nik || '',
+                              nama: st.nama || '',
+                              bagian: st.bagian || 'Tata Usaha',
+                              email: st.email || '',
+                              telepon: st.telepon || '',
+                              jenisKelamin: st.jenisKelamin || 'L',
+                              tempatLahir: st.tempatLahir || 'Jakarta',
+                              tanggalLahir: normalizeDateForInput(st.tanggalLahir || '1990-01-01'),
+                              agama: st.agama || 'Islam',
+                              alamatLengkap: st.alamatLengkap || '',
+                              pendidikanTerakhir: st.pendidikanTerakhir || 'D3 / S1',
+                              status: st.status || 'Tetap',
+                              kodeBarcode: st.kodeBarcode || `STF-${st.nik}`,
+                              fotoUrl: st.fotoUrl || '',
+                              username: st.username || '',
+                              password: st.password || ''
+                            });
+                            setModalMode('edit');
+                            setIsModalOpen(true);
+                          }}
+                          title="Edit Data Staf"
+                          className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(st.id, st.nama, 'staf')}
+                          title="Hapus Data Staf"
+                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                    );
+                  })
+                )}
+              </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {subTab === 'rombel' && (() => {

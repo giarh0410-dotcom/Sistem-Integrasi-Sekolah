@@ -4666,14 +4666,9 @@ export const CbtView: React.FC<CbtViewProps> = ({
                 <CheckCircle2 className="w-10 h-10" />
               </div>
               <h3 className="text-xl font-bold text-slate-900">Ujian CBT Telah Selesai!</h3>
-              <p className="text-xs text-slate-500">
-                Jawaban telah berhasil disimpan dan dinilai secara otomatis oleh sistem.
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Jawaban Anda telah berhasil disimpan dan direkap ke sistem. Nilai akhir akan diumumkan oleh guru atau pengawas ujian.
               </p>
-
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Nilai Akhir Siswa</span>
-                <span className="text-4xl font-extrabold text-emerald-600 mt-1 block">{finalScore} / 100</span>
-              </div>
 
               <button
                 onClick={() => {
@@ -4684,7 +4679,7 @@ export const CbtView: React.FC<CbtViewProps> = ({
                   setSoalIndex(0);
                   setSiswaJawaban({});
                 }}
-                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs"
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs cursor-pointer"
               >
                 Kembali ke Simulasi
               </button>

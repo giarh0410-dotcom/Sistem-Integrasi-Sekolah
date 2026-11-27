@@ -101,20 +101,6 @@ export async function dbDeleteItem(collectionName: string, id: string) {
 }
 
 /**
- * Updates the in-memory differential cache from trusted Firestore snapshots
- * so local React state updates triggered by remote changes do not echo back to Firestore.
- */
-export function syncCollectionCache<T extends { id: string }>(collectionName: string, items: T[]) {
-  const cacheMap = new Map<string, string>();
-  for (const item of items) {
-    if (item && item.id) {
-      cacheMap.set(item.id, JSON.stringify(cleanObject(item)));
-    }
-  }
-  collectionCache.set(collectionName, cacheMap);
-}
-
-/**
  * Fetches all documents from a Firestore collection
  */
 export async function dbFetchCollection<T>(collectionName: string): Promise<T[]> {
@@ -122,45 +108,17 @@ export async function dbFetchCollection<T>(collectionName: string): Promise<T[]>
     const querySnapshot = await getDocs(collection(db, collectionName));
     const items: T[] = [];
     const cacheMap = new Map<string, string>();
-    querySnapshot.forEach((d) => {
-      const docData = d.data();
-      const data = { id: d.id, ...docData } as unknown as T;
+    querySnapshot.forEach((doc) => {
+      const docData = doc.data();
+      const data = { id: doc.id, ...docData } as unknown as T;
       items.push(data);
-      cacheMap.set(d.id, JSON.stringify(cleanObject(data)));
+      cacheMap.set(doc.id, JSON.stringify(data));
     });
     collectionCache.set(collectionName, cacheMap);
     return items;
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, collectionName);
     return [];
-  }
-}
-
-/**
- * Safely fetches a Firestore collection without aborting parallel batch loads on a single error.
- */
-export async function dbFetchCollectionSafe<T>(
-  collectionName: string
-): Promise<{ ok: boolean; items: T[]; error?: unknown }> {
-  try {
-    const querySnapshot = await getDocs(collection(db, collectionName));
-    const items: T[] = [];
-    const cacheMap = new Map<string, string>();
-    querySnapshot.forEach((d) => {
-      const docData = d.data();
-      const data = { id: d.id, ...docData } as unknown as T;
-      items.push(data);
-      cacheMap.set(d.id, JSON.stringify(cleanObject(data)));
-    });
-    collectionCache.set(collectionName, cacheMap);
-    return { ok: true, items };
-  } catch (error) {
-    try {
-      handleFirestoreError(error, OperationType.GET, collectionName);
-    } catch (formattedError) {
-      return { ok: false, items: [], error: formattedError };
-    }
-    return { ok: false, items: [], error };
   }
 }
 
@@ -182,7 +140,7 @@ export function dbSubscribeCollection<T>(
         const docData = d.data();
         const data = { id: d.id, ...docData } as unknown as T;
         items.push(data);
-        cacheMap.set(d.id, JSON.stringify(cleanObject(data)));
+        cacheMap.set(d.id, JSON.stringify(data));
       });
       collectionCache.set(collectionName, cacheMap);
       onData(items);

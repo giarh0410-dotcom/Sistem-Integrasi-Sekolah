@@ -94,11 +94,9 @@ import { exportAllToGoogleSheets } from './lib/googleDriveSync';
 import { 
   validateFirestoreConnection, 
   dbSaveItem, 
-  dbFetchCollection,
-  dbFetchCollectionSafe,
+  dbFetchCollection, 
   dbSaveCollection,
-  dbClearCollection,
-  syncCollectionCache
+  dbClearCollection
 } from './lib/firebaseSync';
 import { safeSetStorageItem, safeSetStorageJson } from './utils/safeStorage';
 
@@ -179,9 +177,6 @@ export default function App() {
   });
   const [isDbLoaded, setIsDbLoaded] = useState<boolean>(false);
   const [firebaseSyncStatus, setFirebaseSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const loadedCollectionsRef = React.useRef<Set<string>>(new Set());
-  const isRefreshingCloudRef = React.useRef<boolean>(false);
-  const lastCloudRefreshAtRef = React.useRef<number>(0);
 
   // POS State
   const [posTab, setPosTab] = useState('kasir');
@@ -383,240 +378,178 @@ export default function App() {
     };
   }, [isLoggedIn]);
 
-  // Reusable resilient cloud loader (initial login, tab focus/reconnect, or manual refresh)
-  const loadAllFromFirestore = React.useCallback(async (options?: { isManualRefresh?: boolean }) => {
-    if (!isLoggedIn || isRefreshingCloudRef.current) return;
-    isRefreshingCloudRef.current = true;
-    if (options?.isManualRefresh) {
-      setFirebaseSyncStatus('saving');
-    }
-
-    try {
-      await validateFirestoreConnection();
-
-      const isSystemReset = localStorage.getItem('edu_system_reset') === 'true';
-      const isTagihanForceCleared = localStorage.getItem('edu_tagihan_force_clear') === 'true' || isSystemReset;
-      const isTransaksiForceCleared = localStorage.getItem('edu_transaksi_force_clear') === 'true' || isSystemReset;
-      const isTarifForceCleared = localStorage.getItem('edu_tarif_force_clear') === 'true' || isSystemReset;
-      const isSiswaForceCleared = localStorage.getItem('edu_siswa_force_clear') === 'true' || isSystemReset;
-
-      if (isSystemReset) {
-        setRombelList([]); setSiswaList([]); setGuruList([]); setStafList([]); setMapelList([]); setEkskulList([]);
-        setAbsensiHarian([]); setAbsensiKelasList([]); setAbsensiGuruList([]); setBankSoalList([]); setUjianList([]); setAdministrasiList([]);
-        setTagihanList([]); setTransaksiList([]); setTarifBiayaList([]); setHasilUjianList([]); setGajiList([]); setRaporList([]); setRaporTahfidzList([]);
-
-        const collectionsToClear = [
-          'edu_rombelList', 'edu_siswaList', 'edu_guruList', 'edu_stafList', 'edu_mapelList', 'edu_ekskulList',
-          'edu_absensiHarian', 'edu_absensiKelasList', 'edu_absensiGuruList', 'edu_bankSoalList', 'edu_ujianList',
-          'edu_administrasiList', 'edu_tagihanList', 'edu_transaksiList', 'edu_tarifBiayaList', 'edu_hasilUjianList',
-          'edu_gajiList', 'edu_raporList', 'edu_raporTahfidzList'
-        ];
-
-        await Promise.all(collectionsToClear.map(c => dbClearCollection(c).catch(() => false)));
-        collectionsToClear.forEach(c => loadedCollectionsRef.current.add(c));
-        localStorage.removeItem('edu_system_reset');
-        localStorage.removeItem('edu_tagihan_force_clear');
-        localStorage.removeItem('edu_transaksi_force_clear');
-        localStorage.removeItem('edu_tarif_force_clear');
-        localStorage.removeItem('edu_siswa_force_clear');
-        setIsDbLoaded(true);
-        return;
-      }
-
-      // Fetch all collections in parallel so slow mobile connections load quickly and one failure never blocks others
-      const [
-        rombelRes,
-        siswaRes,
-        guruRes,
-        stafRes,
-        mapelRes,
-        ekskulRes,
-        absensiRes,
-        absensiKelasRes,
-        absensiGuruRes,
-        bankSoalRes,
-        ujianRes,
-        administrasiRes,
-        tagihanRes,
-        transaksiRes,
-        tarifBiayaRes,
-        hasilUjianRes,
-        settingsRes,
-        gajiRes,
-        raporRes,
-        tahfidzRes
-      ] = await Promise.all([
-        dbFetchCollectionSafe<RombelKelas>('edu_rombelList'),
-        dbFetchCollectionSafe<Siswa>('edu_siswaList'),
-        dbFetchCollectionSafe<Guru>('edu_guruList'),
-        dbFetchCollectionSafe<Staf>('edu_stafList'),
-        dbFetchCollectionSafe<MataPelajaranItem>('edu_mapelList'),
-        dbFetchCollectionSafe<EkstrakurikulerItem>('edu_ekskulList'),
-        dbFetchCollectionSafe<AbsensiSiswaHarian>('edu_absensiHarian'),
-        dbFetchCollectionSafe<AbsensiSiswaKelas>('edu_absensiKelasList'),
-        dbFetchCollectionSafe<AbsensiGuru>('edu_absensiGuruList'),
-        dbFetchCollectionSafe<BankSoal>('edu_bankSoalList'),
-        dbFetchCollectionSafe<UjianCBT>('edu_ujianList'),
-        dbFetchCollectionSafe<AdministrasiGuru>('edu_administrasiList'),
-        dbFetchCollectionSafe<TagihanKeuangan>('edu_tagihanList'),
-        dbFetchCollectionSafe<TransaksiKeuangan>('edu_transaksiList'),
-        dbFetchCollectionSafe<TarifBiaya>('edu_tarifBiayaList'),
-        dbFetchCollectionSafe<HasilUjian>('edu_hasilUjianList'),
-        dbFetchCollectionSafe<SchoolSettings>('edu_schoolSettings'),
-        dbFetchCollectionSafe<GajiPembayaran>('edu_gajiList'),
-        dbFetchCollectionSafe<RaporSiswa>('edu_raporList'),
-        dbFetchCollectionSafe<RaporTahfidzSiswa>('edu_raporTahfidzList')
-      ]);
-
-      // Determine whether this Firebase project was already initialized on another device
-      const isCloudAlreadyInitialized =
-        (settingsRes.ok && settingsRes.items.length > 0) ||
-        (siswaRes.ok && siswaRes.items.length > 0) ||
-        (guruRes.ok && guruRes.items.length > 0) ||
-        (rombelRes.ok && rombelRes.items.length > 0);
-
-      const reconcileCollection = async <T extends { id: string }>(
-        colName: string,
-        res: { ok: boolean; items: T[] },
-        localItems: T[],
-        setter: React.Dispatch<React.SetStateAction<T[]>>,
-        opts?: { allowInitialSeed?: boolean; forceCleared?: boolean; forceClearKey?: string }
-      ) => {
-        if (!res.ok) {
-          // Do NOT mark as loaded-from-cloud so local fallback data will not overwrite Firestore
-          return;
-        }
-
-        if (opts?.forceCleared && opts.forceClearKey) {
-          setter([]);
-          loadedCollectionsRef.current.add(colName);
-          dbClearCollection(colName).then(success => {
-            if (success) localStorage.removeItem(opts.forceClearKey!);
-          });
-          return;
-        }
-
-        if (res.items.length > 0) {
-          setter(res.items);
-          loadedCollectionsRef.current.add(colName);
-          return;
-        }
-
-        // Firestore returned 0 docs cleanly
-        if (opts?.allowInitialSeed && !isCloudAlreadyInitialized && localItems.length > 0) {
-          await dbSaveCollection(colName, localItems);
-          loadedCollectionsRef.current.add(colName);
-        } else {
-          // Preserve intentionally empty cloud collection across devices
-          setter([]);
-          syncCollectionCache(colName, []);
-          loadedCollectionsRef.current.add(colName);
-        }
-      };
-
-      await Promise.all([
-        reconcileCollection('edu_rombelList', rombelRes, rombelList, setRombelList, { allowInitialSeed: true }),
-        reconcileCollection('edu_siswaList', siswaRes, siswaList, setSiswaList, {
-          allowInitialSeed: true,
-          forceCleared: isSiswaForceCleared,
-          forceClearKey: 'edu_siswa_force_clear'
-        }),
-        reconcileCollection('edu_guruList', guruRes, guruList, setGuruList, { allowInitialSeed: true }),
-        reconcileCollection('edu_stafList', stafRes, stafList, setStafList, { allowInitialSeed: true }),
-        reconcileCollection('edu_mapelList', mapelRes, mapelList, setMapelList, { allowInitialSeed: true }),
-        reconcileCollection('edu_ekskulList', ekskulRes, ekskulList, setEkskulList, { allowInitialSeed: true }),
-        reconcileCollection('edu_absensiHarian', absensiRes, absensiHarian, setAbsensiHarian, { allowInitialSeed: true }),
-        reconcileCollection('edu_absensiKelasList', absensiKelasRes, absensiKelasList, setAbsensiKelasList, { allowInitialSeed: true }),
-        reconcileCollection('edu_absensiGuruList', absensiGuruRes, absensiGuruList, setAbsensiGuruList, { allowInitialSeed: true }),
-        reconcileCollection('edu_bankSoalList', bankSoalRes, bankSoalList, setBankSoalList, { allowInitialSeed: true }),
-        reconcileCollection('edu_ujianList', ujianRes, ujianList, setUjianList, { allowInitialSeed: true }),
-        reconcileCollection('edu_administrasiList', administrasiRes, administrasiList, setAdministrasiList, { allowInitialSeed: false }),
-        reconcileCollection('edu_tagihanList', tagihanRes, tagihanList, setTagihanList, {
-          allowInitialSeed: false,
-          forceCleared: isTagihanForceCleared,
-          forceClearKey: 'edu_tagihan_force_clear'
-        }),
-        reconcileCollection('edu_transaksiList', transaksiRes, transaksiList, setTransaksiList, {
-          allowInitialSeed: false,
-          forceCleared: isTransaksiForceCleared,
-          forceClearKey: 'edu_transaksi_force_clear'
-        }),
-        reconcileCollection('edu_tarifBiayaList', tarifBiayaRes, tarifBiayaList, setTarifBiayaList, {
-          allowInitialSeed: true,
-          forceCleared: isTarifForceCleared,
-          forceClearKey: 'edu_tarif_force_clear'
-        }),
-        reconcileCollection('edu_hasilUjianList', hasilUjianRes, hasilUjianList, setHasilUjianList, { allowInitialSeed: false }),
-        reconcileCollection('edu_gajiList', gajiRes, gajiList, setGajiList, { allowInitialSeed: true }),
-        reconcileCollection('edu_raporList', raporRes, raporList, setRaporList, { allowInitialSeed: true }),
-        reconcileCollection('edu_raporTahfidzList', tahfidzRes, raporTahfidzList, setRaporTahfidzList, { allowInitialSeed: true })
-      ]);
-
-      if (settingsRes.ok) {
-        if (settingsRes.items.length > 0) {
-          const foundSetting = settingsRes.items.find(s => s.namaSekolah) || settingsRes.items[0];
-          if (foundSetting) {
-            setSchoolSettings(prev => ({ ...INITIAL_SCHOOL_SETTINGS, ...prev, ...foundSetting }));
-          }
-        } else {
-          await dbSaveItem('edu_schoolSettings', { id: 'current', ...schoolSettings });
-        }
-        loadedCollectionsRef.current.add('edu_schoolSettings');
-      }
-
-      lastCloudRefreshAtRef.current = Date.now();
-      setIsDbLoaded(true);
-      if (options?.isManualRefresh) {
-        setFirebaseSyncStatus('saved');
-        setTimeout(() => setFirebaseSyncStatus('idle'), 2000);
-      }
-    } catch (error) {
-      console.error('Error loading from Firestore:', error);
-      setIsDbLoaded(true);
-      if (options?.isManualRefresh) {
-        setFirebaseSyncStatus('error');
-      }
-    } finally {
-      isRefreshingCloudRef.current = false;
-    }
-  }, [isLoggedIn]);
-
   // Load database from Firestore upon user login
   useEffect(() => {
     if (isLoggedIn) {
+      const loadAllFromFirestore = async () => {
+        try {
+          await validateFirestoreConnection();
+
+          // Fetch all collections
+          const rombelData = await dbFetchCollection<RombelKelas>('edu_rombelList');
+          const siswaData = await dbFetchCollection<Siswa>('edu_siswaList');
+          const guruData = await dbFetchCollection<Guru>('edu_guruList');
+          const stafData = await dbFetchCollection<Staf>('edu_stafList');
+          const mapelData = await dbFetchCollection<MataPelajaranItem>('edu_mapelList');
+          const ekskulData = await dbFetchCollection<EkstrakurikulerItem>('edu_ekskulList');
+          const absensiData = await dbFetchCollection<AbsensiSiswaHarian>('edu_absensiHarian');
+          const absensiKelasData = await dbFetchCollection<AbsensiSiswaKelas>('edu_absensiKelasList');
+          const absensiGuruData = await dbFetchCollection<AbsensiGuru>('edu_absensiGuruList');
+          const bankSoalData = await dbFetchCollection<BankSoal>('edu_bankSoalList');
+          const ujianData = await dbFetchCollection<UjianCBT>('edu_ujianList');
+          const administrasiData = await dbFetchCollection<AdministrasiGuru>('edu_administrasiList');
+          const tagihanData = await dbFetchCollection<TagihanKeuangan>('edu_tagihanList');
+          const transaksiData = await dbFetchCollection<TransaksiKeuangan>('edu_transaksiList');
+          const tarifBiayaData = await dbFetchCollection<TarifBiaya>('edu_tarifBiayaList');
+          const hasilUjianData = await dbFetchCollection<HasilUjian>('edu_hasilUjianList');
+          const settingsData = await dbFetchCollection<SchoolSettings>('edu_schoolSettings');
+          const gajiData = await dbFetchCollection<GajiPembayaran>('edu_gajiList');
+          const raporData = await dbFetchCollection<RaporSiswa>('edu_raporList');
+          const tahfidzData = await dbFetchCollection<RaporTahfidzSiswa>('edu_raporTahfidzList');
+
+          // Sync data back to React state or seed empty Firestore
+          if (rombelData.length > 0) setRombelList(rombelData);
+          else await dbSaveCollection('edu_rombelList', rombelList);
+
+          if (guruData.length > 0) setGuruList(guruData);
+          else await dbSaveCollection('edu_guruList', guruList);
+
+          if (stafData.length > 0) setStafList(stafData);
+          else await dbSaveCollection('edu_stafList', stafList);
+
+          if (mapelData.length > 0) setMapelList(mapelData);
+          else await dbSaveCollection('edu_mapelList', mapelList);
+
+          if (ekskulData.length > 0) setEkskulList(ekskulData);
+          else await dbSaveCollection('edu_ekskulList', ekskulList);
+
+          if (absensiData.length > 0) setAbsensiHarian(absensiData);
+          else await dbSaveCollection('edu_absensiHarian', absensiHarian);
+
+          if (absensiKelasData.length > 0) setAbsensiKelasList(absensiKelasData);
+          else await dbSaveCollection('edu_absensiKelasList', absensiKelasList);
+
+          if (absensiGuruData.length > 0) setAbsensiGuruList(absensiGuruData);
+          else await dbSaveCollection('edu_absensiGuruList', absensiGuruList);
+
+          if (bankSoalData.length > 0) setBankSoalList(bankSoalData);
+          else await dbSaveCollection('edu_bankSoalList', bankSoalList);
+
+          if (ujianData.length > 0) setUjianList(ujianData);
+          else await dbSaveCollection('edu_ujianList', ujianList);
+
+          if (raporData.length > 0) setRaporList(raporData);
+          else await dbSaveCollection('edu_raporList', raporList);
+
+          if (tahfidzData.length > 0) setRaporTahfidzList(tahfidzData);
+          else await dbSaveCollection('edu_raporTahfidzList', raporTahfidzList);
+
+          const isSystemReset = localStorage.getItem('edu_system_reset') === 'true';
+          const isTagihanForceCleared = localStorage.getItem('edu_tagihan_force_clear') === 'true' || isSystemReset;
+          const isTransaksiForceCleared = localStorage.getItem('edu_transaksi_force_clear') === 'true' || isSystemReset;
+          const isTarifForceCleared = localStorage.getItem('edu_tarif_force_clear') === 'true' || isSystemReset;
+          const isSiswaForceCleared = localStorage.getItem('edu_siswa_force_clear') === 'true' || isSystemReset;
+
+          if (isSystemReset) {
+            setRombelList([]); setSiswaList([]); setGuruList([]); setStafList([]); setMapelList([]); setEkskulList([]);
+            setAbsensiHarian([]); setAbsensiKelasList([]); setAbsensiGuruList([]); setBankSoalList([]); setUjianList([]); setAdministrasiList([]);
+            setTagihanList([]); setTransaksiList([]); setTarifBiayaList([]); setHasilUjianList([]); setGajiList([]); setRaporList([]); setRaporTahfidzList([]);
+            
+            const collectionsToClear = [
+              'edu_rombelList', 'edu_siswaList', 'edu_guruList', 'edu_stafList', 'edu_mapelList', 'edu_ekskulList',
+              'edu_absensiHarian', 'edu_absensiKelasList', 'edu_absensiGuruList', 'edu_bankSoalList', 'edu_ujianList',
+              'edu_administrasiList', 'edu_tagihanList', 'edu_transaksiList', 'edu_tarifBiayaList', 'edu_hasilUjianList',
+              'edu_gajiList', 'edu_raporList', 'edu_raporTahfidzList'
+            ];
+            
+            Promise.all(collectionsToClear.map(c => dbClearCollection(c))).then(() => {
+              localStorage.removeItem('edu_system_reset');
+              localStorage.removeItem('edu_tagihan_force_clear');
+              localStorage.removeItem('edu_transaksi_force_clear');
+              localStorage.removeItem('edu_tarif_force_clear');
+              localStorage.removeItem('edu_siswa_force_clear');
+            });
+            setIsDbLoaded(true);
+            return;
+          }
+
+          // Optimized load logic with force_clear guards
+          if (isSiswaForceCleared) {
+            setSiswaList([]);
+            dbClearCollection('edu_siswaList').then(success => { if (success) localStorage.removeItem('edu_siswa_force_clear'); });
+          } else if (siswaData.length > 0) {
+            setSiswaList(siswaData);
+          } else {
+            await dbSaveCollection('edu_siswaList', siswaList);
+          }
+
+          if (isTarifForceCleared) {
+            setTarifBiayaList([]);
+            dbClearCollection('edu_tarifBiayaList').then(success => { if (success) localStorage.removeItem('edu_tarif_force_clear'); });
+          } else if (tarifBiayaData.length > 0) {
+            setTarifBiayaList(tarifBiayaData);
+          } else {
+            await dbSaveCollection('edu_tarifBiayaList', tarifBiayaList);
+          }
+
+          if (isTagihanForceCleared) {
+            setTagihanList([]);
+            dbClearCollection('edu_tagihanList').then(success => { if (success) localStorage.removeItem('edu_tagihan_force_clear'); });
+          } else if (tagihanData.length > 0) {
+            setTagihanList(tagihanData);
+          } else {
+            await dbSaveCollection('edu_tagihanList', tagihanList);
+          }
+
+          if (isTransaksiForceCleared) {
+            setTransaksiList([]);
+            dbClearCollection('edu_transaksiList').then(success => { if (success) localStorage.removeItem('edu_transaksi_force_clear'); });
+          } else if (transaksiData.length > 0) {
+            setTransaksiList(transaksiData);
+          } else {
+            await dbSaveCollection('edu_transaksiList', transaksiList);
+          }
+
+          // One-time cleanup for example administration documents as requested
+          const admClearFlag = localStorage.getItem('edu_clear_adm_v1');
+          if (!admClearFlag) {
+            await dbClearCollection('edu_administrasiList');
+            setAdministrasiList([]);
+            safeSetStorageItem('edu_clear_adm_v1', 'true');
+          } else if (administrasiData.length > 0) {
+            setAdministrasiList(administrasiData);
+          } else {
+            await dbSaveCollection('edu_administrasiList', administrasiList);
+          }
+
+          if (hasilUjianData.length > 0) setHasilUjianList(hasilUjianData);
+          if (gajiData.length > 0) {
+            setGajiList(gajiData);
+          } else {
+            await dbSaveCollection('edu_gajiList', gajiList);
+          }
+
+          if (settingsData.length > 0) {
+            const foundSetting = settingsData.find(s => s.namaSekolah);
+            if (foundSetting) setSchoolSettings(foundSetting);
+          } else {
+            await dbSaveItem('edu_schoolSettings', { id: 'current', ...schoolSettings });
+          }
+
+          setIsDbLoaded(true);
+        } catch (error) {
+          console.error('Error in initial load from Firestore:', error);
+          setIsDbLoaded(true); // fall back to local storage
+        }
+      };
       loadAllFromFirestore();
     } else {
-      loadedCollectionsRef.current.clear();
       setIsDbLoaded(false);
     }
-  }, [isLoggedIn, loadAllFromFirestore]);
-
-  // Auto-refresh Firestore when device wakes up / regains focus or network reconnects (Laptop/HP/Tablet)
-  useEffect(() => {
-    if (!isLoggedIn) return;
-    const maybeRefresh = () => {
-      if (document.visibilityState === 'visible' && Date.now() - lastCloudRefreshAtRef.current > 8000) {
-        loadAllFromFirestore();
-      }
-    };
-    const handleOnline = () => {
-      if (Date.now() - lastCloudRefreshAtRef.current > 3000) {
-        loadAllFromFirestore();
-      }
-    };
-    document.addEventListener('visibilitychange', maybeRefresh);
-    window.addEventListener('online', handleOnline);
-    return () => {
-      document.removeEventListener('visibilitychange', maybeRefresh);
-      window.removeEventListener('online', handleOnline);
-    };
-  }, [isLoggedIn, loadAllFromFirestore]);
+  }, [isLoggedIn]);
 
   // Status-reporting wrappers for Firebase saves
   const saveCollectionWithStatus = async (collectionName: string, items: any[]) => {
-    if (!loadedCollectionsRef.current.has(collectionName)) {
-      return;
-    }
     setFirebaseSyncStatus('saving');
     try {
       await dbSaveCollection(collectionName, items);
@@ -630,9 +563,6 @@ export default function App() {
   };
 
   const saveItemWithStatus = async (collectionName: string, item: any) => {
-    if (!loadedCollectionsRef.current.has(collectionName)) {
-      return;
-    }
     setFirebaseSyncStatus('saving');
     try {
       await dbSaveItem(collectionName, item);
@@ -790,7 +720,7 @@ export default function App() {
     }
   }, [schoolSettings, isDbLoaded, isLoggedIn]);
 
-  // Realtime synchronization from Firestore across devices (Laptop <-> HP <-> Tablet)
+  // Realtime synchronization from Firestore (Admin <-> TU/Staf/Guru integration)
   useEffect(() => {
     if (!isLoggedIn || !isDbLoaded) return;
 
@@ -798,39 +728,29 @@ export default function App() {
 
     const listenCollection = <T extends { id: string }>(colName: string, setter: React.Dispatch<React.SetStateAction<T[]>>) => {
       try {
-        const unsub = onSnapshot(
-          collection(db, colName),
-          (snapshot) => {
-            if (snapshot.metadata.hasPendingWrites) return;
+        const unsub = onSnapshot(collection(db, colName), (snapshot) => {
+          if (snapshot.metadata.hasPendingWrites) return;
+          
+          if (colName === 'edu_tagihanList' && localStorage.getItem('edu_tagihan_force_clear') === 'true') return;
+          if (colName === 'edu_transaksiList' && localStorage.getItem('edu_transaksi_force_clear') === 'true') return;
+          if (colName === 'edu_tarifBiayaList' && localStorage.getItem('edu_tarif_force_clear') === 'true') return;
+          if (colName === 'edu_siswaList' && localStorage.getItem('edu_siswa_force_clear') === 'true') return;
 
-            if (colName === 'edu_tagihanList' && localStorage.getItem('edu_tagihan_force_clear') === 'true') return;
-            if (colName === 'edu_transaksiList' && localStorage.getItem('edu_transaksi_force_clear') === 'true') return;
-            if (colName === 'edu_tarifBiayaList' && localStorage.getItem('edu_tarif_force_clear') === 'true') return;
-            if (colName === 'edu_siswaList' && localStorage.getItem('edu_siswa_force_clear') === 'true') return;
-
-            const items: T[] = [];
-            snapshot.forEach((docSnap) => {
-              items.push({ id: docSnap.id, ...docSnap.data() } as T);
-            });
-
-            // Sync differential cache BEFORE updating state so local useEffect does not write remote data back
-            syncCollectionCache(colName, items);
-            loadedCollectionsRef.current.add(colName);
-
-            setter((prev) => {
-              const sortKey = (a: any, b: any) => (a.id || '').localeCompare(b.id || '');
-              const sortedPrev = [...prev].sort(sortKey);
-              const sortedItems = [...items].sort(sortKey);
-              if (JSON.stringify(sortedPrev) !== JSON.stringify(sortedItems)) {
-                return items;
-              }
-              return prev;
-            });
-          },
-          (error) => {
-            console.warn(`Realtime listener warning (${colName}):`, error);
-          }
-        );
+          const items: T[] = [];
+          snapshot.forEach((doc) => {
+            items.push({ id: doc.id, ...doc.data() } as T);
+          });
+          setter((prev) => {
+            // Sort to ensure stable comparison
+            const sortKey = (a: any, b: any) => (a.id || '').localeCompare(b.id || '');
+            const sortedPrev = [...prev].sort(sortKey);
+            const sortedItems = [...items].sort(sortKey);
+            if (JSON.stringify(sortedPrev) !== JSON.stringify(sortedItems)) {
+              return items;
+            }
+            return prev;
+          });
+        });
         unsubs.push(unsub);
       } catch (err) {
         console.error(`Error subscribing to ${colName}:`, err);
@@ -854,31 +774,21 @@ export default function App() {
     listenCollection<TarifBiaya>('edu_tarifBiayaList', setTarifBiayaList);
     listenCollection<HasilUjian>('edu_hasilUjianList', setHasilUjianList);
     listenCollection<GajiPembayaran>('edu_gajiList', setGajiList);
-    listenCollection<RaporSiswa>('edu_raporList', setRaporList);
-    listenCollection<RaporTahfidzSiswa>('edu_raporTahfidzList', setRaporTahfidzList);
 
     // Document listener for school settings
     try {
-      const unsubSettings = onSnapshot(
-        doc(db, 'edu_schoolSettings', 'current'),
-        (snapshot) => {
-          if (snapshot.metadata.hasPendingWrites) return;
-          if (snapshot.exists()) {
-            const data = snapshot.data() as SchoolSettings;
-            loadedCollectionsRef.current.add('edu_schoolSettings');
-            setSchoolSettings((prev) => {
-              const merged = { ...INITIAL_SCHOOL_SETTINGS, ...prev, ...data };
-              if (JSON.stringify(prev) !== JSON.stringify(merged)) {
-                return merged;
-              }
-              return prev;
-            });
-          }
-        },
-        (error) => {
-          console.warn('Realtime listener warning (edu_schoolSettings):', error);
+      const unsubSettings = onSnapshot(doc(db, 'edu_schoolSettings', 'current'), (snapshot) => {
+        if (snapshot.metadata.hasPendingWrites) return;
+        if (snapshot.exists()) {
+          const data = snapshot.data() as SchoolSettings;
+          setSchoolSettings((prev) => {
+            if (JSON.stringify(prev) !== JSON.stringify(data)) {
+              return data;
+            }
+            return prev;
+          });
         }
-      );
+      });
       unsubs.push(unsubSettings);
     } catch (err) {
       console.error('Error subscribing to edu_schoolSettings:', err);
@@ -1125,7 +1035,6 @@ export default function App() {
         theme={theme}
         setTheme={setTheme}
         firebaseSyncStatus={firebaseSyncStatus}
-        onRefreshFromCloud={() => loadAllFromFirestore({ isManualRefresh: true })}
         colorTheme={colorTheme}
         setColorTheme={setColorTheme}
       />
@@ -1207,7 +1116,6 @@ export default function App() {
               absensiHarian={absensiHarian}
               absensiKelasList={absensiKelasList}
               currentRole={currentRole}
-              onRefreshFromCloud={() => loadAllFromFirestore({ isManualRefresh: true })}
             />
           )}
 

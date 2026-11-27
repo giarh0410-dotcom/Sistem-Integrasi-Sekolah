@@ -11,10 +11,7 @@ import {
   Database,
   RefreshCw,
   Cloud,
-  Check,
-  Palette,
-  Sun,
-  Moon
+  Check
 } from 'lucide-react';
 import { Role, SchoolSettings } from '../types/school';
 import { googleSignIn, googleSignOut } from '../lib/firebase';
@@ -45,10 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
   schoolSettings,
   onLogout,
   theme,
-  setTheme,
-  firebaseSyncStatus = 'idle',
-  colorTheme = 'emerald',
-  setColorTheme
+  firebaseSyncStatus = 'idle'
 }) => {
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
@@ -178,39 +172,6 @@ export const Header: React.FC<HeaderProps> = ({
               }`}></span>
             </span>
           </div>
-
-          {/* Theme Mode Toggle Button */}
-          <button
-            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm ${
-              theme === 'light' 
-                ? 'bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100' 
-                : 'bg-slate-800 text-amber-300 border border-slate-700 hover:bg-slate-700'
-            }`}
-            title="Ubah Tampilan Terang / Gelap"
-          >
-            {theme === 'light' ? <Sun className="w-4 h-4 text-amber-600 animate-pulse" /> : <Moon className="w-4 h-4 text-amber-400" />}
-            <span className="hidden sm:inline">{theme === 'light' ? 'Terang' : 'Gelap'}</span>
-          </button>
-
-          {/* Color Theme Selector */}
-          {setColorTheme && (
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs shadow-sm ${theme === 'light' ? 'bg-slate-100 border border-slate-300 text-slate-800' : 'bg-[#18181b] border border-slate-800 text-slate-300'}`}>
-              <Palette className="w-3.5 h-3.5 text-blue-500" />
-              <select
-                value={colorTheme}
-                onChange={(e) => setColorTheme(e.target.value)}
-                className={`bg-transparent font-bold focus:outline-none cursor-pointer ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}
-                title="Pilih Tema Warna Aplikasi"
-              >
-                <option value="emerald" className={theme === 'light' ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'}>🟢 Hijau Emerald</option>
-                <option value="blue" className={theme === 'light' ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'}>🔵 Biru Profesional</option>
-                <option value="indigo" className={theme === 'light' ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'}>🟣 Ungu Indigo</option>
-                <option value="amber" className={theme === 'light' ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'}>🟠 Emas Amber</option>
-                <option value="cyan" className={theme === 'light' ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'}>🩵 Cyan Tech</option>
-              </select>
-            </div>
-          )}
 
             {/* Logout Button */}
             {onLogout && (
